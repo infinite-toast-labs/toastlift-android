@@ -1,1 +1,1 @@
-# FitLib ships without code shrinking in release for now.
+# ToastLift ships without code shrinking in release for now.

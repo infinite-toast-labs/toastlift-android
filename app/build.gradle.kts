@@ -22,11 +22,11 @@ fun escapeBuildConfig(value: String): String = value.replace("\\", "\\\\").repla
 val dotEnv = readDotEnv(rootProject.projectDir)
 
 android {
-    namespace = "com.fitlib.app"
+    namespace = "dev.toastlabs.toastlift"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.fitlib.app"
+        applicationId = "dev.toastlabs.toastlift"
         minSdk = 26
         targetSdk = 36
         versionCode = 1

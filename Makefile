@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-APP_ID := com.fitlib.app
+APP_ID := dev.toastlabs.toastlift
 MAIN_ACTIVITY := $(APP_ID)/.MainActivity
 DEBUG_APK := app/build/outputs/apk/debug/app-debug.apk
 RELEASE_APK := app/build/outputs/apk/release/app-release-unsigned.apk

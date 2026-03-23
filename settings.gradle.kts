@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "FitLib"
+rootProject.name = "ToastLift"
 include(":app")

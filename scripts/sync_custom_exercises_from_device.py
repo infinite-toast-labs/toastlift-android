@@ -14,9 +14,9 @@ from pathlib import Path
 from typing import Any
 
 
-DEFAULT_APP_ID = "com.fitlib.app"
+DEFAULT_APP_ID = "dev.toastlabs.toastlift"
 DEFAULT_REPO_DB = Path("functional_fitness_workout_generator.sqlite")
-DEFAULT_DEVICE_DB_RELATIVE_PATH = "databases/fitlib.db"
+DEFAULT_DEVICE_DB_RELATIVE_PATH = "databases/toastlift.db"
 
 
 @dataclass
@@ -79,8 +79,8 @@ def extract_device_file(
 
 
 def extract_device_db(adb_bin: str, serial: str | None, app_id: str, device_db_relative_path: str) -> Path:
-    temp_dir = Path(tempfile.mkdtemp(prefix="fitlib-custom-sync-"))
-    output_path = temp_dir / "device-fitlib.db"
+    temp_dir = Path(tempfile.mkdtemp(prefix="toastlift-custom-sync-"))
+    output_path = temp_dir / "device-toastlift.db"
     extract_device_file(
         adb_bin=adb_bin,
         serial=serial,
@@ -94,7 +94,7 @@ def extract_device_db(adb_bin: str, serial: str | None, app_id: str, device_db_r
         serial=serial,
         app_id=app_id,
         device_relative_path=f"{device_db_relative_path}-wal",
-        output_path=temp_dir / "device-fitlib.db-wal",
+        output_path=temp_dir / "device-toastlift.db-wal",
         required=False,
     )
     extract_device_file(
@@ -102,7 +102,7 @@ def extract_device_db(adb_bin: str, serial: str | None, app_id: str, device_db_r
         serial=serial,
         app_id=app_id,
         device_relative_path=f"{device_db_relative_path}-shm",
-        output_path=temp_dir / "device-fitlib.db-shm",
+        output_path=temp_dir / "device-toastlift.db-shm",
         required=False,
     )
     return output_path
@@ -448,7 +448,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--device-db-path",
         default=DEFAULT_DEVICE_DB_RELATIVE_PATH,
-        help="Relative DB path inside the app sandbox. Defaults to databases/fitlib.db.",
+        help="Relative DB path inside the app sandbox. Defaults to databases/toastlift.db.",
     )
     parser.add_argument(
         "--repo-db-path",
