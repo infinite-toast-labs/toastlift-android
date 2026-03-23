@@ -1,0 +1,57 @@
+# Gradle
+.gradle/
+**/build/
+
+# Local SDK configuration
+local.properties
+
+# Android Studio / IntelliJ
+.idea/
+*.iml
+*.ipr
+*.iws
+.kotlin/
+
+# Native build outputs
+.cxx/
+externalNativeBuild/
+
+# Build packages and generated binaries
+*.apk
+*.aab
+*.ap_
+*.dex
+
+# Profiling
+*.hprof
+
+# Signing material
+*.jks
+*.keystore
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+
+# Android tooling
+captures/
+out/
+
+artifacts/
+skills/
+fitbod-ss/
+.env
+clipboard*.txt
+p1.txt
+p2.txt
+p3.txt
+claude_output*.jsonl
+claude_output*.txt
+gemini_output*.jsonl
+gemini_output*.txt
+
+__pycache__
+summaries/
+patches/
+exercise-conflict/
+plan/
