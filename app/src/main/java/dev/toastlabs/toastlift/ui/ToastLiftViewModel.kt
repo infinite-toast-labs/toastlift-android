@@ -277,6 +277,7 @@ data class AppUiState(
     val libraryFacets: LibraryFacets = LibraryFacets(),
     val libraryResults: List<ExerciseSummary> = emptyList(),
     val selectedExerciseDetail: ExerciseDetail? = null,
+    val generatingExerciseDescriptionId: Long? = null,
     val selectedExerciseHistory: ExerciseHistoryDetail? = null,
     val selectedExerciseVideos: ExerciseVideoLinks? = null,
     val generatedWorkout: WorkoutPlan? = null,
@@ -2007,7 +2008,56 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     fun dismissExerciseDetail() {
-        uiState = uiState.copy(selectedExerciseDetail = null)
+        uiState = uiState.copy(
+            selectedExerciseDetail = null,
+            generatingExerciseDescriptionId = null,
+        )
+    }
+
+    fun generateExerciseDescription(exerciseId: Long) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val existingDetail = uiState.selectedExerciseDetail
+            val detail = if (existingDetail?.summary?.id == exerciseId) {
+                existingDetail
+            } else {
+                container.catalogRepository.getExerciseDetail(exerciseId)
+            } ?: run {
+                uiState = uiState.copy(message = "Could not load the exercise description context.")
+                return@launch
+            }
+
+            uiState = uiState.copy(generatingExerciseDescriptionId = exerciseId)
+            runCatching {
+                val generated = container.exerciseDescriptionService.generate(exerciseId)
+                container.catalogRepository.saveGeneratedExerciseDescription(
+                    exerciseId = exerciseId,
+                    description = generated.description,
+                    generationModel = generated.generationModel,
+                    generationPromptVersion = generated.generationPromptVersion,
+                )
+                generated
+            }.onSuccess {
+                val refreshedDetail = container.catalogRepository.getExerciseDetail(exerciseId)
+                uiState = uiState.copy(
+                    selectedExerciseDetail = if (uiState.selectedExerciseDetail?.summary?.id == exerciseId) {
+                        refreshedDetail
+                    } else {
+                        uiState.selectedExerciseDetail
+                    },
+                    generatingExerciseDescriptionId = null,
+                    message = if (detail.generatedDescription == null) {
+                        "Generated description for ${detail.summary.name}."
+                    } else {
+                        "Replaced generated description for ${detail.summary.name}."
+                    },
+                )
+            }.onFailure { error ->
+                uiState = uiState.copy(
+                    generatingExerciseDescriptionId = null,
+                    message = error.message ?: "Could not generate a description for ${detail.summary.name}.",
+                )
+            }
+        }
     }
 
     fun openExerciseHistory(exerciseId: Long, exerciseName: String) {

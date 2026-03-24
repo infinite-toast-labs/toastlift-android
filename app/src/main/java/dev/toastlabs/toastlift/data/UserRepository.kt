@@ -253,7 +253,7 @@ class UserRepository(private val database: ToastLiftDatabase) {
         val db = database.open()
         val payload = JSONObject()
             .put("app", "ToastLift")
-            .put("schema_version", 5)
+            .put("schema_version", 6)
             .put("exported_at_utc", exportedAtUtc)
             .put("format", "application/json")
             .put(
@@ -262,6 +262,7 @@ class UserRepository(private val database: ToastLiftDatabase) {
                     .putNullable("profile", exportProfile(db))
                     .put("equipment_inventory", exportEquipmentInventory(db))
                     .put("exercise_preferences", exportExercisePreferences(db))
+                    .put("exercise_generated_descriptions", exportExerciseGeneratedDescriptions(db))
                     .put("exercise_user_video_links", exportExerciseUserVideoLinks(db))
                     .put("movement_restrictions", exportMovementRestrictions(db))
                     .put("custom_exercises", customExercises)
@@ -288,6 +289,7 @@ class UserRepository(private val database: ToastLiftDatabase) {
             db.execSQL("DELETE FROM workout_templates")
             db.execSQL("DELETE FROM workout_feedback_signals")
             db.execSQL("DELETE FROM exercise_preferences")
+            db.execSQL("DELETE FROM exercise_generated_descriptions")
             db.execSQL("DELETE FROM exercise_user_video_links")
             db.execSQL("DELETE FROM movement_restrictions")
             db.execSQL("DELETE FROM equipment_inventory")
@@ -413,6 +415,40 @@ class UserRepository(private val database: ToastLiftDatabase) {
                             .put("preference_score_delta", cursor.getDouble(5))
                             .putNullable("notes", cursor.getStringOrNull(6))
                             .put("updated_at_utc", cursor.getString(7)),
+                    )
+                }
+            }
+        }
+    }
+
+    private fun exportExerciseGeneratedDescriptions(db: SQLiteDatabase): JSONArray {
+        return db.rawQuery(
+            """
+            SELECT
+                d.exercise_id,
+                e.name,
+                d.description,
+                d.generation_model,
+                d.generation_prompt_version,
+                d.created_at_utc,
+                d.updated_at_utc
+            FROM exercise_generated_descriptions d
+            LEFT JOIN exercises e ON e.exercise_id = d.exercise_id
+            ORDER BY e.name, d.exercise_id
+            """.trimIndent(),
+            null,
+        ).use { cursor ->
+            JSONArray().apply {
+                while (cursor.moveToNext()) {
+                    put(
+                        JSONObject()
+                            .put("exercise_id", cursor.getLong(0))
+                            .putNullable("exercise_name", cursor.getStringOrNull(1))
+                            .put("description", cursor.getString(2))
+                            .putNullable("generation_model", cursor.getStringOrNull(3))
+                            .putNullable("generation_prompt_version", cursor.getStringOrNull(4))
+                            .put("created_at_utc", cursor.getString(5))
+                            .put("updated_at_utc", cursor.getString(6)),
                     )
                 }
             }

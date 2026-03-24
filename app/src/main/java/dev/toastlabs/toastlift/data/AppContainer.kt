@@ -6,6 +6,7 @@ class AppContainer(context: Context) {
     internal val toastLiftDatabase = ToastLiftDatabase(context.applicationContext)
 
     val catalogRepository = CatalogRepository(toastLiftDatabase)
+    internal val exerciseDescriptionService = ExerciseDescriptionService(catalogRepository)
     val customExerciseRepository = CustomExerciseRepository(
         context = context.applicationContext,
         database = toastLiftDatabase,

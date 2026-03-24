@@ -250,7 +250,7 @@ class CatalogRepository(private val database: ToastLiftDatabase) {
                 planesOfMotion = emptyList(),
                 demoUrl = cursor.getStringOrNull(19),
                 explanationUrl = cursor.getStringOrNull(20),
-                description = normalizeExerciseDescription(cursor.getStringOrNull(21)),
+                canonicalDescription = normalizeExerciseDescription(cursor.getStringOrNull(21)),
                 synonyms = emptyList(),
             )
         }
@@ -293,11 +293,34 @@ class CatalogRepository(private val database: ToastLiftDatabase) {
                 }
             }
         }
+        val generatedDescription = db.rawQuery(
+            """
+            SELECT description, generation_model, generation_prompt_version, created_at_utc, updated_at_utc
+            FROM exercise_generated_descriptions
+            WHERE exercise_id = ?
+            """.trimIndent(),
+            arrayOf(exerciseId.toString()),
+        ).use { cursor ->
+            if (!cursor.moveToFirst()) {
+                null
+            } else {
+                normalizeExerciseDescription(cursor.getStringOrNull(0))?.let { description ->
+                    UserGeneratedExerciseDescription(
+                        description = description,
+                        generationModel = cursor.getStringOrNull(1),
+                        generationPromptVersion = cursor.getStringOrNull(2),
+                        createdAtUtc = cursor.getString(3),
+                        updatedAtUtc = cursor.getString(4),
+                    )
+                }
+            }
+        }
 
         return summary.copy(
             movementPatterns = movementPatterns,
             planesOfMotion = planes,
             synonyms = synonyms,
+            generatedDescription = generatedDescription,
             defaultVideoLinks = defaultVideoLinks,
             userVideoLinks = userVideoLinks,
         )
@@ -395,6 +418,53 @@ class CatalogRepository(private val database: ToastLiftDatabase) {
             )
         }
         return true
+    }
+
+    fun saveGeneratedExerciseDescription(
+        exerciseId: Long,
+        description: String,
+        generationModel: String?,
+        generationPromptVersion: String?,
+    ) {
+        val normalizedDescription = normalizeExerciseDescription(description)
+            ?: throw IllegalArgumentException("Generated description cannot be blank.")
+        val db = database.open()
+        val existingCreatedAtUtc = db.rawQuery(
+            """
+            SELECT created_at_utc
+            FROM exercise_generated_descriptions
+            WHERE exercise_id = ?
+            """.trimIndent(),
+            arrayOf(exerciseId.toString()),
+        ).use { cursor ->
+            if (!cursor.moveToFirst()) null else cursor.getString(0)
+        }
+        val now = Instant.now().toString()
+        db.execSQL(
+            """
+            INSERT INTO exercise_generated_descriptions (
+                exercise_id,
+                description,
+                generation_model,
+                generation_prompt_version,
+                created_at_utc,
+                updated_at_utc
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(exercise_id) DO UPDATE SET
+                description = excluded.description,
+                generation_model = excluded.generation_model,
+                generation_prompt_version = excluded.generation_prompt_version,
+                updated_at_utc = excluded.updated_at_utc
+            """.trimIndent(),
+            arrayOf(
+                exerciseId,
+                normalizedDescription,
+                generationModel,
+                generationPromptVersion,
+                existingCreatedAtUtc ?: now,
+                now,
+            ),
+        )
     }
 
     fun deleteExerciseVideoLink(exerciseId: Long, linkId: Long) {

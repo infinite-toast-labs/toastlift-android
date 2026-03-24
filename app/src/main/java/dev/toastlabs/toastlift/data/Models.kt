@@ -139,10 +139,22 @@ data class ExerciseDetail(
     val planesOfMotion: List<String>,
     val demoUrl: String?,
     val explanationUrl: String?,
-    val description: String? = null,
+    val canonicalDescription: String? = null,
+    val generatedDescription: UserGeneratedExerciseDescription? = null,
     val synonyms: List<String>,
     val defaultVideoLinks: List<ExerciseVideoLink> = emptyList(),
     val userVideoLinks: List<ExerciseVideoLink> = emptyList(),
+) {
+    val description: String?
+        get() = generatedDescription?.description ?: canonicalDescription
+}
+
+data class UserGeneratedExerciseDescription(
+    val description: String,
+    val generationModel: String?,
+    val generationPromptVersion: String?,
+    val createdAtUtc: String,
+    val updatedAtUtc: String,
 )
 
 data class TrainingSplitProgram(

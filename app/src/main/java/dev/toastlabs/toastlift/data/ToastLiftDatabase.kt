@@ -10,7 +10,7 @@ import java.util.Locale
 class ToastLiftDatabase(private val context: Context) {
     private val databaseName = "toastlift.db"
     private val assetName = "functional_fitness_workout_generator.sqlite"
-    private val appVersion = 15
+    private val appVersion = 16
 
     @Volatile
     private var database: SQLiteDatabase? = null
@@ -327,6 +327,19 @@ class ToastLiftDatabase(private val context: Context) {
                 exercise_id INTEGER NOT NULL,
                 label TEXT NOT NULL,
                 url TEXT NOT NULL,
+                created_at_utc TEXT NOT NULL,
+                updated_at_utc TEXT NOT NULL,
+                FOREIGN KEY (exercise_id) REFERENCES exercises (exercise_id) ON DELETE CASCADE
+            )
+            """.trimIndent(),
+        )
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS exercise_generated_descriptions (
+                exercise_id INTEGER PRIMARY KEY,
+                description TEXT NOT NULL,
+                generation_model TEXT,
+                generation_prompt_version TEXT,
                 created_at_utc TEXT NOT NULL,
                 updated_at_utc TEXT NOT NULL,
                 FOREIGN KEY (exercise_id) REFERENCES exercises (exercise_id) ON DELETE CASCADE

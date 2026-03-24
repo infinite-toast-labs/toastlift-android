@@ -942,7 +942,9 @@ fun ToastLiftApp(viewModel: ToastLiftViewModel) {
                 ExerciseDetailSheet(
                     detail = detail,
                     profile = state.profile,
+                    isGeneratingDescription = state.generatingExerciseDescriptionId == detail.summary.id,
                     onDismiss = viewModel::dismissExerciseDetail,
+                    onGenerateDescription = { viewModel.generateExerciseDescription(detail.summary.id) },
                     recommendationBias = state.recommendationBiasByExerciseId[detail.summary.id] ?: detail.summary.recommendationBias,
                     onSetRecommendationBias = { bias ->
                         viewModel.setRecommendationBias(
@@ -6577,7 +6579,9 @@ private fun openPreferredExternalLink(
 private fun ExerciseDetailSheet(
     detail: ExerciseDetail,
     profile: UserProfile?,
+    isGeneratingDescription: Boolean,
     onDismiss: () -> Unit,
+    onGenerateDescription: () -> Unit,
     recommendationBias: RecommendationBias,
     onSetRecommendationBias: (RecommendationBias) -> Unit,
     onResetRecommendationPreferenceScore: () -> Unit,
@@ -6942,6 +6946,9 @@ private fun ExerciseDetailSheet(
         ExerciseDescriptionSheet(
             exerciseName = detail.summary.name,
             description = detail.description,
+            hasGeneratedDescription = detail.generatedDescription != null,
+            isGeneratingDescription = isGeneratingDescription,
+            onGenerateDescription = onGenerateDescription,
             onDismiss = { showDescriptionSheet = false },
         )
     }
@@ -6951,8 +6958,14 @@ private fun ExerciseDetailSheet(
 private fun ExerciseDescriptionSheet(
     exerciseName: String,
     description: String?,
+    hasGeneratedDescription: Boolean,
+    isGeneratingDescription: Boolean,
+    onGenerateDescription: () -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val canGenerateDescription = description == null || hasGeneratedDescription
+    var showReplaceDialog by rememberSaveable(exerciseName, hasGeneratedDescription) { mutableStateOf(false) }
+
     ToastLiftModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
             modifier = Modifier
@@ -6960,24 +6973,73 @@ private fun ExerciseDescriptionSheet(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            Text("Description", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("Description", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                if (canGenerateDescription) {
+                    OutlinedButton(
+                        onClick = {
+                            if (hasGeneratedDescription) {
+                                showReplaceDialog = true
+                            } else {
+                                onGenerateDescription()
+                            }
+                        },
+                        enabled = !isGeneratingDescription,
+                    ) {
+                        if (isGeneratingDescription) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                strokeWidth = 2.dp,
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.Rounded.AutoAwesome,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(if (hasGeneratedDescription) "Generate again" else "Generate")
+                    }
+                }
+            }
             Text(
                 exerciseName,
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             FeatureCard(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.82f)) {
-                SelectionContainer {
-                    Text(
-                        text = description ?: "No description",
-                        modifier = Modifier.padding(14.dp),
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = if (description == null) {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        } else {
-                            MaterialTheme.colorScheme.onSurface
-                        },
-                    )
+                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    if (description == null) {
+                        Text(
+                            text = if (isGeneratingDescription) {
+                                "Generating a step-by-step description."
+                            } else {
+                                "No description yet. Generate one ad hoc with Gemini."
+                            },
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    } else {
+                        SelectionContainer {
+                            Text(
+                                text = description,
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                        }
+                    }
+                    if (hasGeneratedDescription) {
+                        Text(
+                            "RO generated description. Saved in personal data export and kept across app restarts and upgrades.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
             }
             Button(
@@ -6988,6 +7050,20 @@ private fun ExerciseDescriptionSheet(
             }
             Spacer(modifier = Modifier.height(24.dp))
         }
+    }
+
+    if (showReplaceDialog) {
+        ConfirmActionDialog(
+            title = "Replace generated description?",
+            message = "Generating again will replace the current generated description for $exerciseName.",
+            confirmLabel = "Replace",
+            isDestructive = false,
+            onDismiss = { showReplaceDialog = false },
+            onConfirm = {
+                showReplaceDialog = false
+                onGenerateDescription()
+            },
+        )
     }
 }
 
