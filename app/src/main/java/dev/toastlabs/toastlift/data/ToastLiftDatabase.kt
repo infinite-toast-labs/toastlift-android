@@ -10,7 +10,7 @@ import java.util.Locale
 class ToastLiftDatabase(private val context: Context) {
     private val databaseName = "toastlift.db"
     private val assetName = "functional_fitness_workout_generator.sqlite"
-    private val appVersion = 12
+    private val appVersion = 15
 
     @Volatile
     private var database: SQLiteDatabase? = null
@@ -213,10 +213,14 @@ class ToastLiftDatabase(private val context: Context) {
                 active_location_mode_id INTEGER NOT NULL,
                 preferred_workout_style TEXT NOT NULL,
                 theme_preference TEXT NOT NULL DEFAULT 'dark',
+                smart_picker_body_filter TEXT NOT NULL DEFAULT 'all',
+                smart_picker_target_muscle TEXT,
                 gym_machine_cable_bias_enabled INTEGER NOT NULL DEFAULT 1,
                 history_workout_ab_flags_visible INTEGER NOT NULL DEFAULT 0,
                 dev_pick_next_exercise_enabled INTEGER NOT NULL DEFAULT 0,
                 dev_fruit_exercise_icons_enabled INTEGER NOT NULL DEFAULT 0,
+                dev_exercise_detail_personal_note_visible INTEGER NOT NULL DEFAULT 1,
+                dev_exercise_detail_learned_preference_visible INTEGER NOT NULL DEFAULT 1,
                 next_focus TEXT NOT NULL DEFAULT 'full_body',
                 created_at_utc TEXT NOT NULL,
                 updated_at_utc TEXT NOT NULL
@@ -241,6 +245,18 @@ class ToastLiftDatabase(private val context: Context) {
         ensureColumn(
             db = db,
             table = "user_profile",
+            column = "smart_picker_body_filter",
+            definition = "TEXT NOT NULL DEFAULT 'all'",
+        )
+        ensureColumn(
+            db = db,
+            table = "user_profile",
+            column = "smart_picker_target_muscle",
+            definition = "TEXT",
+        )
+        ensureColumn(
+            db = db,
+            table = "user_profile",
             column = "gym_machine_cable_bias_enabled",
             definition = "INTEGER NOT NULL DEFAULT 1",
         )
@@ -261,6 +277,18 @@ class ToastLiftDatabase(private val context: Context) {
             table = "user_profile",
             column = "dev_fruit_exercise_icons_enabled",
             definition = "INTEGER NOT NULL DEFAULT 0",
+        )
+        ensureColumn(
+            db = db,
+            table = "user_profile",
+            column = "dev_exercise_detail_personal_note_visible",
+            definition = "INTEGER NOT NULL DEFAULT 1",
+        )
+        ensureColumn(
+            db = db,
+            table = "user_profile",
+            column = "dev_exercise_detail_learned_preference_visible",
+            definition = "INTEGER NOT NULL DEFAULT 1",
         )
         db.execSQL(
             """
@@ -291,6 +319,19 @@ class ToastLiftDatabase(private val context: Context) {
             table = "exercise_preferences",
             column = "notes",
             definition = "TEXT",
+        )
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS exercise_user_video_links (
+                user_video_link_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                exercise_id INTEGER NOT NULL,
+                label TEXT NOT NULL,
+                url TEXT NOT NULL,
+                created_at_utc TEXT NOT NULL,
+                updated_at_utc TEXT NOT NULL,
+                FOREIGN KEY (exercise_id) REFERENCES exercises (exercise_id) ON DELETE CASCADE
+            )
+            """.trimIndent(),
         )
         db.execSQL(
             """

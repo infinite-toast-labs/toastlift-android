@@ -1,9 +1,41 @@
 package dev.toastlabs.toastlift.data
 
 import android.database.sqlite.SQLiteDatabase
+import java.net.URI
+import java.time.Instant
 
 internal fun normalizeExerciseNote(rawValue: String): String? =
     rawValue.trim().takeIf { it.isNotEmpty() }
+
+internal fun normalizeExerciseDescription(rawValue: String?): String? =
+    rawValue?.trim()?.takeIf { it.isNotEmpty() }
+
+internal fun resolveExerciseDescriptionColumn(columnNames: Collection<String>): String? {
+    val normalized = columnNames.associateBy { it.lowercase() }
+    return listOf("description", "instructions", "exercise_description")
+        .firstNotNullOfOrNull { candidate -> normalized[candidate] }
+}
+
+internal fun normalizeExerciseVideoLinkLabel(rawValue: String): String? =
+    rawValue.trim().takeIf { it.isNotEmpty() }
+
+internal fun normalizeExerciseVideoLinkUrl(rawValue: String): String? {
+    val trimmed = rawValue.trim()
+    if (trimmed.isEmpty()) return null
+    val candidate = if ("://" in trimmed) trimmed else "https://$trimmed"
+    val parsed = runCatching { URI(candidate) }.getOrNull() ?: return null
+    val scheme = parsed.scheme?.lowercase()
+    if (scheme !in setOf("http", "https")) return null
+    val host = parsed.host?.lowercase()?.removePrefix("www.") ?: return null
+    if (!isSupportedExerciseVideoHost(host)) return null
+    return candidate
+}
+
+private fun isSupportedExerciseVideoHost(host: String): Boolean = host == "youtube.com" ||
+    host == "m.youtube.com" ||
+    host == "youtu.be" ||
+    host == "tiktok.com" ||
+    host.endsWith(".tiktok.com")
 
 class CatalogRepository(private val database: ToastLiftDatabase) {
     private enum class FacetDimension {
@@ -45,6 +77,41 @@ class CatalogRepository(private val database: ToastLiftDatabase) {
     fun loadTargetMuscleOptions(): List<String> = loadDistinctColumnValues("target_muscle_group")
 
     fun loadPrimeMoverOptions(): List<String> = loadDistinctColumnValues("prime_mover_muscle")
+
+    fun loadSmartPickerTargetOptions(): List<SmartPickerMuscleTargetOption> {
+        val db = database.open()
+        return db.rawQuery(
+            """
+            SELECT
+                em.muscle_name,
+                COUNT(DISTINCT e.exercise_id) AS exercise_count,
+                COUNT(DISTINCT CASE WHEN e.body_region = 'Upper Body' THEN e.exercise_id END) AS upper_body_exercise_count,
+                COUNT(DISTINCT CASE WHEN e.body_region = 'Lower Body' THEN e.exercise_id END) AS lower_body_exercise_count,
+                COUNT(DISTINCT CASE WHEN e.body_region = 'Core' THEN e.exercise_id END) AS core_exercise_count
+            FROM exercise_muscles em
+            INNER JOIN exercises e ON e.exercise_id = em.exercise_id
+            WHERE em.muscle_name IS NOT NULL
+              AND trim(em.muscle_name) != ''
+            GROUP BY em.muscle_name
+            ORDER BY em.muscle_name COLLATE NOCASE
+            """.trimIndent(),
+            null,
+        ).use { cursor ->
+            buildList {
+                while (cursor.moveToNext()) {
+                    add(
+                        SmartPickerMuscleTargetOption(
+                            name = cursor.getString(0),
+                            exerciseCount = cursor.getInt(1),
+                            upperBodyExerciseCount = cursor.getInt(2),
+                            lowerBodyExerciseCount = cursor.getInt(3),
+                            coreExerciseCount = cursor.getInt(4),
+                        ),
+                    )
+                }
+            }
+        }
+    }
 
     fun loadLibraryPayload(query: String, filters: LibraryFilters): LibrarySearchPayload {
         return LibrarySearchPayload(
@@ -123,6 +190,7 @@ class CatalogRepository(private val database: ToastLiftDatabase) {
 
     fun getExerciseDetail(exerciseId: Long): ExerciseDetail? {
         val db = database.open()
+        val descriptionColumn = resolveExerciseDescriptionColumn(db.columnNames("exercises"))
         val summary = db.rawQuery(
             """
             SELECT
@@ -146,7 +214,8 @@ class CatalogRepository(private val database: ToastLiftDatabase) {
                 e.laterality,
                 e.primary_exercise_classification,
                 e.short_demo_url,
-                e.in_depth_url
+                e.in_depth_url,
+                ${descriptionColumn?.let { "e.$it" } ?: "NULL"} AS exercise_description
             FROM exercises e
             LEFT JOIN exercise_preferences p ON p.exercise_id = e.exercise_id
             WHERE e.exercise_id = ?
@@ -181,6 +250,7 @@ class CatalogRepository(private val database: ToastLiftDatabase) {
                 planesOfMotion = emptyList(),
                 demoUrl = cursor.getStringOrNull(19),
                 explanationUrl = cursor.getStringOrNull(20),
+                description = normalizeExerciseDescription(cursor.getStringOrNull(21)),
                 synonyms = emptyList(),
             )
         }
@@ -197,11 +267,39 @@ class CatalogRepository(private val database: ToastLiftDatabase) {
             "SELECT synonym_name FROM exercise_synonyms WHERE exercise_id = ? ORDER BY synonym_name",
             exerciseId,
         )
+        val defaultVideoLinks = buildDefaultExerciseVideoLinks(summary.demoUrl, summary.explanationUrl)
+        val userVideoLinks = db.rawQuery(
+            """
+            SELECT user_video_link_id, label, url
+            FROM exercise_user_video_links
+            WHERE exercise_id = ?
+            ORDER BY updated_at_utc DESC, user_video_link_id DESC
+            """.trimIndent(),
+            arrayOf(exerciseId.toString()),
+        ).use { cursor ->
+            buildList {
+                while (cursor.moveToNext()) {
+                    val normalizedLabel = normalizeExerciseVideoLinkLabel(cursor.getString(1))
+                    val normalizedUrl = normalizeExerciseVideoLinkUrl(cursor.getString(2))
+                    if (normalizedLabel != null && normalizedUrl != null) {
+                        add(
+                            ExerciseVideoLink(
+                                id = cursor.getLong(0),
+                                label = normalizedLabel,
+                                url = normalizedUrl,
+                            ),
+                        )
+                    }
+                }
+            }
+        }
 
         return summary.copy(
             movementPatterns = movementPatterns,
             planesOfMotion = planes,
             synonyms = synonyms,
+            defaultVideoLinks = defaultVideoLinks,
+            userVideoLinks = userVideoLinks,
         )
     }
 
@@ -250,7 +348,7 @@ class CatalogRepository(private val database: ToastLiftDatabase) {
 
     fun setExerciseNote(exerciseId: Long, note: String?) {
         val db = database.open()
-        val now = java.time.Instant.now().toString()
+        val now = Instant.now().toString()
         db.execSQL(
             """
             INSERT INTO exercise_preferences (exercise_id, is_favorite, is_hidden, is_banned, preference_score_delta, notes, updated_at_utc)
@@ -260,6 +358,50 @@ class CatalogRepository(private val database: ToastLiftDatabase) {
                 updated_at_utc = excluded.updated_at_utc
             """.trimIndent(),
             arrayOf(exerciseId, note, now),
+        )
+    }
+
+    fun saveExerciseVideoLink(
+        exerciseId: Long,
+        linkId: Long?,
+        labelInput: String,
+        urlInput: String,
+    ): Boolean {
+        val label = normalizeExerciseVideoLinkLabel(labelInput) ?: return false
+        val url = normalizeExerciseVideoLinkUrl(urlInput) ?: return false
+        val db = database.open()
+        val now = Instant.now().toString()
+        if (linkId == null) {
+            db.execSQL(
+                """
+                INSERT INTO exercise_user_video_links (
+                    exercise_id,
+                    label,
+                    url,
+                    created_at_utc,
+                    updated_at_utc
+                ) VALUES (?, ?, ?, ?, ?)
+                """.trimIndent(),
+                arrayOf(exerciseId, label, url, now, now),
+            )
+        } else {
+            db.execSQL(
+                """
+                UPDATE exercise_user_video_links
+                SET label = ?, url = ?, updated_at_utc = ?
+                WHERE user_video_link_id = ? AND exercise_id = ?
+                """.trimIndent(),
+                arrayOf(label, url, now, linkId, exerciseId),
+            )
+        }
+        return true
+    }
+
+    fun deleteExerciseVideoLink(exerciseId: Long, linkId: Long) {
+        val db = database.open()
+        db.execSQL(
+            "DELETE FROM exercise_user_video_links WHERE user_video_link_id = ? AND exercise_id = ?",
+            arrayOf(linkId, exerciseId),
         )
     }
 
@@ -282,6 +424,32 @@ class CatalogRepository(private val database: ToastLiftDatabase) {
     }
 
     fun exerciseById(exerciseId: Long): ExerciseSummary? = searchExercisesByIds(listOf(exerciseId)).firstOrNull()
+
+    private fun buildDefaultExerciseVideoLinks(
+        demoUrl: String?,
+        explanationUrl: String?,
+    ): List<ExerciseVideoLink> {
+        val links = linkedMapOf<String, ExerciseVideoLink>()
+        demoUrl?.let { url ->
+            normalizeExerciseVideoLinkUrl(url)?.let { normalizedUrl ->
+                links[normalizedUrl] = ExerciseVideoLink(
+                    label = "Default demo",
+                    url = normalizedUrl,
+                    isReadOnly = true,
+                )
+            }
+        }
+        explanationUrl?.let { url ->
+            normalizeExerciseVideoLinkUrl(url)?.let { normalizedUrl ->
+                links[normalizedUrl] = ExerciseVideoLink(
+                    label = "Default explanation",
+                    url = normalizedUrl,
+                    isReadOnly = true,
+                )
+            }
+        }
+        return links.values.toList()
+    }
 
     fun searchExercisesByIds(ids: List<Long>): List<ExerciseSummary> {
         if (ids.isEmpty()) return emptyList()
@@ -337,6 +505,15 @@ class CatalogRepository(private val database: ToastLiftDatabase) {
         rawQuery(query, arrayOf(exerciseId.toString())).use { cursor ->
             buildList {
                 while (cursor.moveToNext()) add(cursor.getString(0))
+            }
+        }
+
+    private fun SQLiteDatabase.columnNames(table: String): Set<String> =
+        rawQuery("PRAGMA table_info($table)", null).use { cursor ->
+            buildSet {
+                while (cursor.moveToNext()) {
+                    add(cursor.getString(1))
+                }
             }
         }
 

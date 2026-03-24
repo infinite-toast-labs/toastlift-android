@@ -139,7 +139,10 @@ data class ExerciseDetail(
     val planesOfMotion: List<String>,
     val demoUrl: String?,
     val explanationUrl: String?,
+    val description: String? = null,
     val synonyms: List<String>,
+    val defaultVideoLinks: List<ExerciseVideoLink> = emptyList(),
+    val userVideoLinks: List<ExerciseVideoLink> = emptyList(),
 )
 
 data class TrainingSplitProgram(
@@ -163,6 +166,61 @@ enum class ThemePreference(val storageValue: String) {
         fun fromStorageValue(value: String?): ThemePreference {
             return entries.firstOrNull { it.storageValue.equals(value, ignoreCase = true) } ?: Dark
         }
+    }
+}
+
+enum class SmartPickerMuscleBodyFilter(val storageValue: String) {
+    ALL("all"),
+    UPPER("upper"),
+    LOWER("lower"),
+    CORE("core");
+
+    companion object {
+        fun fromStorageValue(value: String?): SmartPickerMuscleBodyFilter {
+            return entries.firstOrNull { it.storageValue.equals(value, ignoreCase = true) } ?: ALL
+        }
+    }
+}
+
+data class SmartPickerMuscleTargetOption(
+    val name: String,
+    val exerciseCount: Int,
+    val upperBodyExerciseCount: Int,
+    val lowerBodyExerciseCount: Int,
+    val coreExerciseCount: Int,
+) {
+    fun matches(filter: SmartPickerMuscleBodyFilter): Boolean {
+        return when (filter) {
+            SmartPickerMuscleBodyFilter.ALL -> true
+            SmartPickerMuscleBodyFilter.UPPER ->
+                upperBodyExerciseCount > 0 || (upperBodyExerciseCount == 0 && lowerBodyExerciseCount == 0 && coreExerciseCount == 0 && !looksLowerBody() && !looksCore())
+            SmartPickerMuscleBodyFilter.LOWER ->
+                lowerBodyExerciseCount > 0 || (upperBodyExerciseCount == 0 && lowerBodyExerciseCount == 0 && coreExerciseCount == 0 && looksLowerBody())
+            SmartPickerMuscleBodyFilter.CORE ->
+                coreExerciseCount > 0 || (upperBodyExerciseCount == 0 && lowerBodyExerciseCount == 0 && coreExerciseCount == 0 && looksCore())
+        }
+    }
+
+    private fun looksLowerBody(): Boolean {
+        val normalized = name.lowercase()
+        return normalized.contains("quad") ||
+            normalized.contains("glute") ||
+            normalized.contains("hamstring") ||
+            normalized.contains("calf") ||
+            normalized.contains("adductor") ||
+            normalized.contains("abductor") ||
+            normalized.contains("femoris") ||
+            normalized.contains("vastus")
+    }
+
+    private fun looksCore(): Boolean {
+        val normalized = name.lowercase()
+        return normalized.contains("abdom") ||
+            normalized.contains("oblique") ||
+            normalized.contains("transverse abdominis") ||
+            normalized.contains("rectus abdominis") ||
+            normalized.contains("serratus") ||
+            normalized.contains("core")
     }
 }
 
@@ -216,10 +274,14 @@ data class UserProfile(
     val activeLocationModeId: Long,
     val workoutStyle: String,
     val themePreference: ThemePreference,
+    val smartPickerBodyFilter: SmartPickerMuscleBodyFilter = SmartPickerMuscleBodyFilter.ALL,
+    val smartPickerTargetMuscle: String? = null,
     val gymMachineCableBiasEnabled: Boolean = true,
     val historyWorkoutAbFlagsVisible: Boolean = false,
     val devPickNextExerciseEnabled: Boolean = false,
     val devFruitExerciseIconsEnabled: Boolean = false,
+    val devExerciseDetailPersonalNoteVisible: Boolean = true,
+    val devExerciseDetailLearnedPreferenceVisible: Boolean = true,
 )
 
 data class WorkoutExercise(
@@ -390,6 +452,13 @@ data class ExerciseVideoLinks(
     val tiktokWebUrl: String,
 )
 
+data class ExerciseVideoLink(
+    val id: Long? = null,
+    val label: String,
+    val url: String,
+    val isReadOnly: Boolean = false,
+)
+
 data class CustomExerciseTaxonomy(
     val difficultyLevels: List<String> = emptyList(),
     val bodyRegions: List<String> = emptyList(),
@@ -519,6 +588,8 @@ data class OnboardingDraft(
     val splitProgramId: Long = 1,
     val units: String = "imperial",
     val workoutStyle: String = "balanced",
+    val smartPickerBodyFilter: SmartPickerMuscleBodyFilter = SmartPickerMuscleBodyFilter.ALL,
+    val smartPickerTargetMuscle: String? = null,
 )
 
 // ── Adaptive Program Engine Models ──

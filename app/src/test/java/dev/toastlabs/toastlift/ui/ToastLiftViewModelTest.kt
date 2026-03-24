@@ -1,6 +1,8 @@
 package dev.toastlabs.toastlift.ui
 
 import dev.toastlabs.toastlift.data.ActiveSession
+import dev.toastlabs.toastlift.data.ExerciseDetail
+import dev.toastlabs.toastlift.data.ExerciseSummary
 import dev.toastlabs.toastlift.data.HistoryReuseMode
 import dev.toastlabs.toastlift.data.RecommendationSource
 import dev.toastlabs.toastlift.data.SessionExercise
@@ -240,6 +242,59 @@ class ToastLiftViewModelTest {
     }
 
     @Test
+    fun pickNextSessionExerciseIndex_prioritizesUntouchedExerciseThatBestMatchesSavedMuscleTarget() {
+        val session = ActiveSession(
+            title = "Pull Day",
+            origin = "generated",
+            locationModeId = 2L,
+            startedAtUtc = "2026-03-20T10:00:00Z",
+            exercises = listOf(
+                sessionExercise(id = 101L, name = "Leg Press", completedSets = listOf(false, false, false), targetMuscleGroup = "Quadriceps"),
+                sessionExercise(id = 202L, name = "Lat Pulldown", completedSets = listOf(false, false, false), targetMuscleGroup = "Back"),
+                sessionExercise(id = 303L, name = "Cable Curl", completedSets = listOf(false, false, false), targetMuscleGroup = "Biceps"),
+            ),
+        )
+
+        val pickedIndex = pickNextSessionExerciseIndex(
+            session = session,
+            smartTargetMuscle = "Latissimus Dorsi",
+            exerciseDetailsById = mapOf(
+                202L to exerciseDetail(
+                    exercise = session.exercises[1],
+                    primeMover = "Latissimus Dorsi",
+                ),
+            ),
+            random = Random(0),
+        )
+
+        assertEquals(1, pickedIndex)
+    }
+
+    @Test
+    fun pickNextSessionExerciseIndex_fallsBackWhenUntouchedExercisesDoNotMatchSavedMuscleTarget() {
+        val session = ActiveSession(
+            title = "Leg Day",
+            origin = "generated",
+            locationModeId = 2L,
+            startedAtUtc = "2026-03-20T10:00:00Z",
+            exercises = listOf(
+                sessionExercise(id = 101L, name = "Leg Press", completedSets = listOf(false, false, false), targetMuscleGroup = "Quadriceps"),
+                sessionExercise(id = 202L, name = "Leg Curl", completedSets = listOf(false, false, false), targetMuscleGroup = "Hamstrings"),
+            ),
+        )
+
+        val expectedFallback = pickNextSessionExerciseIndex(session, Random(7))
+        val pickedIndex = pickNextSessionExerciseIndex(
+            session = session,
+            smartTargetMuscle = "Latissimus Dorsi",
+            exerciseDetailsById = emptyMap(),
+            random = Random(7),
+        )
+
+        assertEquals(expectedFallback, pickedIndex)
+    }
+
+    @Test
     fun firstSkippedExerciseFeedbackPrompt_returnsFirstExerciseWithNoCompletedSets() {
         val prompt = firstSkippedExerciseFeedbackPrompt(
             ActiveSession(
@@ -387,12 +442,13 @@ class ToastLiftViewModelTest {
         completedSets: List<Boolean>,
         activitySequence: Int? = null,
         completionSequence: Int? = null,
+        targetMuscleGroup: String = "Chest",
     ): SessionExercise {
         return SessionExercise(
             exerciseId = id,
             name = name,
             bodyRegion = "Upper Body",
-            targetMuscleGroup = "Chest",
+            targetMuscleGroup = targetMuscleGroup,
             equipment = "Cable",
             restSeconds = 90,
             activitySequence = activitySequence,
@@ -407,6 +463,39 @@ class ToastLiftViewModelTest {
                     completed = completed,
                 )
             },
+        )
+    }
+
+    private fun exerciseDetail(
+        exercise: SessionExercise,
+        primeMover: String? = null,
+        secondaryMuscle: String? = null,
+        tertiaryMuscle: String? = null,
+    ): ExerciseDetail {
+        return ExerciseDetail(
+            summary = ExerciseSummary(
+                id = exercise.exerciseId,
+                name = exercise.name,
+                difficulty = "Intermediate",
+                bodyRegion = exercise.bodyRegion,
+                targetMuscleGroup = exercise.targetMuscleGroup,
+                equipment = exercise.equipment,
+                secondaryEquipment = null,
+                mechanics = null,
+                favorite = false,
+            ),
+            notes = null,
+            primeMover = primeMover,
+            secondaryMuscle = secondaryMuscle,
+            tertiaryMuscle = tertiaryMuscle,
+            posture = "Standing",
+            laterality = "Bilateral",
+            classification = "Compound",
+            movementPatterns = emptyList(),
+            planesOfMotion = emptyList(),
+            demoUrl = null,
+            explanationUrl = null,
+            synonyms = emptyList(),
         )
     }
 

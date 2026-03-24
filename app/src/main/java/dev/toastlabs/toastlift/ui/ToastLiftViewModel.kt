@@ -40,6 +40,8 @@ import dev.toastlabs.toastlift.data.LibraryFacets
 import dev.toastlabs.toastlift.data.LibraryFilters
 import dev.toastlabs.toastlift.data.LocationMode
 import dev.toastlabs.toastlift.data.normalizeExerciseNote
+import dev.toastlabs.toastlift.data.normalizeExerciseVideoLinkLabel
+import dev.toastlabs.toastlift.data.normalizeExerciseVideoLinkUrl
 import dev.toastlabs.toastlift.data.normalizeWeeklyFrequency
 import dev.toastlabs.toastlift.data.normalizeWorkoutDurationMinutes
 import dev.toastlabs.toastlift.data.OnboardingDraft
@@ -58,6 +60,7 @@ import dev.toastlabs.toastlift.data.SessionFocus
 import dev.toastlabs.toastlift.data.SessionSet
 import dev.toastlabs.toastlift.data.SessionStatus
 import dev.toastlabs.toastlift.data.SkippedExerciseFeedbackPrompt
+import dev.toastlabs.toastlift.data.SmartPickerMuscleTargetOption
 import dev.toastlabs.toastlift.data.SfrDebriefExercise
 import dev.toastlabs.toastlift.data.SfrTag
 import dev.toastlabs.toastlift.data.StrengthScoreSummary
@@ -262,6 +265,7 @@ data class AppUiState(
     val themePreference: ThemePreference = ThemePreference.Dark,
     val onboardingDraft: OnboardingDraft = OnboardingDraft(),
     val profile: UserProfile? = null,
+    val smartPickerTargetOptions: List<SmartPickerMuscleTargetOption> = emptyList(),
     val splitPrograms: List<TrainingSplitProgram> = emptyList(),
     val locationModes: List<LocationMode> = emptyList(),
     val equipmentOptions: List<String> = emptyList(),
@@ -408,11 +412,42 @@ internal fun pickNextSessionExerciseIndex(
     session: ActiveSession,
     random: Random = Random.Default,
 ): Int? {
+    return pickNextSessionExerciseIndex(
+        session = session,
+        smartTargetMuscle = null,
+        exerciseDetailsById = emptyMap(),
+        random = random,
+    )
+}
+
+internal fun pickNextSessionExerciseIndex(
+    session: ActiveSession,
+    smartTargetMuscle: String?,
+    exerciseDetailsById: Map<Long, ExerciseDetail>,
+    random: Random = Random.Default,
+): Int? {
     val unstartedExercises = session.exercises
         .withIndex()
         .filter { (_, exercise) -> exercise.isNotStartedInActiveWorkout() }
     if (unstartedExercises.isEmpty()) return null
-    return unstartedExercises.random(random).index
+    val normalizedTarget = normalizeMuscleToken(smartTargetMuscle)
+    if (normalizedTarget.isBlank()) return unstartedExercises.random(random).index
+
+    val rankedMatches = unstartedExercises
+        .map { indexedExercise ->
+            indexedExercise to smartPickExerciseScore(
+                exercise = indexedExercise.value,
+                detail = exerciseDetailsById[indexedExercise.value.exerciseId],
+                normalizedTargetMuscle = normalizedTarget,
+            )
+        }
+        .filter { (_, score) -> score > 0.0 }
+        .sortedWith(
+            compareByDescending<Pair<IndexedValue<SessionExercise>, Double>> { it.second }
+                .thenBy { it.first.index },
+        )
+
+    return rankedMatches.firstOrNull()?.first?.index ?: unstartedExercises.random(random).index
 }
 
 internal fun reconcileSessionExerciseCompletionState(
@@ -1339,6 +1374,73 @@ private fun normalizeMuscleToken(value: String?): String {
         .replace(Regex("\\s+"), " ")
 }
 
+private fun muscleFamilyKey(value: String?): String? {
+    val normalized = normalizeMuscleToken(value)
+    if (normalized.isBlank()) return null
+    return when {
+        normalized.contains("lat") -> "lats"
+        normalized.contains("rhomboid") -> "rhomboids"
+        normalized.contains("rear delt") || normalized.contains("posterior delt") -> "rear_delts"
+        normalized.contains("front delt") || normalized.contains("anterior delt") -> "front_delts"
+        normalized.contains("side delt") || normalized.contains("lateral delt") -> "side_delts"
+        normalized.contains("delt") || normalized.contains("shoulder") -> "shoulders"
+        normalized.contains("trap") -> "traps"
+        normalized.contains("bicep") || normalized.contains("brachialis") || normalized.contains("brachioradialis") -> "biceps"
+        normalized.contains("tricep") -> "triceps"
+        normalized.contains("pec") || normalized.contains("chest") -> "chest"
+        normalized.contains("glute") -> "glutes"
+        normalized.contains("hamstring") || normalized.contains("biceps femoris") || normalized.contains("semitendinosus") ||
+            normalized.contains("semimembranosus") -> "hamstrings"
+        normalized.contains("quad") || normalized.contains("vastus") || normalized.contains("rectus femoris") -> "quadriceps"
+        normalized.contains("calf") || normalized.contains("gastrocnemius") || normalized.contains("soleus") -> "calves"
+        normalized.contains("adductor") -> "adductors"
+        normalized.contains("abductor") -> "abductors"
+        normalized.contains("abdom") || normalized.contains("oblique") || normalized.contains("transverse abdominis") -> "core"
+        normalized.contains("erector") || normalized.contains("lower back") -> "erector_spinae"
+        normalized.contains("forearm") -> "forearms"
+        else -> null
+    }
+}
+
+private fun muscleMatchScore(targetMuscle: String, candidateMuscle: String?): Double {
+    val normalizedCandidate = normalizeMuscleToken(candidateMuscle)
+    if (normalizedCandidate.isBlank()) return 0.0
+    if (normalizedCandidate == targetMuscle) return 1.0
+
+    val targetFamily = muscleFamilyKey(targetMuscle)
+    val candidateFamily = muscleFamilyKey(normalizedCandidate)
+    if (targetFamily != null && targetFamily == candidateFamily) return 0.72
+
+    return if (
+        normalizedCandidate.contains(targetMuscle) ||
+        targetMuscle.contains(normalizedCandidate)
+    ) {
+        0.4
+    } else {
+        0.0
+    }
+}
+
+internal fun smartPickExerciseScore(
+    exercise: SessionExercise,
+    detail: ExerciseDetail?,
+    normalizedTargetMuscle: String,
+): Double {
+    val roleScore = listOf(
+        muscleMatchScore(normalizedTargetMuscle, detail?.primeMover) * 4.0,
+        muscleMatchScore(normalizedTargetMuscle, exercise.targetMuscleGroup) * 3.1,
+        muscleMatchScore(normalizedTargetMuscle, detail?.secondaryMuscle) * 1.9,
+        muscleMatchScore(normalizedTargetMuscle, detail?.tertiaryMuscle) * 1.2,
+    ).sum()
+    if (roleScore <= 0.0) return 0.0
+
+    val compoundBonus = when (exercise.equipment.lowercase()) {
+        "barbell", "machine", "cable", "smith machine", "lever machine" -> 0.18
+        else -> 0.0
+    }
+    return roleScore + compoundBonus
+}
+
 class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
     var uiState by mutableStateOf(AppUiState())
         private set
@@ -1396,6 +1498,7 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
             }
             val recommendationBiasByExerciseId = container.catalogRepository.loadRecommendationBiases()
             val profile = container.userRepository.loadProfile()
+            val smartPickerTargetOptions = container.catalogRepository.loadSmartPickerTargetOptions()
             val onboardingDraft = profile?.let {
                 OnboardingDraft(
                     goal = it.goal,
@@ -1405,6 +1508,8 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
                     splitProgramId = it.splitProgramId,
                     units = it.units,
                     workoutStyle = it.workoutStyle,
+                    smartPickerBodyFilter = it.smartPickerBodyFilter,
+                    smartPickerTargetMuscle = it.smartPickerTargetMuscle,
                 )
             } ?: OnboardingDraft()
             val programSetupDraft = syncProgramSetupDraftWithProfileDuration(
@@ -1470,6 +1575,7 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
                 themePreference = profile?.themePreference ?: ThemePreference.Dark,
                 onboardingDraft = onboardingDraft,
                 profile = profile,
+                smartPickerTargetOptions = smartPickerTargetOptions,
                 splitPrograms = splitPrograms,
                 locationModes = locationModes,
                 equipmentOptions = equipmentOptions,
@@ -1608,6 +1714,36 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
+    fun setDevExerciseDetailPersonalNoteVisible(enabled: Boolean) {
+        val profile = uiState.profile ?: return
+        uiState = uiState.copy(
+            profile = profile.copy(devExerciseDetailPersonalNoteVisible = enabled),
+            message = if (enabled) {
+                "Exercise detail personal note card visible."
+            } else {
+                "Exercise detail personal note card hidden."
+            },
+        )
+        viewModelScope.launch(Dispatchers.IO) {
+            container.userRepository.saveDevExerciseDetailPersonalNoteVisible(enabled)
+        }
+    }
+
+    fun setDevExerciseDetailLearnedPreferenceVisible(enabled: Boolean) {
+        val profile = uiState.profile ?: return
+        uiState = uiState.copy(
+            profile = profile.copy(devExerciseDetailLearnedPreferenceVisible = enabled),
+            message = if (enabled) {
+                "Exercise detail learned preference card visible."
+            } else {
+                "Exercise detail learned preference card hidden."
+            },
+        )
+        viewModelScope.launch(Dispatchers.IO) {
+            container.userRepository.saveDevExerciseDetailLearnedPreferenceVisible(enabled)
+        }
+    }
+
     fun toggleEquipment(locationModeId: Long, equipment: String) {
         viewModelScope.launch(Dispatchers.IO) {
             val before = container.userRepository.loadEquipmentForLocation(locationModeId)
@@ -1690,10 +1826,12 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
             val splitPrograms = container.userRepository.loadSplitPrograms()
             val locationModes = container.userRepository.loadLocationModes()
             val equipmentOptions = container.catalogRepository.loadEquipmentOptions()
+            val smartPickerTargetOptions = container.catalogRepository.loadSmartPickerTargetOptions()
             val libraryPayload = container.catalogRepository.loadLibraryPayload("", LibraryFilters())
             uiState = AppUiState(
                 isLoading = false,
                 themePreference = ThemePreference.Dark,
+                smartPickerTargetOptions = smartPickerTargetOptions,
                 splitPrograms = splitPrograms,
                 locationModes = locationModes,
                 equipmentOptions = equipmentOptions,
@@ -1947,6 +2085,52 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
                     "Saved note for ${exercise.name}."
                 },
             )
+        }
+    }
+
+    fun saveExerciseVideoLink(
+        exercise: ExerciseSummary,
+        linkId: Long?,
+        labelInput: String,
+        urlInput: String,
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val normalizedLabel = normalizeExerciseVideoLinkLabel(labelInput)
+            val normalizedUrl = normalizeExerciseVideoLinkUrl(urlInput)
+            if (normalizedLabel == null || normalizedUrl == null) {
+                uiState = uiState.copy(message = "Enter a label and a valid YouTube or TikTok URL.")
+                return@launch
+            }
+            container.catalogRepository.saveExerciseVideoLink(
+                exerciseId = exercise.id,
+                linkId = linkId,
+                labelInput = normalizedLabel,
+                urlInput = normalizedUrl,
+            )
+            if (uiState.selectedExerciseDetail?.summary?.id == exercise.id) {
+                uiState = uiState.copy(
+                    selectedExerciseDetail = container.catalogRepository.getExerciseDetail(exercise.id),
+                )
+            }
+            uiState = uiState.copy(
+                message = if (linkId == null) {
+                    "Saved video link for ${exercise.name}."
+                } else {
+                    "Updated video link for ${exercise.name}."
+                },
+            )
+        }
+    }
+
+    fun deleteExerciseVideoLink(exercise: ExerciseSummary, linkId: Long) {
+        viewModelScope.launch(Dispatchers.IO) {
+            container.catalogRepository.deleteExerciseVideoLink(exercise.id, linkId)
+            if (uiState.selectedExerciseDetail?.summary?.id == exercise.id) {
+                uiState = uiState.copy(
+                    selectedExerciseDetail = container.catalogRepository.getExerciseDetail(exercise.id),
+                )
+            }
+            uiState = uiState.copy(message = "Removed video link for ${exercise.name}.")
         }
     }
 
@@ -2465,16 +2649,27 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
 
     fun pickNextSessionExercise() {
         val session = uiState.activeSession ?: return
-        val pickedExerciseIndex = pickNextSessionExerciseIndex(session) ?: run {
-            uiState = uiState.copy(message = "No untouched exercises left. Pick an exercise already in progress.")
-            return
+        val smartTargetMuscle = uiState.profile?.smartPickerTargetMuscle
+        viewModelScope.launch(Dispatchers.IO) {
+            val untouchedExerciseIds = session.exercises
+                .filter(SessionExercise::isNotStartedInActiveWorkout)
+                .map(SessionExercise::exerciseId)
+            val exerciseDetailsById = loadExerciseDetailsById(untouchedExerciseIds)
+            val pickedExerciseIndex = pickNextSessionExerciseIndex(
+                session = session,
+                smartTargetMuscle = smartTargetMuscle,
+                exerciseDetailsById = exerciseDetailsById,
+            ) ?: run {
+                uiState = uiState.copy(message = "No untouched exercises left. Pick an exercise already in progress.")
+                return@launch
+            }
+            val pickedExercise = session.exercises[pickedExerciseIndex]
+            uiState = uiState.copy(
+                activeSessionExerciseIndex = pickedExerciseIndex,
+                message = "Next up: ${pickedExercise.name}.",
+            )
+            persistActiveSessionState(selectedExerciseIndex = pickedExerciseIndex)
         }
-        val pickedExercise = session.exercises[pickedExerciseIndex]
-        uiState = uiState.copy(
-            activeSessionExerciseIndex = pickedExerciseIndex,
-            message = "Next up: ${pickedExercise.name}.",
-        )
-        persistActiveSessionState(selectedExerciseIndex = pickedExerciseIndex)
     }
 
     fun updateSessionValue(exerciseIndex: Int, setIndex: Int, value: String, isWeight: Boolean) {

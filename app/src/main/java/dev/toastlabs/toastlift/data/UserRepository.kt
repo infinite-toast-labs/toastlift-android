@@ -13,8 +13,10 @@ class UserRepository(private val database: ToastLiftDatabase) {
             """
             SELECT goal_primary, experience_level, default_duration_minutes, weekly_frequency_target,
                    preferred_split_program_id, units, active_location_mode_id, preferred_workout_style,
-                   theme_preference, gym_machine_cable_bias_enabled, history_workout_ab_flags_visible,
-                   dev_pick_next_exercise_enabled, dev_fruit_exercise_icons_enabled
+                   theme_preference, smart_picker_body_filter, smart_picker_target_muscle,
+                   gym_machine_cable_bias_enabled, history_workout_ab_flags_visible,
+                   dev_pick_next_exercise_enabled, dev_fruit_exercise_icons_enabled,
+                   dev_exercise_detail_personal_note_visible, dev_exercise_detail_learned_preference_visible
             FROM user_profile
             WHERE user_id = 1
             """.trimIndent(),
@@ -33,10 +35,14 @@ class UserRepository(private val database: ToastLiftDatabase) {
                 activeLocationModeId = cursor.getLong(6),
                 workoutStyle = cursor.getString(7),
                 themePreference = ThemePreference.fromStorageValue(cursor.getString(8)),
-                gymMachineCableBiasEnabled = cursor.getInt(9) == 1,
-                historyWorkoutAbFlagsVisible = cursor.getInt(10) == 1,
-                devPickNextExerciseEnabled = cursor.getInt(11) == 1,
-                devFruitExerciseIconsEnabled = cursor.getInt(12) == 1,
+                smartPickerBodyFilter = SmartPickerMuscleBodyFilter.fromStorageValue(cursor.getString(9)),
+                smartPickerTargetMuscle = cursor.getStringOrNull(10)?.trim()?.takeIf { it.isNotEmpty() },
+                gymMachineCableBiasEnabled = cursor.getInt(11) == 1,
+                historyWorkoutAbFlagsVisible = cursor.getInt(12) == 1,
+                devPickNextExerciseEnabled = cursor.getInt(13) == 1,
+                devFruitExerciseIconsEnabled = cursor.getInt(14) == 1,
+                devExerciseDetailPersonalNoteVisible = cursor.getInt(15) == 1,
+                devExerciseDetailLearnedPreferenceVisible = cursor.getInt(16) == 1,
             )
         }
     }
@@ -51,8 +57,9 @@ class UserRepository(private val database: ToastLiftDatabase) {
             INSERT INTO user_profile (
                 user_id, goal_primary, experience_level, default_duration_minutes,
                 weekly_frequency_target, preferred_split_program_id, units, active_location_mode_id,
-                preferred_workout_style, next_focus, created_at_utc, updated_at_utc
-            ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, 'full_body', ?, ?)
+                preferred_workout_style, smart_picker_body_filter, smart_picker_target_muscle,
+                next_focus, created_at_utc, updated_at_utc
+            ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'full_body', ?, ?)
             ON CONFLICT(user_id) DO UPDATE SET
                 goal_primary = excluded.goal_primary,
                 experience_level = excluded.experience_level,
@@ -62,6 +69,8 @@ class UserRepository(private val database: ToastLiftDatabase) {
                 units = excluded.units,
                 active_location_mode_id = excluded.active_location_mode_id,
                 preferred_workout_style = excluded.preferred_workout_style,
+                smart_picker_body_filter = excluded.smart_picker_body_filter,
+                smart_picker_target_muscle = excluded.smart_picker_target_muscle,
                 updated_at_utc = excluded.updated_at_utc
             """.trimIndent(),
             arrayOf(
@@ -73,6 +82,8 @@ class UserRepository(private val database: ToastLiftDatabase) {
                 draft.units,
                 activeLocationModeId,
                 draft.workoutStyle,
+                draft.smartPickerBodyFilter.storageValue,
+                draft.smartPickerTargetMuscle?.trim()?.takeIf { it.isNotEmpty() },
                 now,
                 now,
             ),
@@ -203,6 +214,22 @@ class UserRepository(private val database: ToastLiftDatabase) {
         )
     }
 
+    fun saveDevExerciseDetailPersonalNoteVisible(enabled: Boolean) {
+        val db = database.open()
+        db.execSQL(
+            "UPDATE user_profile SET dev_exercise_detail_personal_note_visible = ?, updated_at_utc = ? WHERE user_id = 1",
+            arrayOf(if (enabled) 1 else 0, Instant.now().toString()),
+        )
+    }
+
+    fun saveDevExerciseDetailLearnedPreferenceVisible(enabled: Boolean) {
+        val db = database.open()
+        db.execSQL(
+            "UPDATE user_profile SET dev_exercise_detail_learned_preference_visible = ?, updated_at_utc = ? WHERE user_id = 1",
+            arrayOf(if (enabled) 1 else 0, Instant.now().toString()),
+        )
+    }
+
     fun loadNextFocus(): String? {
         val db = database.open()
         return db.rawQuery(
@@ -235,6 +262,7 @@ class UserRepository(private val database: ToastLiftDatabase) {
                     .putNullable("profile", exportProfile(db))
                     .put("equipment_inventory", exportEquipmentInventory(db))
                     .put("exercise_preferences", exportExercisePreferences(db))
+                    .put("exercise_user_video_links", exportExerciseUserVideoLinks(db))
                     .put("movement_restrictions", exportMovementRestrictions(db))
                     .put("custom_exercises", customExercises)
                     .put("workout_templates", exportWorkoutTemplates(db))
@@ -260,6 +288,7 @@ class UserRepository(private val database: ToastLiftDatabase) {
             db.execSQL("DELETE FROM workout_templates")
             db.execSQL("DELETE FROM workout_feedback_signals")
             db.execSQL("DELETE FROM exercise_preferences")
+            db.execSQL("DELETE FROM exercise_user_video_links")
             db.execSQL("DELETE FROM movement_restrictions")
             db.execSQL("DELETE FROM equipment_inventory")
             db.execSQL("DELETE FROM experiment_assignments")
@@ -285,10 +314,14 @@ class UserRepository(private val database: ToastLiftDatabase) {
                 l.display_name,
                 p.preferred_workout_style,
                 p.theme_preference,
+                p.smart_picker_body_filter,
+                p.smart_picker_target_muscle,
                 p.gym_machine_cable_bias_enabled,
                 p.history_workout_ab_flags_visible,
                 p.dev_pick_next_exercise_enabled,
                 p.dev_fruit_exercise_icons_enabled,
+                p.dev_exercise_detail_personal_note_visible,
+                p.dev_exercise_detail_learned_preference_visible,
                 p.next_focus,
                 p.created_at_utc,
                 p.updated_at_utc
@@ -312,13 +345,17 @@ class UserRepository(private val database: ToastLiftDatabase) {
                 .putNullable("active_location_mode_name", cursor.getStringOrNull(8))
                 .put("preferred_workout_style", cursor.getString(9))
                 .put("theme_preference", cursor.getString(10))
-                .put("gym_machine_cable_bias_enabled", cursor.getInt(11) == 1)
-                .put("history_workout_ab_flags_visible", cursor.getInt(12) == 1)
-                .put("dev_pick_next_exercise_enabled", cursor.getInt(13) == 1)
-                .put("dev_fruit_exercise_icons_enabled", cursor.getInt(14) == 1)
-                .put("next_focus", cursor.getString(15))
-                .put("created_at_utc", cursor.getString(16))
-                .put("updated_at_utc", cursor.getString(17))
+                .put("smart_picker_body_filter", cursor.getString(11))
+                .putNullable("smart_picker_target_muscle", cursor.getStringOrNull(12))
+                .put("gym_machine_cable_bias_enabled", cursor.getInt(13) == 1)
+                .put("history_workout_ab_flags_visible", cursor.getInt(14) == 1)
+                .put("dev_pick_next_exercise_enabled", cursor.getInt(15) == 1)
+                .put("dev_fruit_exercise_icons_enabled", cursor.getInt(16) == 1)
+                .put("dev_exercise_detail_personal_note_visible", cursor.getInt(17) == 1)
+                .put("dev_exercise_detail_learned_preference_visible", cursor.getInt(18) == 1)
+                .put("next_focus", cursor.getString(19))
+                .put("created_at_utc", cursor.getString(20))
+                .put("updated_at_utc", cursor.getString(21))
         }
     }
 
@@ -376,6 +413,40 @@ class UserRepository(private val database: ToastLiftDatabase) {
                             .put("preference_score_delta", cursor.getDouble(5))
                             .putNullable("notes", cursor.getStringOrNull(6))
                             .put("updated_at_utc", cursor.getString(7)),
+                    )
+                }
+            }
+        }
+    }
+
+    private fun exportExerciseUserVideoLinks(db: SQLiteDatabase): JSONArray {
+        return db.rawQuery(
+            """
+            SELECT
+                l.user_video_link_id,
+                l.exercise_id,
+                e.name,
+                l.label,
+                l.url,
+                l.created_at_utc,
+                l.updated_at_utc
+            FROM exercise_user_video_links l
+            LEFT JOIN exercises e ON e.exercise_id = l.exercise_id
+            ORDER BY e.name, l.user_video_link_id
+            """.trimIndent(),
+            null,
+        ).use { cursor ->
+            JSONArray().apply {
+                while (cursor.moveToNext()) {
+                    put(
+                        JSONObject()
+                            .put("user_video_link_id", cursor.getLong(0))
+                            .put("exercise_id", cursor.getLong(1))
+                            .putNullable("exercise_name", cursor.getStringOrNull(2))
+                            .put("label", cursor.getString(3))
+                            .put("url", cursor.getString(4))
+                            .put("created_at_utc", cursor.getString(5))
+                            .put("updated_at_utc", cursor.getString(6)),
                     )
                 }
             }

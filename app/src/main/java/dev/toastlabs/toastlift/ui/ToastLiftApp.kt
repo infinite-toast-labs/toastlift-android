@@ -38,6 +38,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -61,6 +62,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -229,6 +231,8 @@ import dev.toastlabs.toastlift.data.SessionFocus
 import dev.toastlabs.toastlift.data.SessionStatus
 import dev.toastlabs.toastlift.data.SfrDebriefExercise
 import dev.toastlabs.toastlift.data.SfrTag
+import dev.toastlabs.toastlift.data.SmartPickerMuscleBodyFilter
+import dev.toastlabs.toastlift.data.SmartPickerMuscleTargetOption
 import dev.toastlabs.toastlift.data.StrengthScoreSummary
 import dev.toastlabs.toastlift.data.WorkoutAbFlagSnapshot
 import dev.toastlabs.toastlift.data.WorkoutMovementInsight
@@ -236,6 +240,8 @@ import dev.toastlabs.toastlift.data.WorkoutMuscleInsight
 import dev.toastlabs.toastlift.data.generatedWorkoutFocusDisplayName
 import dev.toastlabs.toastlift.data.isValidWorkoutDurationMinutes
 import dev.toastlabs.toastlift.data.intensityPrescriptionIntentForFocusKey
+import dev.toastlabs.toastlift.data.normalizeExerciseVideoLinkLabel
+import dev.toastlabs.toastlift.data.normalizeExerciseVideoLinkUrl
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
@@ -528,6 +534,13 @@ private fun ThemePreference.label(): String = when (this) {
     ThemePreference.Dark -> "Dark"
     ThemePreference.Light -> "Light"
     ThemePreference.System -> "Use device"
+}
+
+private fun SmartPickerMuscleBodyFilter.label(): String = when (this) {
+    SmartPickerMuscleBodyFilter.ALL -> "All"
+    SmartPickerMuscleBodyFilter.UPPER -> "Upper"
+    SmartPickerMuscleBodyFilter.LOWER -> "Lower"
+    SmartPickerMuscleBodyFilter.CORE -> "Core"
 }
 
 private val weeklyFrequencyOptionValues = (MIN_WEEKLY_FREQUENCY..MAX_WEEKLY_FREQUENCY).map(Int::toString)
@@ -928,6 +941,7 @@ fun ToastLiftApp(viewModel: ToastLiftViewModel) {
             state.selectedExerciseDetail?.let { detail ->
                 ExerciseDetailSheet(
                     detail = detail,
+                    profile = state.profile,
                     onDismiss = viewModel::dismissExerciseDetail,
                     recommendationBias = state.recommendationBiasByExerciseId[detail.summary.id] ?: detail.summary.recommendationBias,
                     onSetRecommendationBias = { bias ->
@@ -941,6 +955,10 @@ fun ToastLiftApp(viewModel: ToastLiftViewModel) {
                     onToggleFavorite = { viewModel.toggleFavorite(detail.summary) },
                     onOpenExerciseHistory = { viewModel.openExerciseHistory(detail.summary.id, detail.summary.name) },
                     onSaveExerciseNote = { note -> viewModel.saveExerciseNote(detail.summary, note) },
+                    onSaveExerciseVideoLink = { linkId, label, url ->
+                        viewModel.saveExerciseVideoLink(detail.summary, linkId, label, url)
+                    },
+                    onDeleteExerciseVideoLink = { linkId -> viewModel.deleteExerciseVideoLink(detail.summary, linkId) },
                     onAddToBuilder = { viewModel.addExerciseToBuilder(detail.summary) },
                     onAddToMyPlan = if (state.generatedWorkout != null) {
                         { viewModel.addExerciseToGeneratedWorkout(detail.summary) }
@@ -1085,6 +1103,7 @@ private fun OnboardingScreen(state: AppUiState, viewModel: ToastLiftViewModel) {
         title = "Build your ToastLift profile",
         subtitle = "Choose a split program, then configure Home and Gym in bottom sheets instead of one endless form.",
         draft = state.onboardingDraft,
+        smartPickerTargetOptions = state.smartPickerTargetOptions,
         splitPrograms = state.splitPrograms,
         locationModes = state.locationModes,
         equipmentOptions = state.equipmentOptions,
@@ -3251,6 +3270,7 @@ private fun ProfileScreen(state: AppUiState, viewModel: ToastLiftViewModel) {
         subtitle = "Settings are grouped into compact cards. Equipment configuration lives in bottom sheets.",
         themePreference = state.themePreference,
         draft = state.onboardingDraft,
+        smartPickerTargetOptions = state.smartPickerTargetOptions,
         splitPrograms = state.splitPrograms,
         locationModes = state.locationModes,
         equipmentOptions = state.equipmentOptions,
@@ -3266,6 +3286,8 @@ private fun ProfileScreen(state: AppUiState, viewModel: ToastLiftViewModel) {
         onSetHistoryWorkoutAbFlagsVisible = viewModel::setHistoryWorkoutAbFlagsVisible,
         onSetDevPickNextExerciseEnabled = viewModel::setDevPickNextExerciseEnabled,
         onSetDevFruitExerciseIconsEnabled = viewModel::setDevFruitExerciseIconsEnabled,
+        onSetDevExerciseDetailPersonalNoteVisible = viewModel::setDevExerciseDetailPersonalNoteVisible,
+        onSetDevExerciseDetailLearnedPreferenceVisible = viewModel::setDevExerciseDetailLearnedPreferenceVisible,
         onExportPersonalData = viewModel::preparePersonalDataExport,
         onDeletePersonalData = viewModel::deleteAllPersonalData,
         showAppearanceSettings = true,
@@ -3279,6 +3301,7 @@ private fun ProfileEditor(
     subtitle: String,
     themePreference: ThemePreference = ThemePreference.Dark,
     draft: OnboardingDraft,
+    smartPickerTargetOptions: List<SmartPickerMuscleTargetOption>,
     splitPrograms: List<TrainingSplitProgram>,
     locationModes: List<LocationMode>,
     equipmentOptions: List<String>,
@@ -3294,6 +3317,8 @@ private fun ProfileEditor(
     onSetHistoryWorkoutAbFlagsVisible: ((Boolean) -> Unit)? = null,
     onSetDevPickNextExerciseEnabled: ((Boolean) -> Unit)? = null,
     onSetDevFruitExerciseIconsEnabled: ((Boolean) -> Unit)? = null,
+    onSetDevExerciseDetailPersonalNoteVisible: ((Boolean) -> Unit)? = null,
+    onSetDevExerciseDetailLearnedPreferenceVisible: ((Boolean) -> Unit)? = null,
     onExportPersonalData: (() -> Unit)? = null,
     onDeletePersonalData: (() -> Unit)? = null,
     showAppearanceSettings: Boolean = false,
@@ -3313,6 +3338,9 @@ private fun ProfileEditor(
         mutableStateOf(draft.durationMinutes.toString())
     }
     val durationValidationMessage = workoutDurationValidationMessage(durationInput)
+    val filteredSmartPickerTargetOptions = remember(draft.smartPickerBodyFilter, smartPickerTargetOptions) {
+        smartPickerTargetOptions.filter { it.matches(draft.smartPickerBodyFilter) }
+    }
 
     Column(
         modifier = Modifier
@@ -3376,6 +3404,53 @@ private fun ProfileEditor(
                 selected = draft.experience,
                 onSelect = { selected -> onDraftChange { it.copy(experience = selected) } },
             )
+        }
+
+        CompactSectionCard(
+            title = "Pick Next Exercise target",
+            subtitle = draft.smartPickerTargetMuscle?.let { target ->
+                "Current target: $target. The helper will front matching untouched exercises first."
+            } ?: "Optional. Save a muscle target to make the workout helper prioritize it before fatigue builds.",
+        ) {
+            Text("Body filter", fontWeight = FontWeight.SemiBold)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                SmartPickerMuscleBodyFilter.entries.forEach { filter ->
+                    ToastLiftFilterChip(
+                        selected = draft.smartPickerBodyFilter == filter,
+                        onClick = { onDraftChange { it.copy(smartPickerBodyFilter = filter) } },
+                        label = { Text(filter.label()) },
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(4.dp))
+            Text("Muscle target", fontWeight = FontWeight.SemiBold)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                ToastLiftFilterChip(
+                    selected = draft.smartPickerTargetMuscle == null,
+                    onClick = { onDraftChange { it.copy(smartPickerTargetMuscle = null) } },
+                    label = { Text("None") },
+                )
+                filteredSmartPickerTargetOptions.forEach { option ->
+                    ToastLiftFilterChip(
+                        selected = draft.smartPickerTargetMuscle == option.name,
+                        onClick = { onDraftChange { it.copy(smartPickerTargetMuscle = option.name) } },
+                        label = { Text(option.name) },
+                    )
+                }
+            }
+            if (filteredSmartPickerTargetOptions.isEmpty()) {
+                Text(
+                    "No muscles were found for this filter in the current catalog.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                Text(
+                    "Uses the detailed exercise-muscle mapping already in the catalog. More specific targets get more precise ranking.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
 
         CompactSectionCard(title = "Schedule", subtitle = "${draft.weeklyFrequency} days per week") {
@@ -3464,9 +3539,11 @@ private fun ProfileEditor(
         if (
             profile != null && (
                 onSetGymMachineCableBiasEnabled != null ||
-                    onSetHistoryWorkoutAbFlagsVisible != null ||
+                onSetHistoryWorkoutAbFlagsVisible != null ||
                     onSetDevPickNextExerciseEnabled != null ||
-                    onSetDevFruitExerciseIconsEnabled != null
+                    onSetDevFruitExerciseIconsEnabled != null ||
+                    onSetDevExerciseDetailPersonalNoteVisible != null ||
+                    onSetDevExerciseDetailLearnedPreferenceVisible != null
             )
         ) {
             CompactSectionCard(
@@ -3492,7 +3569,7 @@ private fun ProfileEditor(
                 onSetDevPickNextExerciseEnabled?.let { onToggle ->
                     SettingsSwitchRow(
                         label = "Show Pick Next Exercise helper",
-                        supportingText = "Adds a prominent workout button that randomly opens one untouched exercise so you can start logging without choosing manually.",
+                        supportingText = "Adds a prominent workout button that prioritizes untouched exercises matching your saved muscle target, then falls back when today's plan does not cover it.",
                         checked = profile.devPickNextExerciseEnabled,
                         onCheckedChange = onToggle,
                     )
@@ -3502,6 +3579,22 @@ private fun ProfileEditor(
                         label = "Use fruit workout badges",
                         supportingText = "Swaps the active workout exercise list from equipment initials to memorized fruit icons while the workout is in progress.",
                         checked = profile.devFruitExerciseIconsEnabled,
+                        onCheckedChange = onToggle,
+                    )
+                }
+                onSetDevExerciseDetailPersonalNoteVisible?.let { onToggle ->
+                    SettingsSwitchRow(
+                        label = "Show detail Personal Note card",
+                        supportingText = "Controls the Personal note card on the shared exercise detail sheet used across the app.",
+                        checked = profile.devExerciseDetailPersonalNoteVisible,
+                        onCheckedChange = onToggle,
+                    )
+                }
+                onSetDevExerciseDetailLearnedPreferenceVisible?.let { onToggle ->
+                    SettingsSwitchRow(
+                        label = "Show detail Learned Preference card",
+                        supportingText = "Controls the Learned preference card on the shared exercise detail sheet used across the app.",
+                        checked = profile.devExerciseDetailLearnedPreferenceVisible,
                         onCheckedChange = onToggle,
                     )
                 }
@@ -4906,6 +4999,7 @@ private fun ActiveSessionScreen(
                     item {
                         PickNextExerciseCallToAction(
                             untouchedExerciseCount = untouchedExerciseCount,
+                            smartTargetMuscle = state.profile?.smartPickerTargetMuscle,
                             onPickNextExercise = onPickNextExercise,
                         )
                     }
@@ -4981,6 +5075,7 @@ private fun ActiveSessionScreen(
 @Composable
 private fun PickNextExerciseCallToAction(
     untouchedExerciseCount: Int,
+    smartTargetMuscle: String?,
     onPickNextExercise: () -> Unit,
 ) {
     FeatureCard(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.98f)) {
@@ -4993,7 +5088,9 @@ private fun PickNextExerciseCallToAction(
             Text("Need a starting point?", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Text(
                 if (untouchedExerciseCount > 0) {
-                    "$untouchedExerciseCount untouched exercise${if (untouchedExerciseCount == 1) "" else "s"} left. Pick one at random and jump straight into logging."
+                    smartTargetMuscle?.let { target ->
+                        "$untouchedExerciseCount untouched exercise${if (untouchedExerciseCount == 1) "" else "s"} left. This fronts the ones that best hit $target so you can attack it before fatigue. If today's plan does not cover it, the picker falls back automatically."
+                    } ?: "$untouchedExerciseCount untouched exercise${if (untouchedExerciseCount == 1) "" else "s"} left. Save a muscle target in Profile to make this smart. Until then it falls back to the normal untouched picker."
                 } else {
                     "Every exercise has already been started. Pick one from the list to continue logging."
                 },
@@ -6479,6 +6576,7 @@ private fun openPreferredExternalLink(
 @Composable
 private fun ExerciseDetailSheet(
     detail: ExerciseDetail,
+    profile: UserProfile?,
     onDismiss: () -> Unit,
     recommendationBias: RecommendationBias,
     onSetRecommendationBias: (RecommendationBias) -> Unit,
@@ -6486,11 +6584,19 @@ private fun ExerciseDetailSheet(
     onToggleFavorite: () -> Unit,
     onOpenExerciseHistory: () -> Unit,
     onSaveExerciseNote: (String) -> Unit,
+    onSaveExerciseVideoLink: (Long?, String, String) -> Unit,
+    onDeleteExerciseVideoLink: (Long) -> Unit,
     onAddToBuilder: () -> Unit,
     onAddToMyPlan: (() -> Unit)?,
 ) {
     val context = LocalContext.current
+    val showPersonalNoteCard = profile?.devExerciseDetailPersonalNoteVisible != false
+    val showLearnedPreferenceCard = profile?.devExerciseDetailLearnedPreferenceVisible != false
     var noteDraft by rememberSaveable(detail.summary.id, detail.notes) { mutableStateOf(detail.notes.orEmpty()) }
+    var showDescriptionSheet by rememberSaveable(detail.summary.id) { mutableStateOf(false) }
+    var isAddingVideoLink by rememberSaveable(detail.summary.id) { mutableStateOf(false) }
+    var newVideoLabelDraft by rememberSaveable(detail.summary.id) { mutableStateOf("") }
+    var newVideoUrlDraft by rememberSaveable(detail.summary.id) { mutableStateOf("") }
     val persistedNote = detail.notes.orEmpty()
     val hasUnsavedNoteChanges = noteDraft != persistedNote
     val encodedQuery = remember(detail.summary.name) {
@@ -6519,7 +6625,13 @@ private fun ExerciseDetailSheet(
                         accent = accentForKey(detail.summary.equipment),
                     )
                     Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text(detail.summary.name, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                        SelectionContainer {
+                            Text(
+                                detail.summary.name,
+                                style = MaterialTheme.typography.headlineSmall,
+                                fontWeight = FontWeight.Bold,
+                            )
+                        }
                         Text(
                             "${detail.summary.bodyRegion} • ${detail.summary.targetMuscleGroup} • ${detail.summary.equipment}",
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -6615,68 +6727,183 @@ private fun ExerciseDetailSheet(
                     if (detail.synonyms.isNotEmpty()) {
                         Text("Also called: ${detail.synonyms.take(4).joinToString()}", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                }
-            }
-
-            FeatureCard(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.82f)) {
-                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("Personal note", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    Text(
-                        "Private note for this exercise. It stays on-device and is included in personal data export.",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                    OutlinedTextField(
-                        value = noteDraft,
-                        onValueChange = { noteDraft = it },
-                        modifier = Modifier.fillMaxWidth(),
-                        minLines = 4,
-                        maxLines = 6,
-                        label = { Text("Notes") },
-                        placeholder = { Text("Technique cues, pain triggers, setup reminders...") },
-                    )
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.End),
+                    TextButton(
+                        onClick = { showDescriptionSheet = true },
+                        modifier = Modifier.align(Alignment.Start),
+                        contentPadding = PaddingValues(0.dp),
                     ) {
-                        OutlinedButton(
-                            onClick = { noteDraft = persistedNote },
-                            enabled = hasUnsavedNoteChanges,
-                        ) {
-                            Text("Reset")
-                        }
-                        Button(
-                            onClick = { onSaveExerciseNote(noteDraft) },
-                            enabled = hasUnsavedNoteChanges,
-                        ) {
-                            Text(if (persistedNote.isBlank() && noteDraft.isBlank()) "Save" else "Save note")
-                        }
+                        Icon(
+                            imageVector = Icons.Rounded.Info,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp),
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Description")
                     }
                 }
             }
 
             FeatureCard(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.82f)) {
                 Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("Learned preference", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text("Video links", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                     Text(
-                        "Read-only score from workout feedback signals. Adding an exercise pushes it up, removing it pushes it down.",
+                        "Only YouTube and TikTok links are supported. Bundled video links, when present, stay read-only. Added links stay on-device, are included in personal data export, and can be edited or removed.",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.bodyMedium,
                     )
-                    Text(
-                        "Status: ${preferenceScoreStatus(detail.summary.preferenceScoreDelta)}",
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                    Text(
-                        "RO score: ${formatPreferenceScore(detail.summary.preferenceScoreDelta)}",
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                    OutlinedButton(
-                        onClick = onResetRecommendationPreferenceScore,
-                        enabled = detail.summary.preferenceScoreDelta != 0.0,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Text("Reset to default")
+                    if (detail.defaultVideoLinks.isEmpty() && detail.userVideoLinks.isEmpty()) {
+                        Text(
+                            "No saved YouTube or TikTok links yet. Add one when you need it or use the quick search card.",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
+                    detail.defaultVideoLinks.forEachIndexed { index, link ->
+                        CompactRow(
+                            title = link.label,
+                            subtitle = "RO default • ${link.url}",
+                            actionLabel = "Open",
+                            onAction = { openExternalUrl(context, link.url) },
+                        )
+                        if (index != detail.defaultVideoLinks.lastIndex || detail.userVideoLinks.isNotEmpty()) {
+                            Divider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.18f))
+                        }
+                    }
+                    detail.userVideoLinks.forEachIndexed { index, link ->
+                        EditableExerciseVideoLinkCard(
+                            link = link,
+                            onOpen = { openExternalUrl(context, link.url) },
+                            onSave = { label, url -> onSaveExerciseVideoLink(link.id, label, url) },
+                            onDelete = {
+                                link.id?.let(onDeleteExerciseVideoLink)
+                            },
+                        )
+                        if (index != detail.userVideoLinks.lastIndex) {
+                            Divider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.18f))
+                        }
+                    }
+                    Divider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.18f))
+                    if (!isAddingVideoLink) {
+                        OutlinedButton(
+                            onClick = { isAddingVideoLink = true },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text("Add link")
+                        }
+                    } else {
+                        Text("Add link", fontWeight = FontWeight.SemiBold)
+                        OutlinedTextField(
+                            value = newVideoLabelDraft,
+                            onValueChange = { newVideoLabelDraft = it },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            label = { Text("Label") },
+                            placeholder = { Text("Coach cue video") },
+                        )
+                        OutlinedTextField(
+                            value = newVideoUrlDraft,
+                            onValueChange = { newVideoUrlDraft = it },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            label = { Text("URL") },
+                            placeholder = { Text("https://youtube.com/...") },
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.End),
+                        ) {
+                            OutlinedButton(
+                                onClick = {
+                                    newVideoLabelDraft = ""
+                                    newVideoUrlDraft = ""
+                                    isAddingVideoLink = false
+                                },
+                            ) {
+                                Text("Cancel")
+                            }
+                            Button(
+                                onClick = {
+                                    onSaveExerciseVideoLink(null, newVideoLabelDraft, newVideoUrlDraft)
+                                    if (
+                                        normalizeExerciseVideoLinkLabel(newVideoLabelDraft) != null &&
+                                        normalizeExerciseVideoLinkUrl(newVideoUrlDraft) != null
+                                    ) {
+                                        newVideoLabelDraft = ""
+                                        newVideoUrlDraft = ""
+                                        isAddingVideoLink = false
+                                    }
+                                },
+                            ) {
+                                Text("Save link")
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (showPersonalNoteCard) {
+                FeatureCard(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.82f)) {
+                    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text("Personal note", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Text(
+                            "Private note for this exercise. It stays on-device and is included in personal data export.",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        OutlinedTextField(
+                            value = noteDraft,
+                            onValueChange = { noteDraft = it },
+                            modifier = Modifier.fillMaxWidth(),
+                            minLines = 4,
+                            maxLines = 6,
+                            label = { Text("Notes") },
+                            placeholder = { Text("Technique cues, pain triggers, setup reminders...") },
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.End),
+                        ) {
+                            OutlinedButton(
+                                onClick = { noteDraft = persistedNote },
+                                enabled = hasUnsavedNoteChanges,
+                            ) {
+                                Text("Reset")
+                            }
+                            Button(
+                                onClick = { onSaveExerciseNote(noteDraft) },
+                                enabled = hasUnsavedNoteChanges,
+                            ) {
+                                Text(if (persistedNote.isBlank() && noteDraft.isBlank()) "Save" else "Save note")
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (showLearnedPreferenceCard) {
+                FeatureCard(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.82f)) {
+                    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text("Learned preference", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Text(
+                            "Read-only score from workout feedback signals. Adding an exercise pushes it up, removing it pushes it down.",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        Text(
+                            "Status: ${preferenceScoreStatus(detail.summary.preferenceScoreDelta)}",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        Text(
+                            "RO score: ${formatPreferenceScore(detail.summary.preferenceScoreDelta)}",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        OutlinedButton(
+                            onClick = onResetRecommendationPreferenceScore,
+                            enabled = detail.summary.preferenceScoreDelta != 0.0,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text("Reset to default")
+                        }
                     }
                 }
             }
@@ -6708,6 +6935,123 @@ private fun ExerciseDetailSheet(
                 Text("Close")
             }
             Spacer(modifier = Modifier.height(24.dp))
+        }
+    }
+
+    if (showDescriptionSheet) {
+        ExerciseDescriptionSheet(
+            exerciseName = detail.summary.name,
+            description = detail.description,
+            onDismiss = { showDescriptionSheet = false },
+        )
+    }
+}
+
+@Composable
+private fun ExerciseDescriptionSheet(
+    exerciseName: String,
+    description: String?,
+    onDismiss: () -> Unit,
+) {
+    ToastLiftModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Text("Description", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+            Text(
+                exerciseName,
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            FeatureCard(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.82f)) {
+                SelectionContainer {
+                    Text(
+                        text = description ?: "No description",
+                        modifier = Modifier.padding(14.dp),
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = if (description == null) {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        } else {
+                            MaterialTheme.colorScheme.onSurface
+                        },
+                    )
+                }
+            }
+            Button(
+                onClick = onDismiss,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("Close")
+            }
+            Spacer(modifier = Modifier.height(24.dp))
+        }
+    }
+}
+
+private fun openExternalUrl(
+    context: android.content.Context,
+    webUrl: String,
+) {
+    val webIntent = Intent(Intent.ACTION_VIEW, Uri.parse(webUrl))
+        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    context.startActivity(webIntent)
+}
+
+@Composable
+private fun EditableExerciseVideoLinkCard(
+    link: dev.toastlabs.toastlift.data.ExerciseVideoLink,
+    onOpen: () -> Unit,
+    onSave: (String, String) -> Unit,
+    onDelete: () -> Unit,
+) {
+    var labelDraft by rememberSaveable(link.id, link.label) { mutableStateOf(link.label) }
+    var urlDraft by rememberSaveable(link.id, link.url) { mutableStateOf(link.url) }
+    val hasChanges = labelDraft != link.label || urlDraft != link.url
+
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text("Saved link", fontWeight = FontWeight.SemiBold)
+        OutlinedTextField(
+            value = labelDraft,
+            onValueChange = { labelDraft = it },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            label = { Text("Label") },
+        )
+        OutlinedTextField(
+            value = urlDraft,
+            onValueChange = { urlDraft = it },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            label = { Text("URL") },
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.End),
+        ) {
+            TextButton(onClick = onOpen) {
+                Text("Open")
+            }
+            TextButton(onClick = onDelete) {
+                Text("Remove")
+            }
+            OutlinedButton(
+                onClick = {
+                    labelDraft = link.label
+                    urlDraft = link.url
+                },
+                enabled = hasChanges,
+            ) {
+                Text("Reset")
+            }
+            Button(
+                onClick = { onSave(labelDraft, urlDraft) },
+                enabled = hasChanges,
+            ) {
+                Text("Save")
+            }
         }
     }
 }
