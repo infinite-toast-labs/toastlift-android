@@ -14,6 +14,7 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
@@ -53,11 +54,46 @@ data class StatusColors(
 internal val LocalStatusColors = staticCompositionLocalOf { StatusColors() }
 private val ToastLiftDarkStatusColors = StatusColors()
 private val ToastLiftLightStatusColors = StatusColors(
-    red = Color(0xFFBA1A1A),
-    orange = Color(0xFFA75400),
-    yellow = Color(0xFF7A5B00),
-    green = Color(0xFF006B4C),
-    blue = Color(0xFF005DB3),
+    red = Color(0xFFDE3C39),
+    orange = Color(0xFFD85B00),
+    yellow = Color(0xFFAD7E00),
+    green = Color(0xFF009D51),
+    blue = Color(0xFF0081E6),
+)
+
+// ── Shared UI Recipe Colors ───────────────────────────────────────────────────
+
+@Immutable
+data class UiColors(
+    val inkOnLightSurface: Color = Color(0xFF10131A),
+    val chromeDivider: Color = Color(0xFF2A2A2A),
+    val chromeBorder: Color = Color(0xFF2A2A2A),
+    val inactiveNavigation: Color = Color(0xFF666666),
+    val progressTrack: Color = Color(0xFF333333),
+    val highlight: Color = Color(0xFFFFFFFF),
+    val workoutDayFill: Color = Color(0xFF2A9D8F),
+    val rirEasy: Color = Color(0xFFFFF1A6),
+    val rirChallenge: Color = Color(0xFFFF4A6A),
+    val rirHard: Color = Color(0xFFE61E53),
+    val rirMax: Color = Color(0xFFB70F38),
+    val rirOnEasy: Color = Color(0xFF29221A),
+    val rirOnIntense: Color = Color(0xFFFFFFFF),
+    val recommendationMoreOften: Color = Color(0xFF86E3B4),
+    val recommendationLessOften: Color = Color(0xFFFFB38A),
+    val systemBar: Color = Color.Transparent,
+)
+
+internal val LocalUiColors = staticCompositionLocalOf { UiColors() }
+private val ToastLiftDarkUiColors = UiColors()
+private val ToastLiftLightUiColors = UiColors(
+    inkOnLightSurface = Color(0xFF13161B),
+    chromeDivider = Color(0xFFC1CCD8),
+    chromeBorder = Color(0xFFB2BFCE),
+    inactiveNavigation = Color(0xFF6E7C8C),
+    progressTrack = Color(0xFFCDDDEF),
+    workoutDayFill = Color(0xFF219E61),
+    recommendationMoreOften = Color(0xFF219E61),
+    recommendationLessOften = Color(0xFFD97232),
 )
 
 // ── Dark Theme ─────────────────────────────────────────────────────────────────
@@ -94,30 +130,30 @@ private val ToastLiftDarkColors = darkColorScheme(
 // ── Light Theme ────────────────────────────────────────────────────────────────
 
 private val ToastLiftLightColors = lightColorScheme(
-    primary = Color(0xFF5E7900),
+    primary = Color(0xFF3B7B1F),
     onPrimary = Color(0xFFFFFFFF),
-    primaryContainer = Color(0xFFE8F5C0),
-    onPrimaryContainer = Color(0xFF1A2200),
-    secondary = Color(0xFF006B4C),
-    onSecondary = Color(0xFFFFFFFF),
-    secondaryContainer = Color(0xFF8FF4D0),
-    onSecondaryContainer = Color(0xFF00201C),
-    tertiary = Color(0xFF805600),
-    onTertiary = Color(0xFFFFFFFF),
-    tertiaryContainer = Color(0xFFFFDEA6),
-    onTertiaryContainer = Color(0xFF281800),
-    background = Color(0xFFF5F5F5),
-    onBackground = Color(0xFF1A1A1A),
-    surface = Color(0xFFFFFFFF),
-    onSurface = Color(0xFF1A1A1A),
+    primaryContainer = Color(0xFFD1FEC3),
+    onPrimaryContainer = Color(0xFF13250C),
+    secondary = Color(0xFF009550),
+    onSecondary = Color(0xFF111318),
+    secondaryContainer = Color(0xFFBDFFD6),
+    onSecondaryContainer = Color(0xFF062615),
+    tertiary = Color(0xFFA57800),
+    onTertiary = Color(0xFF111318),
+    tertiaryContainer = Color(0xFFFFE8A5),
+    onTertiaryContainer = Color(0xFF2E1F00),
+    background = Color(0xFFFCFAF4),
+    onBackground = Color(0xFF17181C),
+    surface = Color(0xFFFFFDFA),
+    onSurface = Color(0xFF17181C),
     surfaceVariant = Color(0xFFE7EAF0),
-    onSurfaceVariant = Color(0xFF47505A),
-    outline = Color(0xFF717883),
-    outlineVariant = Color(0xFFC4C8D0),
-    error = Color(0xFFBA1A1A),
+    onSurfaceVariant = Color(0xFF4C5A69),
+    outline = Color(0xFF9CA6B1),
+    outlineVariant = Color(0xFFC7CFD7),
+    error = Color(0xFFD43030),
     onError = Color(0xFFFFFFFF),
-    errorContainer = Color(0xFFFFDAD6),
-    onErrorContainer = Color(0xFF410002),
+    errorContainer = Color(0xFFFFE3DE),
+    onErrorContainer = Color(0xFF461210),
 )
 
 // ── Typography ─────────────────────────────────────────────────────────────────
@@ -225,6 +261,9 @@ fun ToastLiftTheme(
             val activity = view.context.findActivity() ?: return@SideEffect
             val window = activity.window
             val controller = WindowCompat.getInsetsController(window, view)
+            val systemBarColor = if (isDarkTheme) ToastLiftDarkUiColors.systemBar else ToastLiftLightUiColors.systemBar
+            window.statusBarColor = systemBarColor.toArgb()
+            window.navigationBarColor = systemBarColor.toArgb()
             controller.isAppearanceLightStatusBars = !isDarkTheme
             controller.isAppearanceLightNavigationBars = !isDarkTheme
         }
@@ -232,6 +271,7 @@ fun ToastLiftTheme(
     CompositionLocalProvider(
         LocalToastLiftIsDarkTheme provides isDarkTheme,
         LocalStatusColors provides if (isDarkTheme) ToastLiftDarkStatusColors else ToastLiftLightStatusColors,
+        LocalUiColors provides if (isDarkTheme) ToastLiftDarkUiColors else ToastLiftLightUiColors,
     ) {
         MaterialTheme(
             colorScheme = if (isDarkTheme) ToastLiftDarkColors else ToastLiftLightColors,

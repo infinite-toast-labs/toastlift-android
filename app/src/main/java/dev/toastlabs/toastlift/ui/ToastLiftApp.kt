@@ -292,27 +292,27 @@ private val DarkOrangeAccent = GlowAccent(
 )
 
 private val LightEmberAccent = GlowAccent(
-    color = Color(0xFFBA1A1A),
+    color = Color(0xFFD73433),
     textOnAccent = Color(0xFFFFFFFF),
 )
 
 private val LightSurgeAccent = GlowAccent(
-    color = Color(0xFF006B4C),
+    color = Color(0xFF008141),
     textOnAccent = Color(0xFFFFFFFF),
 )
 
 private val LightGoldAccent = GlowAccent(
-    color = Color(0xFF7A5B00),
+    color = Color(0xFF976D00),
     textOnAccent = Color(0xFFFFFFFF),
 )
 
 private val LightAmethystAccent = GlowAccent(
-    color = Color(0xFF005DB3),
+    color = Color(0xFF1D76C8),
     textOnAccent = Color(0xFFFFFFFF),
 )
 
 private val LightOrangeAccent = GlowAccent(
-    color = Color(0xFFA75400),
+    color = Color(0xFFC14A00),
     textOnAccent = Color(0xFFFFFFFF),
 )
 
@@ -359,7 +359,7 @@ private fun readableTextColorFor(background: Color): Color {
     return if (background.luminance() < 0.34f) {
         MaterialTheme.colorScheme.onSurface
     } else {
-        Color(0xFF10131A)
+        LocalUiColors.current.inkOnLightSurface
     }
 }
 
@@ -733,8 +733,9 @@ fun ToastLiftApp(viewModel: ToastLiftViewModel) {
                                 !(state.selectedTab == MainTab.Generate && isGenerateFullscreenFlow) &&
                                 !(state.selectedTab == MainTab.Today && isTodayFullscreenFlow)
                             ) {
+                                val uiColors = LocalUiColors.current
                                 Column {
-                                    Divider(color = Color(0xFF2A2A2A), thickness = 1.dp)
+                                    Divider(color = uiColors.chromeDivider, thickness = 1.dp)
                                     NavigationBar(containerColor = MaterialTheme.colorScheme.background) {
                                         MainTab.entries.forEach { tab ->
                                             NavigationBarItem(
@@ -748,7 +749,7 @@ fun ToastLiftApp(viewModel: ToastLiftViewModel) {
                                                         tint = if (state.selectedTab == tab) {
                                                             MaterialTheme.colorScheme.onBackground
                                                         } else {
-                                                            Color(0xFF666666)
+                                                            uiColors.inactiveNavigation
                                                         },
                                                     )
                                                 },
@@ -761,7 +762,7 @@ fun ToastLiftApp(viewModel: ToastLiftViewModel) {
                                                         color = if (state.selectedTab == tab) {
                                                             MaterialTheme.colorScheme.onBackground
                                                         } else {
-                                                            Color(0xFF666666)
+                                                            uiColors.inactiveNavigation
                                                         },
                                                     )
                                                 },
@@ -1463,7 +1464,7 @@ private fun TodayCompletionMeterCard(model: TodayCompletionFeedbackModel) {
                     .fillMaxWidth()
                     .height(4.dp)
                     .clip(RoundedCornerShape(2.dp))
-                    .background(Color(0xFF333333)),
+                    .background(LocalUiColors.current.progressTrack),
             ) {
                 Box(
                     modifier = Modifier
@@ -2482,7 +2483,10 @@ private fun HistoryOverviewHeader(
         data.strengthScore?.let { score ->
             StrengthScoreCard(summary = score)
         }
-        FeatureCard(containerColor = MaterialTheme.colorScheme.surface) {
+        FeatureCard(
+            containerColor = MaterialTheme.colorScheme.surface,
+            accentKey = "calendar",
+        ) {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                     Text("Calendar", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black)
@@ -2643,6 +2647,8 @@ private fun HistoryStatTile(
     FeatureCard(
         modifier = modifier.then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
         containerColor = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, accent.color.copy(alpha = 0.22f)),
+        showTopAccent = false,
     ) {
         Column {
             Box(
@@ -2851,7 +2857,7 @@ private fun HistoryStreakScreen(data: HistoryDashboardData, onBack: () -> Unit) 
                             }
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                 week.days.forEach { day ->
-                                    val dayFill = if (day.workoutCount > 0) Color(0xFF2A9D8F) else MaterialTheme.colorScheme.surfaceVariant
+                                    val dayFill = if (day.workoutCount > 0) LocalUiColors.current.workoutDayFill else MaterialTheme.colorScheme.surfaceVariant
                                     Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                         Text(day.date.format(DateTimeFormatter.ofPattern("E")).take(2))
                                         Box(
@@ -2944,6 +2950,7 @@ private fun RewardMedallion(
     showRibbons: Boolean = true,
     iconSize: androidx.compose.ui.unit.Dp = 24.dp,
 ) {
+    val uiColors = LocalUiColors.current
     Box(modifier = modifier, contentAlignment = Alignment.Center) {
         Canvas(modifier = Modifier.fillMaxSize()) {
             val badgeCenter = androidx.compose.ui.geometry.Offset(size.width / 2f, size.height * if (showRibbons) 0.42f else 0.5f)
@@ -2986,13 +2993,13 @@ private fun RewardMedallion(
                 center = badgeCenter,
             )
             drawCircle(
-                color = Color.White.copy(alpha = if (achieved) 0.32f else 0.18f),
+                color = uiColors.highlight.copy(alpha = if (achieved) 0.32f else 0.18f),
                 radius = innerRadius,
                 center = badgeCenter,
                 style = Stroke(width = outerRadius * 0.18f),
             )
             drawCircle(
-                color = Color.White.copy(alpha = if (achieved) 0.18f else 0.1f),
+                color = uiColors.highlight.copy(alpha = if (achieved) 0.18f else 0.1f),
                 radius = innerRadius * 0.58f,
                 center = badgeCenter.copy(y = badgeCenter.y - (outerRadius * 0.18f)),
             )
@@ -3011,7 +3018,7 @@ private fun RewardMedallion(
                     .align(Alignment.TopEnd)
                     .size(18.dp)
                     .clip(CircleShape)
-                    .background(Color.White.copy(alpha = 0.92f)),
+                    .background(uiColors.highlight.copy(alpha = 0.92f)),
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
@@ -3043,7 +3050,7 @@ private fun ProgressPill(current: Int, target: Int, label: String, accent: GlowA
                 .fillMaxWidth()
                 .height(4.dp)
                 .clip(RoundedCornerShape(2.dp))
-                .background(Color(0xFF333333)),
+                .background(LocalUiColors.current.progressTrack),
         ) {
             Box(
                 modifier = Modifier
@@ -5721,6 +5728,7 @@ private fun ExerciseEffortPromptCard(
     onSelect: (Int) -> Unit,
 ) {
     val choices = listOf(4, 3, 2, 1, 0)
+    val uiColors = LocalUiColors.current
     FeatureCard(containerColor = MaterialTheme.colorScheme.surface) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -5739,10 +5747,10 @@ private fun ExerciseEffortPromptCard(
                 choices.forEach { value ->
                     val selected = selectedRepsInReserve == value
                     val containerColor = when (value) {
-                        4, 3 -> Color(0xFFFFF1A6)
-                        2 -> Color(0xFFFF4A6A)
-                        1 -> Color(0xFFE61E53)
-                        else -> Color(0xFFB70F38)
+                        4, 3 -> uiColors.rirEasy
+                        2 -> uiColors.rirChallenge
+                        1 -> uiColors.rirHard
+                        else -> uiColors.rirMax
                     }
                     Surface(
                         onClick = { onSelect(value) },
@@ -5759,7 +5767,7 @@ private fun ExerciseEffortPromptCard(
                                 formatRirLabel(value),
                                 style = MaterialTheme.typography.headlineSmall,
                                 fontWeight = FontWeight.Black,
-                                color = if (value >= 3) Color(0xFF29221A) else Color.White,
+                                color = if (value >= 3) uiColors.rirOnEasy else uiColors.rirOnIntense,
                             )
                         }
                     }
@@ -6200,6 +6208,7 @@ private fun SessionSetCompletionAction(
             },
     ) {
         val shimmerAlpha = ((1f - burstProgress) * 0.42f).coerceIn(0f, 0.42f)
+        val uiColors = LocalUiColors.current
         if (shimmerAlpha > 0f) {
             Canvas(modifier = Modifier.matchParentSize()) {
                 val sweepCenter = size.width * (0.18f + (burstProgress * 0.96f))
@@ -6207,7 +6216,7 @@ private fun SessionSetCompletionAction(
                     brush = Brush.horizontalGradient(
                         colors = listOf(
                             Color.Transparent,
-                            Color.White.copy(alpha = shimmerAlpha),
+                            uiColors.highlight.copy(alpha = shimmerAlpha),
                             Color.Transparent,
                         ),
                         startX = sweepCenter - (size.width * 0.28f),
@@ -7065,6 +7074,7 @@ private fun RichHeroCard(
     val heroContainer = MaterialTheme.colorScheme.surface
     val heroPrimary = readableTextColorFor(heroContainer)
     val heroSecondary = readableMutedTextColorFor(heroContainer)
+    val uiColors = LocalUiColors.current
     FeatureCard(
         containerColor = heroContainer,
         contentColor = heroPrimary,
@@ -7075,7 +7085,7 @@ private fun RichHeroCard(
                 Text(eyebrow.uppercase(), style = MaterialTheme.typography.labelLarge, color = accentSet.color, fontWeight = FontWeight.Bold)
                 Text(title, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Black, color = heroPrimary)
                 Text(subtitle, color = heroSecondary)
-                Divider(color = Color(0xFF2A2A2A))
+                Divider(color = uiColors.chromeDivider)
                 content()
             })
         }
@@ -7097,7 +7107,7 @@ private fun StatRail(items: List<Triple<String, String, String>>) {
                     containerColor = cardContainer,
                     contentColor = cardPrimary,
                 ),
-                border = BorderStroke(1.dp, Color(0xFF2A2A2A)),
+                border = BorderStroke(1.dp, accent.color.copy(alpha = 0.22f)),
                 elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
             ) {
                 Column {
@@ -7595,10 +7605,10 @@ private fun SettingsSwitchRow(
 @Composable
 private fun RecommendationBiasIndicator(bias: RecommendationBias) {
     if (bias == RecommendationBias.Neutral) return
-    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val uiColors = LocalUiColors.current
     val tint = when (bias) {
-        RecommendationBias.MoreOften -> if (isDark) Color(0xFF86E3B4) else Color(0xFF126B43)
-        RecommendationBias.LessOften -> if (isDark) Color(0xFFFFB38A) else Color(0xFF8A4B12)
+        RecommendationBias.MoreOften -> uiColors.recommendationMoreOften
+        RecommendationBias.LessOften -> uiColors.recommendationLessOften
         RecommendationBias.Neutral -> Color.Unspecified
     }
     Text(
@@ -7705,19 +7715,24 @@ private fun FeatureCard(
     modifier: Modifier = Modifier,
     containerColor: Color = MaterialTheme.colorScheme.surface,
     contentColor: Color = Color.Unspecified,
-    border: BorderStroke? = BorderStroke(1.dp, Color(0xFF2A2A2A)),
+    border: BorderStroke? = null,
     elevation: androidx.compose.ui.unit.Dp = 0.dp,
     fullWidth: Boolean = true,
     accentKey: String? = null,
     showTopAccent: Boolean = true,
     content: @Composable () -> Unit,
 ) {
+    val uiColors = LocalUiColors.current
     val resolvedContentColor = if (contentColor == Color.Unspecified) readableTextColorFor(containerColor) else contentColor
     val topAccentColor = if (showTopAccent) {
         (if (accentKey != null) accentForKey(accentKey) else fallbackAccentForContainer(containerColor)).color
     } else {
         Color.Transparent
     }
+    val resolvedBorder = border ?: BorderStroke(
+        1.dp,
+        if (showTopAccent) topAccentColor.copy(alpha = 0.22f) else uiColors.chromeBorder,
+    )
     Card(
         modifier = if (fullWidth) modifier.fillMaxWidth() else modifier,
         shape = RoundedCornerShape(10.dp),
@@ -7726,7 +7741,7 @@ private fun FeatureCard(
             contentColor = resolvedContentColor,
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = elevation),
-        border = border,
+        border = resolvedBorder,
     ) {
         Column {
             if (showTopAccent) {
@@ -8150,6 +8165,7 @@ private fun WeeklyMuscleTargetHexagon(
     summary: WeeklyMuscleTargetSummary,
     modifier: Modifier = Modifier,
 ) {
+    val uiColors = LocalUiColors.current
     val surfaceVariant = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.82f)
     val outlineStrong = MaterialTheme.colorScheme.outline.copy(alpha = 0.18f)
     val outlineSoft = MaterialTheme.colorScheme.outline.copy(alpha = 0.12f)
@@ -8227,7 +8243,7 @@ private fun WeeklyMuscleTargetHexagon(
             )
             drawPath(
                 path = filledPath,
-                color = Color.White.copy(alpha = 0.16f),
+                color = uiColors.highlight.copy(alpha = 0.16f),
                 style = Stroke(width = 2.dp.toPx()),
             )
         }
