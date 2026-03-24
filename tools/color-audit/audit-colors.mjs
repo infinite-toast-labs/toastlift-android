@@ -259,6 +259,31 @@ function buildAudits() {
       minContrast: 4.5,
     });
 
+    audits.push({
+      kind: "component",
+      mode,
+      name: "Add Exercise top bar close icon",
+      foreground: scheme.onBackground,
+      background: scheme.background,
+      minContrast: 4.5,
+    });
+    audits.push({
+      kind: "component",
+      mode,
+      name: "Add Exercise top bar search icon",
+      foreground: scheme.onBackground,
+      background: scheme.background,
+      minContrast: 4.5,
+    });
+    audits.push({
+      kind: "component",
+      mode,
+      name: "Add Exercise top bar overflow menu icon",
+      foreground: scheme.onBackground,
+      background: scheme.background,
+      minContrast: 4.5,
+    });
+
     const unselectedChip = toneChipColors(
       scheme.surfaceVariant,
       scheme,

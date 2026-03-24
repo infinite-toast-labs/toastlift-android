@@ -131,6 +131,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.snapshots.SnapshotStateMap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Alignment
@@ -237,8 +238,11 @@ import dev.toastlabs.toastlift.data.isValidWorkoutDurationMinutes
 import dev.toastlabs.toastlift.data.intensityPrescriptionIntentForFocusKey
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.launch
 import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
@@ -535,9 +539,11 @@ private fun compactSplitLabel(name: String): String = when (name) {
 }
 
 internal fun snackbarDurationFor(message: String): SnackbarDuration = when (message) {
-    PROFILE_SAVED_MESSAGE -> SnackbarDuration.Long
+    PROFILE_SAVED_MESSAGE -> SnackbarDuration.Short
     else -> SnackbarDuration.Short
 }
+
+internal fun snackbarMessages(messages: Flow<String?>): Flow<String> = messages.filterNotNull()
 
 internal fun workoutDurationValidationMessage(input: String): String? {
     if (input.isBlank()) {
@@ -587,15 +593,16 @@ fun ToastLiftApp(viewModel: ToastLiftViewModel) {
         }
     }
 
-    LaunchedEffect(latestMessage.value) {
-        val message = latestMessage.value ?: return@LaunchedEffect
-        snackbars.currentSnackbarData?.dismiss()
-        snackbars.showSnackbar(
-            message = message,
-            duration = snackbarDurationFor(message),
-        )
-        if (viewModel.uiState.message == message) {
-            viewModel.dismissMessage()
+    LaunchedEffect(Unit) {
+        snackbarMessages(snapshotFlow { latestMessage.value }).collectLatest { message ->
+            snackbars.currentSnackbarData?.dismiss()
+            snackbars.showSnackbar(
+                message = message,
+                duration = snackbarDurationFor(message),
+            )
+            if (viewModel.uiState.message == message) {
+                viewModel.dismissMessage()
+            }
         }
     }
 
@@ -4242,7 +4249,11 @@ private fun BuilderAddExercisesScreen(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             IconButton(onClick = onDismiss) {
-                Icon(imageVector = Icons.Rounded.Close, contentDescription = "Close add exercises")
+                Icon(
+                    imageVector = Icons.Rounded.Close,
+                    contentDescription = "Close add exercises",
+                    tint = MaterialTheme.colorScheme.onBackground,
+                )
             }
             if (state.librarySearchVisible) {
                 OutlinedTextField(
@@ -4280,7 +4291,11 @@ private fun BuilderAddExercisesScreen(
                     )
                 }
                 IconButton(onClick = onToggleSearch) {
-                    Icon(imageVector = Icons.Rounded.Search, contentDescription = "Search exercises")
+                    Icon(
+                        imageVector = Icons.Rounded.Search,
+                        contentDescription = "Search exercises",
+                        tint = MaterialTheme.colorScheme.onBackground,
+                    )
                 }
                 Box {
                     IconButton(onClick = { showMenu = true }) {
@@ -4288,6 +4303,7 @@ private fun BuilderAddExercisesScreen(
                             "⋮",
                             modifier = Modifier.semantics { contentDescription = "Add exercise options" },
                             style = MaterialTheme.typography.titleLarge,
+                            color = MaterialTheme.colorScheme.onBackground,
                         )
                     }
                     DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
