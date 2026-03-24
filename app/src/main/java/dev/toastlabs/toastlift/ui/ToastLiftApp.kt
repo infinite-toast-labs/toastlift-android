@@ -97,6 +97,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
@@ -143,6 +144,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.graphicsLayer
@@ -162,7 +164,9 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.DialogWindowProvider
 import androidx.core.view.WindowCompat
@@ -253,52 +257,102 @@ private val MainTab.icon
     }
 
 private data class GlowAccent(
-    val start: Color,
-    val end: Color,
-    val glow: Color,
-    val textOnAccent: Color = Color.White,
+    val color: Color,
+    val textOnAccent: Color = Color(0xFF0E0E0E),
+) {
+    // Compatibility shims for migration — map old fields to flat color
+    val start: Color get() = color
+    val end: Color get() = color
+    val glow: Color get() = color.copy(alpha = 0.12f)
+}
+
+private val DarkEmberAccent = GlowAccent(
+    color = Color(0xFFFF3D3D),
 )
 
-private val emberAccent = GlowAccent(
-    start = Color(0xFFFF5A7D),
-    end = Color(0xFFFF835B),
-    glow = Color(0x66FF5A7D),
-)
-
-private val surgeAccent = GlowAccent(
-    start = Color(0xFF72E4CF),
-    end = Color(0xFF3AB6D5),
-    glow = Color(0x6672E4CF),
+private val DarkSurgeAccent = GlowAccent(
+    color = Color(0xFF3DFFA0),
     textOnAccent = Color(0xFF082624),
 )
 
-private val goldAccent = GlowAccent(
-    start = Color(0xFFFFD166),
-    end = Color(0xFFFFA94D),
-    glow = Color(0x66FFD166),
-    textOnAccent = Color(0xFF382200),
+private val DarkGoldAccent = GlowAccent(
+    color = Color(0xFFFFC940),
+    textOnAccent = Color(0xFF1A1400),
 )
 
 private val ACTIVE_SESSION_HEADER_TOP_PADDING = 5.dp
 private const val SESSION_SET_RENUMBER_DELAY_MS = 280L
 
-private val amethystAccent = GlowAccent(
-    start = Color(0xFFB388FF),
-    end = Color(0xFF7A8CFF),
-    glow = Color(0x66A388FF),
+private val DarkAmethystAccent = GlowAccent(
+    color = Color(0xFF3D9FFF),
 )
 
+private val DarkOrangeAccent = GlowAccent(
+    color = Color(0xFFFF7A1A),
+)
+
+private val LightEmberAccent = GlowAccent(
+    color = Color(0xFFBA1A1A),
+    textOnAccent = Color(0xFFFFFFFF),
+)
+
+private val LightSurgeAccent = GlowAccent(
+    color = Color(0xFF006B4C),
+    textOnAccent = Color(0xFFFFFFFF),
+)
+
+private val LightGoldAccent = GlowAccent(
+    color = Color(0xFF7A5B00),
+    textOnAccent = Color(0xFFFFFFFF),
+)
+
+private val LightAmethystAccent = GlowAccent(
+    color = Color(0xFF005DB3),
+    textOnAccent = Color(0xFFFFFFFF),
+)
+
+private val LightOrangeAccent = GlowAccent(
+    color = Color(0xFFA75400),
+    textOnAccent = Color(0xFFFFFFFF),
+)
+
+private val emberAccent: GlowAccent
+    @Composable get() = if (LocalToastLiftIsDarkTheme.current) DarkEmberAccent else LightEmberAccent
+
+private val surgeAccent: GlowAccent
+    @Composable get() = if (LocalToastLiftIsDarkTheme.current) DarkSurgeAccent else LightSurgeAccent
+
+private val goldAccent: GlowAccent
+    @Composable get() = if (LocalToastLiftIsDarkTheme.current) DarkGoldAccent else LightGoldAccent
+
+private val amethystAccent: GlowAccent
+    @Composable get() = if (LocalToastLiftIsDarkTheme.current) DarkAmethystAccent else LightAmethystAccent
+
+private val orangeAccent: GlowAccent
+    @Composable get() = if (LocalToastLiftIsDarkTheme.current) DarkOrangeAccent else LightOrangeAccent
+
+@Composable
 private fun accentForKey(key: String): GlowAccent {
     val normalized = key.lowercase()
     return when {
-        listOf("history", "streak", "calendar", "rest", "recovery", "readiness").any(normalized::contains) -> surgeAccent
-        listOf("goal", "template", "volume", "milestone", "plan", "builder", "pr").any(normalized::contains) -> goldAccent
-        listOf("profile", "split", "generate", "adaptive", "equipment", "gym", "home").any(normalized::contains) -> amethystAccent
+        listOf("history", "streak", "calendar", "rest", "recovery", "readiness", "schedule").any(normalized::contains) -> surgeAccent
+        listOf("goal", "template", "volume", "milestone", "plan", "builder", "pr", "strength", "progress", "target", "muscle", "movement", "review").any(normalized::contains) -> goldAccent
+        listOf("profile", "split", "generate", "adaptive", "equipment", "gym", "home", "smart", "appearance", "theme", "privacy", "workout", "session", "library").any(normalized::contains) -> amethystAccent
         else -> emberAccent
     }
 }
 
-private fun accentBrush(accent: GlowAccent): Brush = Brush.linearGradient(listOf(accent.start, accent.end))
+@Composable
+private fun fallbackAccentForContainer(containerColor: Color): GlowAccent {
+    return when {
+        containerColor.green > containerColor.red && containerColor.green > containerColor.blue -> surgeAccent
+        containerColor.blue > containerColor.red && containerColor.blue >= containerColor.green -> amethystAccent
+        containerColor.red > containerColor.green && containerColor.red > containerColor.blue -> emberAccent
+        containerColor.luminance() > 0.7f -> goldAccent
+        else -> amethystAccent
+    }
+}
+
 
 @Composable
 private fun readableTextColorFor(background: Color): Color {
@@ -314,6 +368,72 @@ private fun readableMutedTextColorFor(background: Color): Color {
     val primary = readableTextColorFor(background)
     val alpha = if (background.luminance() < 0.34f) 0.78f else 0.72f
     return primary.copy(alpha = alpha)
+}
+
+private data class ToneChipColors(
+    val container: Color,
+    val content: Color,
+    val border: Color,
+)
+
+@Composable
+private fun toneChipColors(
+    tint: Color,
+    base: Color = MaterialTheme.colorScheme.surface,
+    defaultOverlayAlpha: Float = if (LocalToastLiftIsDarkTheme.current) 0.22f else 0.16f,
+): ToneChipColors {
+    val overlayAlpha = if (tint.alpha < 0.999f) tint.alpha else defaultOverlayAlpha
+    val opaqueTint = tint.copy(alpha = 1f)
+    val container = opaqueTint.copy(alpha = overlayAlpha).compositeOver(base)
+    return ToneChipColors(
+        container = container,
+        content = readableTextColorFor(container),
+        border = opaqueTint.copy(alpha = if (LocalToastLiftIsDarkTheme.current) 0.38f else 0.22f).compositeOver(base),
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ToastLiftFilterChip(
+    selected: Boolean,
+    onClick: () -> Unit,
+    label: @Composable () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+) {
+    val surface = MaterialTheme.colorScheme.surface
+    val unselected = toneChipColors(
+        tint = MaterialTheme.colorScheme.surfaceVariant,
+        base = surface,
+        defaultOverlayAlpha = if (LocalToastLiftIsDarkTheme.current) 0.92f else 1f,
+    )
+    val selectedColors = toneChipColors(
+        tint = MaterialTheme.colorScheme.primaryContainer,
+        base = surface,
+        defaultOverlayAlpha = if (LocalToastLiftIsDarkTheme.current) 0.82f else 1f,
+    )
+    val borderColor = if (selected) {
+        MaterialTheme.colorScheme.primary.copy(alpha = if (LocalToastLiftIsDarkTheme.current) 0.58f else 0.34f)
+    } else {
+        MaterialTheme.colorScheme.outline.copy(alpha = if (LocalToastLiftIsDarkTheme.current) 0.54f else 0.28f)
+    }
+    FilterChip(
+        modifier = modifier,
+        selected = selected,
+        onClick = onClick,
+        enabled = enabled,
+        label = label,
+        colors = FilterChipDefaults.filterChipColors(
+            containerColor = unselected.container,
+            labelColor = unselected.content,
+            iconColor = unselected.content,
+            selectedContainerColor = selectedColors.container,
+            selectedLabelColor = selectedColors.content,
+            selectedLeadingIconColor = selectedColors.content,
+            selectedTrailingIconColor = selectedColors.content,
+        ),
+        border = BorderStroke(1.dp, borderColor),
+    )
 }
 
 internal enum class TodayProgramActionConfirmation {
@@ -569,7 +689,15 @@ fun ToastLiftApp(viewModel: ToastLiftViewModel) {
                                 !(state.selectedTab == MainTab.Today && isTodayFullscreenFlow)
                             ) {
                                 CenterAlignedTopAppBar(
-                                    title = { Text(state.selectedTab.label, fontWeight = FontWeight.SemiBold) },
+                                    title = {
+                                        Text(
+                                            state.selectedTab.label.uppercase(),
+                                            fontFamily = MonoFamily,
+                                            fontSize = 12.sp,
+                                            letterSpacing = 0.15.em,
+                                            fontWeight = FontWeight.Medium,
+                                        )
+                                    },
                                     actions = {
                                         var expanded by remember { mutableStateOf(false) }
                                         IconButton(onClick = { expanded = true }) {
@@ -605,20 +733,40 @@ fun ToastLiftApp(viewModel: ToastLiftViewModel) {
                                 !(state.selectedTab == MainTab.Generate && isGenerateFullscreenFlow) &&
                                 !(state.selectedTab == MainTab.Today && isTodayFullscreenFlow)
                             ) {
-                                NavigationBar(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f)) {
-                                    MainTab.entries.forEach { tab ->
-                                        NavigationBarItem(
-                                            selected = state.selectedTab == tab,
-                                            onClick = { viewModel.selectTab(tab) },
-                                            icon = {
-                                                Icon(
-                                                    imageVector = tab.icon,
-                                                    contentDescription = tab.label,
-                                                    modifier = Modifier.size(20.dp),
-                                                )
-                                            },
-                                            label = { Text(tab.label) },
-                                        )
+                                Column {
+                                    Divider(color = Color(0xFF2A2A2A), thickness = 1.dp)
+                                    NavigationBar(containerColor = MaterialTheme.colorScheme.background) {
+                                        MainTab.entries.forEach { tab ->
+                                            NavigationBarItem(
+                                                selected = state.selectedTab == tab,
+                                                onClick = { viewModel.selectTab(tab) },
+                                                icon = {
+                                                    Icon(
+                                                        imageVector = tab.icon,
+                                                        contentDescription = tab.label,
+                                                        modifier = Modifier.size(20.dp),
+                                                        tint = if (state.selectedTab == tab) {
+                                                            MaterialTheme.colorScheme.onBackground
+                                                        } else {
+                                                            Color(0xFF666666)
+                                                        },
+                                                    )
+                                                },
+                                                label = {
+                                                    Text(
+                                                        tab.label.uppercase(),
+                                                        fontFamily = MonoFamily,
+                                                        fontSize = 9.sp,
+                                                        letterSpacing = 0.12.em,
+                                                        color = if (state.selectedTab == tab) {
+                                                            MaterialTheme.colorScheme.onBackground
+                                                        } else {
+                                                            Color(0xFF666666)
+                                                        },
+                                                    )
+                                                },
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -627,15 +775,7 @@ fun ToastLiftApp(viewModel: ToastLiftViewModel) {
                         Box(
                             modifier = Modifier
                                 .fillMaxSize()
-                                .background(
-                                    Brush.verticalGradient(
-                                        listOf(
-                                            MaterialTheme.colorScheme.background.copy(alpha = 0.92f),
-                                            MaterialTheme.colorScheme.background.copy(alpha = 0.84f),
-                                            MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
-                                        ),
-                                    ),
-                                )
+                                .background(MaterialTheme.colorScheme.background)
                                 .padding(padding),
                         ) {
                             AnimatedContent(
@@ -914,56 +1054,21 @@ private fun LoadingScreen() {
 
 @Composable
 private fun DopamineBackdrop() {
-    val isDarkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f
-    val emberGlow = if (isDarkTheme) emberAccent.glow else emberAccent.glow.copy(alpha = 0.18f)
-    val surgeGlow = if (isDarkTheme) surgeAccent.glow.copy(alpha = 0.55f) else surgeAccent.glow.copy(alpha = 0.18f)
-    val amethystGlow = if (isDarkTheme) amethystAccent.glow.copy(alpha = 0.32f) else amethystAccent.glow.copy(alpha = 0.12f)
-    Box(modifier = Modifier.fillMaxSize()) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(320.dp)
-                .background(
-                    Brush.radialGradient(
-                        colors = listOf(
-                            emberGlow,
-                            Color.Transparent,
-                        ),
-                        radius = 720f,
+    // Minimal single radial glow — replaces the three overlapping gradient blobs
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(200.dp)
+            .background(
+                Brush.radialGradient(
+                    colors = listOf(
+                        MaterialTheme.colorScheme.primary.copy(alpha = 0.04f),
+                        Color.Transparent,
                     ),
+                    radius = 800f,
                 ),
-        )
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(420.dp)
-                .offset(x = 80.dp, y = 140.dp)
-                .background(
-                    Brush.radialGradient(
-                        colors = listOf(
-                            surgeGlow,
-                            Color.Transparent,
-                        ),
-                        radius = 760f,
-                    ),
-                ),
-        )
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(300.dp)
-                .offset(x = 140.dp, y = 12.dp)
-                .background(
-                    Brush.radialGradient(
-                        colors = listOf(
-                            amethystGlow,
-                            Color.Transparent,
-                        ),
-                        radius = 620f,
-                    ),
-                ),
-        )
-    }
+            ),
+    )
 }
 
 @Composable
@@ -1163,12 +1268,11 @@ private fun TodayScreen(
             )
         } else {
             // ── Standard Today UI ──
-            RichHeroCard(
-                eyebrow = "My Plan",
-                title = profile?.goal ?: "Build your next workout",
-                subtitle = profile?.let { "${it.durationMinutes} min • ${it.weeklyFrequency} days/week • ${it.experience}" }
+        RichHeroCard(
+            eyebrow = "My Plan",
+            title = profile?.goal ?: "Build your next workout",
+            subtitle = profile?.let { "${it.durationMinutes} min • ${it.weeklyFrequency} days/week • ${it.experience}" }
                     ?: "Adaptive sessions tuned to your recent work.",
-                accent = MaterialTheme.colorScheme.secondaryContainer,
             ) {
                 Text("Quick start a generated session or jump into the builder.")
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -1357,16 +1461,16 @@ private fun TodayCompletionMeterCard(model: TodayCompletionFeedbackModel) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(12.dp)
-                    .clip(RoundedCornerShape(999.dp))
-                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.9f)),
+                    .height(4.dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(Color(0xFF333333)),
             ) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth(animatedProgress)
                         .fillMaxHeight()
-                        .clip(RoundedCornerShape(999.dp))
-                        .background(accentBrush(accent)),
+                        .clip(RoundedCornerShape(2.dp))
+                        .background(accent.color),
                 )
             }
             Text(
@@ -1685,7 +1789,6 @@ private fun GenerateScreen(
             eyebrow = "Smart Generator",
             title = activeProfile?.let { state.splitPrograms.firstOrNull { split -> split.id == it.splitProgramId }?.name ?: "Adaptive" } ?: "Adaptive",
             subtitle = activeProfile?.let { "${it.goal} • ${it.durationMinutes} min • ${it.workoutStyle}" } ?: "Profile-driven workout generation",
-            accent = MaterialTheme.colorScheme.primaryContainer,
         ) {
             Text("The workout detail lives in a bottom sheet so the generator screen stays compact.")
             Button(onClick = onGenerate) { Text("Generate workout") }
@@ -2274,6 +2377,7 @@ private fun historyStatRewardIcon(title: String): ImageVector? = when (title) {
     else -> null
 }
 
+@Composable
 private fun milestoneRewardSpec(milestone: MilestoneProgress): RewardVisualSpec {
     val achieved = milestone.current >= milestone.target
     return when (milestone.title) {
@@ -2323,6 +2427,7 @@ private fun milestoneRewardSpec(milestone: MilestoneProgress): RewardVisualSpec 
     }
 }
 
+@Composable
 private fun streakRewardSpec(currentStreakWeeks: Int): RewardVisualSpec = when {
     currentStreakWeeks >= 12 -> RewardVisualSpec(
         icon = Icons.Rounded.LocalFireDepartment,
@@ -2401,7 +2506,7 @@ private fun HistoryOverviewHeader(
                                     .size(width = 26.dp, height = 6.dp)
                                     .background(
                                         if (day.workoutCount > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-                                        shape = RoundedCornerShape(6.dp),
+                                        shape = RoundedCornerShape(10.dp),
                                     ),
                             )
                         }
@@ -2426,6 +2531,7 @@ private fun strengthScoreTrendIcon(summary: StrengthScoreSummary): ImageVector =
     else -> Icons.Rounded.QueryStats
 }
 
+@Composable
 private fun strengthScoreTrendAccent(summary: StrengthScoreSummary): GlowAccent = when {
     summary.previousScore == null -> amethystAccent
     summary.deltaFromPrevious > 0 -> surgeAccent
@@ -2508,8 +2614,8 @@ private fun StrengthScoreCard(summary: StrengthScoreSummary) {
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .height(((point.runningScore.toFloat() / maxScore) * 68f).coerceAtLeast(12f).dp)
-                                        .clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp, bottomStart = 8.dp, bottomEnd = 8.dp))
-                                        .background(accentBrush(accent)),
+                                        .clip(RoundedCornerShape(topStart = 2.dp, topEnd = 2.dp))
+                                        .background(accent.color),
                                 )
                             }
                             Text(
@@ -2536,40 +2642,41 @@ private fun HistoryStatTile(
     val rewardIcon = historyStatRewardIcon(title)
     FeatureCard(
         modifier = modifier.then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
-        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.92f),
+        containerColor = MaterialTheme.colorScheme.surface,
     ) {
-        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(4.dp)
-                    .clip(RoundedCornerShape(999.dp))
-                    .background(accentBrush(accent)),
+                    .height(2.dp)
+                    .background(accent.color),
             )
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(title.uppercase(), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                rewardIcon?.let { icon ->
-                    Box(
-                        modifier = Modifier
-                            .size(30.dp)
-                            .clip(CircleShape)
-                            .background(accent.start.copy(alpha = 0.14f)),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(
-                            imageVector = icon,
-                            contentDescription = null,
-                            tint = accent.start,
-                            modifier = Modifier.size(16.dp),
-                        )
+            Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(title.uppercase(), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    rewardIcon?.let { icon ->
+                        Box(
+                            modifier = Modifier
+                                .size(30.dp)
+                                .clip(CircleShape)
+                                .background(accent.color.copy(alpha = 0.12f)),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                imageVector = icon,
+                                contentDescription = null,
+                                tint = accent.color,
+                                modifier = Modifier.size(16.dp),
+                            )
+                        }
                     }
                 }
+                Text(value, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black)
             }
-            Text(value, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black)
         }
     }
 }
@@ -2671,19 +2778,11 @@ private fun HistoryStreakScreen(data: HistoryDashboardData, onBack: () -> Unit) 
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             HistoryDetailHeader(title = "Streak", onBack = onBack)
-            FeatureCard(containerColor = MaterialTheme.colorScheme.surface) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(
-                            Brush.horizontalGradient(
-                                colors = listOf(
-                                    streakSpec.accent.glow.copy(alpha = 0.24f),
-                                    Color.Transparent,
-                                ),
-                            ),
-                        ),
-                ) {
+            FeatureCard(
+                containerColor = MaterialTheme.colorScheme.surface,
+                accentKey = "streak history ${streakSpec.token}",
+            ) {
+                Column {
                     Row(
                         modifier = Modifier.padding(16.dp),
                         horizontalArrangement = Arrangement.spacedBy(16.dp),
@@ -2697,7 +2796,7 @@ private fun HistoryStreakScreen(data: HistoryDashboardData, onBack: () -> Unit) 
                             iconSize = 30.dp,
                         )
                         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            MiniTag(streakSpec.token, accent = streakSpec.accent.start.copy(alpha = 0.18f))
+                            MiniTag(streakSpec.token, accent = streakSpec.accent.color.copy(alpha = 0.18f))
                             Text("${data.currentStreakWeeks}-Week Streak", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Black)
                             Text(
                                 streakSpec.message,
@@ -2758,7 +2857,7 @@ private fun HistoryStreakScreen(data: HistoryDashboardData, onBack: () -> Unit) 
                                         Box(
                                             modifier = Modifier
                                                 .size(34.dp)
-                                                .background(dayFill, RoundedCornerShape(12.dp)),
+                                                .background(dayFill, RoundedCornerShape(10.dp)),
                                             contentAlignment = Alignment.Center,
                                         ) {
                                             Text(
@@ -2792,19 +2891,11 @@ private fun HistoryDetailHeader(title: String, onBack: () -> Unit) {
 private fun MilestoneRewardCard(milestone: MilestoneProgress) {
     val achieved = milestone.current >= milestone.target
     val spec = milestoneRewardSpec(milestone)
-    FeatureCard(containerColor = MaterialTheme.colorScheme.surface) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(
-                    Brush.horizontalGradient(
-                        colors = listOf(
-                            spec.accent.glow.copy(alpha = 0.22f),
-                            Color.Transparent,
-                        ),
-                    ),
-                ),
-        ) {
+    FeatureCard(
+        containerColor = MaterialTheme.colorScheme.surface,
+        accentKey = "milestone ${milestone.title}",
+    ) {
+        Column {
             Row(
                 modifier = Modifier.padding(16.dp),
                 horizontalArrangement = Arrangement.spacedBy(16.dp),
@@ -2935,7 +3026,8 @@ private fun RewardMedallion(
 }
 
 @Composable
-private fun ProgressPill(current: Int, target: Int, label: String, accent: GlowAccent = accentForKey(label)) {
+private fun ProgressPill(current: Int, target: Int, label: String, accent: GlowAccent? = null) {
+    val resolvedAccent = accent ?: accentForKey(label)
     val progress = (current.toFloat() / target.toFloat()).coerceIn(0f, 1f)
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(
@@ -2944,20 +3036,21 @@ private fun ProgressPill(current: Int, target: Int, label: String, accent: GlowA
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(label, fontWeight = FontWeight.SemiBold)
-            Text("${(progress * 100).roundToInt()}%", color = accent.start, fontWeight = FontWeight.Bold)
+            Text("${(progress * 100).roundToInt()}%", color = resolvedAccent.color, fontWeight = FontWeight.Bold)
         }
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(14.dp)
-                .clip(RoundedCornerShape(10.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.75f)),
+                .height(4.dp)
+                .clip(RoundedCornerShape(2.dp))
+                .background(Color(0xFF333333)),
         ) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth(progress)
                     .fillMaxSize()
-                    .background(accentBrush(accent)),
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(resolvedAccent.color),
             )
         }
     }
@@ -3245,7 +3338,6 @@ private fun ProfileEditor(
             eyebrow = "Profile",
             title = title,
             subtitle = subtitle,
-            accent = MaterialTheme.colorScheme.secondaryContainer,
         ) {
             StatRail(
                 items = listOf(
@@ -3466,7 +3558,7 @@ private fun ProfileEditor(
 private fun ChoiceChipRow(values: List<String>, selected: String, onSelect: (String) -> Unit) {
     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         values.forEach { value ->
-            FilterChip(
+            ToastLiftFilterChip(
                 selected = value == selected,
                 onClick = { onSelect(value) },
                 label = { Text(value) },
@@ -3554,14 +3646,8 @@ private fun CompactSectionCard(
     content: @Composable () -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
-    FeatureCard {
+    FeatureCard(accentKey = "$title $subtitle") {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(3.dp)
-                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.28f)),
-            )
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
@@ -3639,18 +3725,12 @@ private fun GeneratedWorkoutCard(
 ) {
     val accent = accentForKey("${workout.title} ${workout.subtitle}")
     val canSwapWorkout = workout.origin == "generated" && workout.focusKey != null
-    FeatureCard(containerColor = MaterialTheme.colorScheme.surface) {
+    FeatureCard(
+        containerColor = MaterialTheme.colorScheme.surface,
+        accentKey = "${workout.title} ${workout.subtitle}",
+    ) {
         Column(
-            modifier = Modifier
-                .padding(16.dp)
-                .background(
-                    Brush.verticalGradient(
-                        listOf(
-                            accent.glow.copy(alpha = 0.18f),
-                            Color.Transparent,
-                        ),
-                    ),
-                ),
+            modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             Row(
@@ -3753,7 +3833,10 @@ private fun WorkoutSheet(
             Text(title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
             Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant)
             exercises.forEach { exercise ->
-                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.82f))) {
+                FeatureCard(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.82f),
+                    accentKey = exercise.name,
+                ) {
                     Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(exercise.name, fontWeight = FontWeight.SemiBold)
                         Text("${exercise.sets} sets • ${exercise.repRange} reps • ${exercise.restSeconds}s rest")
@@ -3919,7 +4002,7 @@ private fun EquipmentSheet(
             item {
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     equipmentSelectionOptions(equipmentOptions).forEach { equipment ->
-                        FilterChip(
+                        ToastLiftFilterChip(
                             selected = selectedEquipment.contains(equipment),
                             onClick = { onToggleEquipment(equipment) },
                             label = { Text(equipment) },
@@ -4311,7 +4394,7 @@ private fun SelectionIndicatorSlot(selected: Boolean) {
         if (selected) {
             Surface(
                 modifier = Modifier.size(22.dp),
-                shape = RoundedCornerShape(11.dp),
+                shape = RoundedCornerShape(10.dp),
                 color = MaterialTheme.colorScheme.primary,
             ) {
                 Box(contentAlignment = Alignment.Center) {
@@ -4501,7 +4584,7 @@ private fun ToggleFilterSection(
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(title, fontWeight = FontWeight.SemiBold)
-        FilterChip(
+        ToastLiftFilterChip(
             selected = selected,
             onClick = onToggle,
             enabled = selected || count > 0,
@@ -4523,7 +4606,7 @@ private fun FilterFacetSection(
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             options.forEach { option ->
                 val isSelected = option.label in selected
-                FilterChip(
+                ToastLiftFilterChip(
                     selected = isSelected,
                     onClick = { onToggle(option.label) },
                     enabled = isSelected || option.count > 0,
@@ -4547,7 +4630,7 @@ private fun RecommendationBiasFacetSection(
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             options.forEach { option ->
                 val isSelected = option.bias in selected
-                FilterChip(
+                ToastLiftFilterChip(
                     selected = isSelected,
                     onClick = { onToggle(option.bias) },
                     enabled = isSelected || option.count > 0,
@@ -4659,6 +4742,7 @@ private fun ActiveSessionScreen(
     onCancel: () -> Unit,
 ) {
     var showDiscardDialog by remember { mutableStateOf(false) }
+    var showFinishConfirmDialog by remember { mutableStateOf(false) }
     var showWorkoutDetailsSheet by remember { mutableStateOf(false) }
     var pendingExerciseDeletionIndex by remember { mutableStateOf<Int?>(null) }
     if (customExerciseDraft != null && !activeSessionAddExerciseVisible) {
@@ -4741,7 +4825,7 @@ private fun ActiveSessionScreen(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         bottomBar = {
             Button(
-                onClick = onCompleteSession,
+                onClick = { showFinishConfirmDialog = true },
                 enabled = canFinishActiveSession(session.exercises.size),
                 modifier = Modifier
                     .fillMaxWidth()
@@ -4806,6 +4890,25 @@ private fun ActiveSessionScreen(
                 item { Spacer(modifier = Modifier.height(96.dp)) }
             }
         }
+    }
+
+    if (showFinishConfirmDialog) {
+        val skippedSets = totalSets - completedSets
+        val finishMessage = if (skippedSets > 0) {
+            "You have $skippedSets incomplete set${if (skippedSets == 1) "" else "s"}. Are you sure you want to finish?"
+        } else {
+            "Are you sure you want to finish this workout?"
+        }
+        ConfirmActionDialog(
+            title = "Finish workout?",
+            message = finishMessage,
+            confirmLabel = "Finish",
+            onDismiss = { showFinishConfirmDialog = false },
+            onConfirm = {
+                showFinishConfirmDialog = false
+                onCompleteSession()
+            },
+        )
     }
 
     if (showDiscardDialog) {
@@ -4901,7 +5004,7 @@ private fun AddExerciseCallToAction(onAddExercise: () -> Unit) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Surface(
-                shape = RoundedCornerShape(14.dp),
+                shape = RoundedCornerShape(10.dp),
                 color = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f),
             ) {
                 Box(
@@ -5141,7 +5244,7 @@ private fun ExistingExerciseMatchCard(
 ) {
     Surface(
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f),
-        shape = RoundedCornerShape(18.dp),
+        shape = RoundedCornerShape(10.dp),
     ) {
         Row(
             modifier = Modifier
@@ -5220,7 +5323,6 @@ private fun SessionMomentumHeader(
     onExitWorkout: () -> Unit,
     onOpenWorkoutDetails: () -> Unit,
 ) {
-    val accent = if (completionFraction >= 0.66f) goldAccent else if (completionFraction >= 0.3f) surgeAccent else emberAccent
     FeatureCard(
         modifier = modifier
             .semantics {
@@ -5228,19 +5330,12 @@ private fun SessionMomentumHeader(
                 role = Role.Button
             }
             .clickable(onClick = onOpenWorkoutDetails),
-        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
+        containerColor = MaterialTheme.colorScheme.surface,
+        accentKey = "workout progress momentum",
     ) {
         Box(
             modifier = Modifier
-                .fillMaxWidth()
-                .background(
-                    Brush.verticalGradient(
-                        listOf(
-                            accent.glow.copy(alpha = 0.32f),
-                            Color.Transparent,
-                        ),
-                    ),
-                ),
+                .fillMaxWidth(),
         ) {
             IconButton(
                 onClick = onExitWorkout,
@@ -5261,8 +5356,8 @@ private fun SessionMomentumHeader(
                     color = MaterialTheme.colorScheme.onBackground,
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-                    MiniTag("$completedExercises/$totalExercises exercises", accent = accent.start.copy(alpha = 0.2f))
-                    MiniTag("$completedSets/$totalSets sets", accent = accent.end.copy(alpha = 0.2f))
+                    MiniTag("$completedExercises/$totalExercises exercises")
+                    MiniTag("$completedSets/$totalSets sets")
                 }
                 ProgressPill(
                     current = completedSets.coerceAtMost(totalSets),
@@ -5652,7 +5747,7 @@ private fun ExerciseEffortPromptCard(
                     Surface(
                         onClick = { onSelect(value) },
                         modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(14.dp),
+                        shape = RoundedCornerShape(10.dp),
                         color = if (selected) containerColor.copy(alpha = 0.95f) else containerColor.copy(alpha = 0.82f),
                         border = if (selected) BorderStroke(2.dp, MaterialTheme.colorScheme.onSurface) else null,
                     ) {
@@ -5753,14 +5848,7 @@ private fun SessionExerciseDetailScreen(
                     .statusBarsPadding()
                     .fillMaxWidth()
                     .height(260.dp)
-                    .background(
-                        Brush.verticalGradient(
-                            listOf(
-                                MaterialTheme.colorScheme.surfaceVariant,
-                                MaterialTheme.colorScheme.surface,
-                            ),
-                        ),
-                    ),
+                    .background(MaterialTheme.colorScheme.surfaceVariant),
             ) {
                 IconButton(
                     onClick = {
@@ -5931,7 +6019,7 @@ private fun DismissibleSessionSetRow(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(18.dp))
+            .clip(RoundedCornerShape(10.dp))
     ) {
         Box(
             modifier = Modifier
@@ -5980,7 +6068,7 @@ private fun DismissibleSessionSetRow(
                         }
                     },
                 ),
-            shape = RoundedCornerShape(18.dp),
+            shape = RoundedCornerShape(10.dp),
             color = rowColor,
         ) {
             Box(modifier = Modifier.fillMaxWidth()) {
@@ -6088,7 +6176,7 @@ private fun SessionSetCompletionAction(
         if (isDarkTheme) accent.start else MaterialTheme.colorScheme.onSecondaryContainer,
         completionProgress,
     )
-    val shape = RoundedCornerShape(18.dp)
+    val shape = RoundedCornerShape(10.dp)
 
     Box(
         modifier = Modifier
@@ -6640,9 +6728,10 @@ private fun HistoryDetailSheet(
             }
             if (showAbFlags) {
                 detail.abFlags?.completionFeedbackFlag?.let { flag ->
-                    Card(
+                    FeatureCard(
                         modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.82f)),
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.82f),
+                        accentKey = "${flag.flagName} ${flag.variantName}",
                     ) {
                         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Text("Applied A/B flags", fontWeight = FontWeight.SemiBold)
@@ -6678,9 +6767,10 @@ private fun HistoryDetailSheet(
                 }
             }
             detail.exercises.forEach { exercise ->
-                Card(
+                FeatureCard(
                     modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.82f)),
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.82f),
+                    accentKey = exercise.name,
                 ) {
                     Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Row(
@@ -6817,7 +6907,7 @@ private fun ExerciseHistorySheet(
                         style = MaterialTheme.typography.bodyMedium,
                     )
                 }
-                FilterChip(
+                ToastLiftFilterChip(
                     selected = detail.isPrOnlyFilterEnabled,
                     onClick = { onTogglePrOnly(!detail.isPrOnlyFilterEnabled) },
                     enabled = detail.totalEntries > 0,
@@ -6969,36 +7059,25 @@ private fun RichHeroCard(
     eyebrow: String,
     title: String,
     subtitle: String,
-    accent: Color,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val accentSet = accentForKey("$eyebrow $title")
-    val heroContainer = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f)
+    val heroContainer = MaterialTheme.colorScheme.surface
     val heroPrimary = readableTextColorFor(heroContainer)
     val heroSecondary = readableMutedTextColorFor(heroContainer)
-    FeatureCard(containerColor = heroContainer, contentColor = heroPrimary) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(
-                    Brush.verticalGradient(
-                        listOf(
-                            accent.copy(alpha = 0.22f),
-                            accentSet.glow.copy(alpha = 0.22f),
-                            Color.Transparent,
-                        ),
-                    ),
-                ),
-        ) {
-            CompositionLocalProvider(LocalContentColor provides heroPrimary) {
-                Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp), content = {
-                    Text(eyebrow.uppercase(), style = MaterialTheme.typography.labelLarge, color = accentSet.start, fontWeight = FontWeight.Bold)
-                    Text(title, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Black, color = heroPrimary)
-                    Text(subtitle, color = heroSecondary)
-                    Divider(color = accentSet.start.copy(alpha = 0.18f))
-                    content()
-                })
-            }
+    FeatureCard(
+        containerColor = heroContainer,
+        contentColor = heroPrimary,
+        accentKey = "$eyebrow $title",
+    ) {
+        CompositionLocalProvider(LocalContentColor provides heroPrimary) {
+            Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp), content = {
+                Text(eyebrow.uppercase(), style = MaterialTheme.typography.labelLarge, color = accentSet.color, fontWeight = FontWeight.Bold)
+                Text(title, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Black, color = heroPrimary)
+                Text(subtitle, color = heroSecondary)
+                Divider(color = Color(0xFF2A2A2A))
+                content()
+            })
         }
     }
 }
@@ -7008,28 +7087,31 @@ private fun StatRail(items: List<Triple<String, String, String>>) {
     Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
         items.forEach { (label, value, suffix) ->
             val accent = accentForKey(label)
-            val cardContainer = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f)
+            val cardContainer = MaterialTheme.colorScheme.surface
             val cardPrimary = readableTextColorFor(cardContainer)
             val cardSecondary = readableMutedTextColorFor(cardContainer)
             Card(
                 modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(10.dp),
                 colors = CardDefaults.cardColors(
                     containerColor = cardContainer,
                     contentColor = cardPrimary,
                 ),
-                border = BorderStroke(1.dp, accent.start.copy(alpha = 0.18f)),
+                border = BorderStroke(1.dp, Color(0xFF2A2A2A)),
+                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
             ) {
-                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Column {
                     Box(
                         modifier = Modifier
-                            .width(26.dp)
-                            .height(4.dp)
-                            .clip(RoundedCornerShape(999.dp))
-                            .background(accentBrush(accent)),
+                            .fillMaxWidth()
+                            .height(2.dp)
+                            .background(accent.color),
                     )
-                    Text(label, style = MaterialTheme.typography.labelMedium, color = cardSecondary)
-                    Text(value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, maxLines = 1, color = cardPrimary)
-                    Text(suffix, style = MaterialTheme.typography.bodySmall, color = cardSecondary, maxLines = 1)
+                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(label.uppercase(), style = MaterialTheme.typography.labelMedium, color = cardSecondary)
+                        Text(value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, maxLines = 1, color = cardPrimary)
+                        Text(suffix, style = MaterialTheme.typography.bodySmall, color = cardSecondary, maxLines = 1)
+                    }
                 }
             }
         }
@@ -7464,7 +7546,7 @@ private fun SettingsSwitchRow(
         } else {
             MaterialTheme.colorScheme.surface
         },
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(10.dp),
         border = BorderStroke(
             1.dp,
             if (checked) {
@@ -7531,17 +7613,19 @@ private fun RecommendationBiasIndicator(bias: RecommendationBias) {
 @Composable
 private fun LeadingBadge(
     label: String,
-    accent: GlowAccent = emberAccent,
+    accent: GlowAccent? = null,
     textColor: Color = Color.Unspecified,
 ) {
+    val resolvedAccent = accent ?: emberAccent
     Card(
+        shape = RoundedCornerShape(10.dp),
         colors = CardDefaults.cardColors(containerColor = Color.Transparent),
-        border = BorderStroke(1.dp, accent.start.copy(alpha = 0.2f)),
+        border = BorderStroke(1.dp, resolvedAccent.color.copy(alpha = 0.2f)),
     ) {
         Box(
             modifier = Modifier
                 .size(42.dp)
-                .background(accentBrush(accent)),
+                .background(resolvedAccent.color),
             contentAlignment = Alignment.Center,
         ) {
             Text(
@@ -7552,25 +7636,31 @@ private fun LeadingBadge(
                     else -> 15.sp
                 },
                 fontWeight = FontWeight.Black,
-                color = if (textColor == Color.Unspecified) accent.textOnAccent else textColor,
+                color = if (textColor == Color.Unspecified) resolvedAccent.textOnAccent else textColor,
             )
         }
     }
 }
 
 @Composable
-private fun MiniTag(text: String, accent: Color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.9f)) {
+private fun MiniTag(text: String, accent: Color = MaterialTheme.colorScheme.surfaceVariant) {
+    val colors = toneChipColors(accent)
     Card(
+        shape = RoundedCornerShape(3.dp),
         colors = CardDefaults.cardColors(
-            containerColor = accent,
-            contentColor = readableTextColorFor(accent),
+            containerColor = colors.container,
+            contentColor = colors.content,
         ),
+        border = BorderStroke(1.dp, colors.border),
     ) {
         Text(
-            text,
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-            style = MaterialTheme.typography.labelMedium,
-            color = readableTextColorFor(accent),
+            text.uppercase(),
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+            fontFamily = MonoFamily,
+            fontSize = 9.sp,
+            letterSpacing = 0.12.em,
+            fontWeight = FontWeight.Medium,
+            color = colors.content,
             maxLines = 1,
             softWrap = false,
             overflow = TextOverflow.Ellipsis,
@@ -7615,14 +7705,22 @@ private fun FeatureCard(
     modifier: Modifier = Modifier,
     containerColor: Color = MaterialTheme.colorScheme.surface,
     contentColor: Color = Color.Unspecified,
-    border: BorderStroke? = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.14f)),
-    elevation: androidx.compose.ui.unit.Dp = 10.dp,
+    border: BorderStroke? = BorderStroke(1.dp, Color(0xFF2A2A2A)),
+    elevation: androidx.compose.ui.unit.Dp = 0.dp,
     fullWidth: Boolean = true,
+    accentKey: String? = null,
+    showTopAccent: Boolean = true,
     content: @Composable () -> Unit,
 ) {
     val resolvedContentColor = if (contentColor == Color.Unspecified) readableTextColorFor(containerColor) else contentColor
+    val topAccentColor = if (showTopAccent) {
+        (if (accentKey != null) accentForKey(accentKey) else fallbackAccentForContainer(containerColor)).color
+    } else {
+        Color.Transparent
+    }
     Card(
         modifier = if (fullWidth) modifier.fillMaxWidth() else modifier,
+        shape = RoundedCornerShape(10.dp),
         colors = CardDefaults.cardColors(
             containerColor = containerColor,
             contentColor = resolvedContentColor,
@@ -7630,7 +7728,17 @@ private fun FeatureCard(
         elevation = CardDefaults.cardElevation(defaultElevation = elevation),
         border = border,
     ) {
-        content()
+        Column {
+            if (showTopAccent) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(2.dp)
+                        .background(topAccentColor),
+                )
+            }
+            content()
+        }
     }
 }
 
@@ -7752,7 +7860,7 @@ private fun ProgramOverviewCard(
                         .fillMaxWidth(fraction = progress.coerceIn(0f, 1f))
                         .height(6.dp)
                         .background(
-                            Brush.horizontalGradient(listOf(accent.start, accent.end)),
+                            accent.color,
                             shape = RoundedCornerShape(3.dp),
                         ),
                 )
@@ -7876,7 +7984,7 @@ private fun ReadinessChip(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    FilterChip(
+    ToastLiftFilterChip(
         modifier = modifier,
         selected = selected,
         onClick = onClick,
@@ -8045,6 +8153,11 @@ private fun WeeklyMuscleTargetHexagon(
     val surfaceVariant = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.82f)
     val outlineStrong = MaterialTheme.colorScheme.outline.copy(alpha = 0.18f)
     val outlineSoft = MaterialTheme.colorScheme.outline.copy(alpha = 0.12f)
+    val progressGradientColors = listOf(
+        goldAccent.start.copy(alpha = 0.72f),
+        surgeAccent.start.copy(alpha = 0.58f),
+        emberAccent.start.copy(alpha = 0.68f),
+    )
     val pushRatio = summary.groupSummaries.firstOrNull { it.key == "push" }
         ?.let { if (it.targetSets > 0.0) (it.completedSets / it.targetSets).coerceIn(0.0, 1.0) else 0.0 }
         ?: 0.0
@@ -8109,11 +8222,7 @@ private fun WeeklyMuscleTargetHexagon(
             drawPath(
                 path = filledPath,
                 brush = Brush.linearGradient(
-                    colors = listOf(
-                        goldAccent.start.copy(alpha = 0.72f),
-                        surgeAccent.start.copy(alpha = 0.58f),
-                        emberAccent.start.copy(alpha = 0.68f),
-                    ),
+                    colors = progressGradientColors,
                 ),
             )
             drawPath(
@@ -8224,7 +8333,7 @@ private fun WeeklyMuscleTargetsCard(summary: WeeklyMuscleTargetSummary) {
                         .fillMaxWidth(progress)
                         .height(8.dp)
                         .background(
-                            Brush.horizontalGradient(listOf(goldAccent.start, surgeAccent.end)),
+                            goldAccent.color,
                             shape = RoundedCornerShape(999.dp),
                         ),
                 )
@@ -8343,7 +8452,7 @@ private fun WeeklyMuscleTargetGroupCard(
                         .fillMaxWidth(progress)
                         .height(6.dp)
                         .background(
-                            Brush.horizontalGradient(listOf(accent.start, accent.end)),
+                            accent.color,
                             shape = RoundedCornerShape(999.dp),
                         ),
                 )
@@ -8432,6 +8541,7 @@ private fun WeeklyMuscleTargetHistoryChip(
     }
 }
 
+@Composable
 private fun weeklyMuscleAccent(key: String): GlowAccent = when (key) {
     "push" -> goldAccent
     "pull" -> emberAccent
@@ -8478,7 +8588,7 @@ private fun ProgramProgressCard(summary: ProgramProgressSummary) {
                         .fillMaxWidth(progress.coerceIn(0f, 1f))
                         .height(8.dp)
                         .background(
-                            Brush.horizontalGradient(listOf(surgeAccent.start, goldAccent.end)),
+                            surgeAccent.color,
                             shape = RoundedCornerShape(999.dp),
                         ),
                 )
@@ -8532,7 +8642,7 @@ private fun ProgramProgressMetric(
                     .fillMaxWidth()
                     .height(4.dp)
                     .clip(RoundedCornerShape(999.dp))
-                    .background(accentBrush(accent)),
+                    .background(accent.color),
             )
             Text(
                 label.uppercase(),
@@ -8687,7 +8797,7 @@ private fun ProgramSetupScreen(
             Text("Goal", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 listOf("Strength", "Hypertrophy", "Conditioning", "Fat Loss", "General Fitness").forEach { goal ->
-                    FilterChip(
+                    ToastLiftFilterChip(
                         selected = draft.goal == goal,
                         onClick = { onDraftChange { it.copy(goal = goal) } },
                         label = { Text(goal) },
@@ -8699,7 +8809,7 @@ private fun ProgramSetupScreen(
             Text("Duration", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 listOf(4 to "4 weeks", 6 to "6 weeks", 0 to "Auto").forEach { (weeks, label) ->
-                    FilterChip(
+                    ToastLiftFilterChip(
                         selected = draft.durationWeeks == weeks,
                         onClick = { onDraftChange { it.copy(durationWeeks = weeks) } },
                         label = { Text(label) },
@@ -8711,7 +8821,7 @@ private fun ProgramSetupScreen(
             Text("Sessions per week", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 weeklySessionCountOptions.forEach { count ->
-                    FilterChip(
+                    ToastLiftFilterChip(
                         selected = draft.sessionsPerWeek == count,
                         onClick = { onDraftChange { it.copy(sessionsPerWeek = count) } },
                         label = { Text("$count") },
@@ -8723,7 +8833,7 @@ private fun ProgramSetupScreen(
             Text("Split", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 splitPrograms.forEach { split ->
-                    FilterChip(
+                    ToastLiftFilterChip(
                         selected = draft.splitProgramId == split.id,
                         onClick = { onDraftChange { it.copy(splitProgramId = split.id) } },
                         label = { Text(compactSplitLabel(split.name)) },
@@ -8735,7 +8845,7 @@ private fun ProgramSetupScreen(
             Text("Session time: ${draft.sessionTimeMinutes} min", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 listOf(30, 45, 60, 75, 90).forEach { mins ->
-                    FilterChip(
+                    ToastLiftFilterChip(
                         selected = draft.sessionTimeMinutes == mins,
                         onClick = { onDraftChange { it.copy(sessionTimeMinutes = mins) } },
                         label = { Text("${mins}m") },
@@ -8751,12 +8861,12 @@ private fun ProgramSetupScreen(
             ) {
                 Text("Same gym/equipment each session?", style = MaterialTheme.typography.bodyMedium)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterChip(
+                    ToastLiftFilterChip(
                         selected = draft.equipmentStability,
                         onClick = { onDraftChange { it.copy(equipmentStability = true) } },
                         label = { Text("Yes") },
                     )
-                    FilterChip(
+                    ToastLiftFilterChip(
                         selected = !draft.equipmentStability,
                         onClick = { onDraftChange { it.copy(equipmentStability = false) } },
                         label = { Text("No") },
@@ -8829,7 +8939,7 @@ private fun SfrExerciseRow(
                     SfrTag.JOINT_DISCOMFORT -> "Joint discomfort"
                     SfrTag.NO_OPINION -> "No opinion"
                 }
-                FilterChip(
+                ToastLiftFilterChip(
                     selected = selected == tag,
                     onClick = {
                         selected = tag

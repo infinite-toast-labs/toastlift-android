@@ -1,0 +1,11 @@
+{
+  "name": "toastlift-color-audit",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "audit": "node audit-colors.mjs"
+  },
+  "dependencies": {
+    "colorjs.io": "^0.5.2"
+  }
+}
