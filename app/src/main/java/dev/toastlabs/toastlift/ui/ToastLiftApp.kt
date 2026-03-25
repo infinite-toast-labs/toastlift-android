@@ -326,6 +326,9 @@ private val LightOrangeAccent = GlowAccent(
     textOnAccent = Color(0xFFFFFFFF),
 )
 
+private val LightTopBorderAccent = Color(0xFF7B2FF7)
+private val DarkTopBorderAccent = Color(0xFFB81E19)
+
 private val emberAccent: GlowAccent
     @Composable get() = if (LocalToastLiftIsDarkTheme.current) DarkEmberAccent else LightEmberAccent
 
@@ -361,6 +364,11 @@ private fun fallbackAccentForContainer(containerColor: Color): GlowAccent {
         containerColor.luminance() > 0.7f -> goldAccent
         else -> amethystAccent
     }
+}
+
+@Composable
+private fun topBorderAccentColor(accent: GlowAccent): Color {
+    return if (LocalToastLiftIsDarkTheme.current) DarkTopBorderAccent else LightTopBorderAccent
 }
 
 
@@ -573,8 +581,14 @@ internal fun workoutDurationValidationMessage(input: String): String? {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ToastLiftApp(viewModel: ToastLiftViewModel) {
+fun ToastLiftApp(
+    viewModel: ToastLiftViewModel,
+    selectedTabOverride: MainTab? = null,
+    themePreferenceOverride: ThemePreference? = null,
+) {
     val state = viewModel.uiState
+    val displayedTab = selectedTabOverride ?: state.selectedTab
+    val effectiveThemePreference = themePreferenceOverride ?: state.themePreference
     val snackbars = remember { SnackbarHostState() }
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -640,7 +654,19 @@ fun ToastLiftApp(viewModel: ToastLiftViewModel) {
         }
     }
 
-    ToastLiftTheme(themePreference = state.themePreference) {
+    LaunchedEffect(selectedTabOverride, state.selectedTab) {
+        if (selectedTabOverride != null && state.selectedTab != selectedTabOverride) {
+            viewModel.selectTab(selectedTabOverride)
+        }
+    }
+
+    LaunchedEffect(themePreferenceOverride, state.themePreference) {
+        if (themePreferenceOverride != null && state.themePreference != themePreferenceOverride) {
+            viewModel.setThemePreference(themePreferenceOverride)
+        }
+    }
+
+    ToastLiftTheme(themePreference = effectiveThemePreference) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -704,19 +730,38 @@ fun ToastLiftApp(viewModel: ToastLiftViewModel) {
                         containerColor = Color.Transparent,
                         topBar = {
                             if (
-                                state.selectedTab != MainTab.Library &&
-                                !(state.selectedTab == MainTab.Generate && isGenerateFullscreenFlow) &&
-                                !(state.selectedTab == MainTab.Today && isTodayFullscreenFlow)
+                                displayedTab != MainTab.Library &&
+                                !(displayedTab == MainTab.Generate && isGenerateFullscreenFlow) &&
+                                !(displayedTab == MainTab.Today && isTodayFullscreenFlow)
                             ) {
                                 CenterAlignedTopAppBar(
                                     title = {
-                                        Text(
-                                            state.selectedTab.label.uppercase(),
-                                            fontFamily = MonoFamily,
-                                            fontSize = 12.sp,
-                                            letterSpacing = 0.15.em,
-                                            fontWeight = FontWeight.Medium,
-                                        )
+                                        if (displayedTab == MainTab.Generate) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .heightIn(min = 48.dp)
+                                                    .clip(RoundedCornerShape(percent = 10))
+                                                    .clickable(onClick = viewModel::generateWorkout)
+                                                    .padding(horizontal = 12.dp),
+                                                contentAlignment = Alignment.Center,
+                                            ) {
+                                                Text(
+                                                    displayedTab.label.uppercase(),
+                                                    fontFamily = MonoFamily,
+                                                    fontSize = 12.sp,
+                                                    letterSpacing = 0.15.em,
+                                                    fontWeight = FontWeight.Medium,
+                                                )
+                                            }
+                                        } else {
+                                            Text(
+                                                displayedTab.label.uppercase(),
+                                                fontFamily = MonoFamily,
+                                                fontSize = 12.sp,
+                                                letterSpacing = 0.15.em,
+                                                fontWeight = FontWeight.Medium,
+                                            )
+                                        }
                                     },
                                     actions = {
                                         var expanded by remember { mutableStateOf(false) }
@@ -750,8 +795,8 @@ fun ToastLiftApp(viewModel: ToastLiftViewModel) {
                         snackbarHost = { SnackbarHost(snackbars) },
                         bottomBar = {
                             if (
-                                !(state.selectedTab == MainTab.Generate && isGenerateFullscreenFlow) &&
-                                !(state.selectedTab == MainTab.Today && isTodayFullscreenFlow)
+                                !(displayedTab == MainTab.Generate && isGenerateFullscreenFlow) &&
+                                !(displayedTab == MainTab.Today && isTodayFullscreenFlow)
                             ) {
                                 val uiColors = LocalUiColors.current
                                 Column {
@@ -759,14 +804,14 @@ fun ToastLiftApp(viewModel: ToastLiftViewModel) {
                                     NavigationBar(containerColor = MaterialTheme.colorScheme.background) {
                                         MainTab.entries.forEach { tab ->
                                             NavigationBarItem(
-                                                selected = state.selectedTab == tab,
+                                                selected = displayedTab == tab,
                                                 onClick = { viewModel.selectTab(tab) },
                                                 icon = {
                                                     Icon(
                                                         imageVector = tab.icon,
                                                         contentDescription = tab.label,
                                                         modifier = Modifier.size(20.dp),
-                                                        tint = if (state.selectedTab == tab) {
+                                                        tint = if (displayedTab == tab) {
                                                             MaterialTheme.colorScheme.onBackground
                                                         } else {
                                                             uiColors.inactiveNavigation
@@ -779,7 +824,7 @@ fun ToastLiftApp(viewModel: ToastLiftViewModel) {
                                                         fontFamily = MonoFamily,
                                                         fontSize = 9.sp,
                                                         letterSpacing = 0.12.em,
-                                                        color = if (state.selectedTab == tab) {
+                                                        color = if (displayedTab == tab) {
                                                             MaterialTheme.colorScheme.onBackground
                                                         } else {
                                                             uiColors.inactiveNavigation
@@ -800,7 +845,7 @@ fun ToastLiftApp(viewModel: ToastLiftViewModel) {
                                 .padding(padding),
                         ) {
                             AnimatedContent(
-                                targetState = state.selectedTab,
+                                targetState = displayedTab,
                                 transitionSpec = {
                                     slideInHorizontally(
                                         initialOffsetX = { it / 6 },
@@ -2671,11 +2716,12 @@ private fun HistoryStatTile(
     onClick: (() -> Unit)? = null,
 ) {
     val accent = accentForKey(title)
+    val topAccentColor = topBorderAccentColor(accent)
     val rewardIcon = historyStatRewardIcon(title)
     FeatureCard(
         modifier = modifier.then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
         containerColor = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.dp, accent.color.copy(alpha = 0.22f)),
+        border = BorderStroke(1.dp, topAccentColor.copy(alpha = 0.22f)),
         showTopAccent = false,
     ) {
         Column {
@@ -2683,7 +2729,7 @@ private fun HistoryStatTile(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(2.dp)
-                    .background(accent.color),
+                    .background(topAccentColor),
             )
             Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(
@@ -7533,6 +7579,7 @@ private fun StatRail(items: List<Triple<String, String, String>>) {
     Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
         items.forEach { (label, value, suffix) ->
             val accent = accentForKey(label)
+            val topAccentColor = topBorderAccentColor(accent)
             val cardContainer = MaterialTheme.colorScheme.surface
             val cardPrimary = readableTextColorFor(cardContainer)
             val cardSecondary = readableMutedTextColorFor(cardContainer)
@@ -7543,7 +7590,7 @@ private fun StatRail(items: List<Triple<String, String, String>>) {
                     containerColor = cardContainer,
                     contentColor = cardPrimary,
                 ),
-                border = BorderStroke(1.dp, accent.color.copy(alpha = 0.22f)),
+                border = BorderStroke(1.dp, topAccentColor.copy(alpha = 0.22f)),
                 elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
             ) {
                 Column {
@@ -7551,7 +7598,7 @@ private fun StatRail(items: List<Triple<String, String, String>>) {
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(2.dp)
-                            .background(accent.color),
+                            .background(topAccentColor),
                     )
                     Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text(label.uppercase(), style = MaterialTheme.typography.labelMedium, color = cardSecondary)
@@ -8160,8 +8207,9 @@ private fun FeatureCard(
 ) {
     val uiColors = LocalUiColors.current
     val resolvedContentColor = if (contentColor == Color.Unspecified) readableTextColorFor(containerColor) else contentColor
+    val accent = if (accentKey != null) accentForKey(accentKey) else fallbackAccentForContainer(containerColor)
     val topAccentColor = if (showTopAccent) {
-        (if (accentKey != null) accentForKey(accentKey) else fallbackAccentForContainer(containerColor)).color
+        topBorderAccentColor(accent)
     } else {
         Color.Transparent
     }
@@ -9084,6 +9132,7 @@ private fun ProgramProgressMetric(
     accent: GlowAccent,
     modifier: Modifier = Modifier,
 ) {
+    val topAccentColor = topBorderAccentColor(accent)
     FeatureCard(
         modifier = modifier,
         containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.88f),
@@ -9094,7 +9143,7 @@ private fun ProgramProgressMetric(
                     .fillMaxWidth()
                     .height(4.dp)
                     .clip(RoundedCornerShape(999.dp))
-                    .background(accent.color),
+                    .background(topAccentColor),
             )
             Text(
                 label.uppercase(),

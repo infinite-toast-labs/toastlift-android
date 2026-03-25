@@ -61,3 +61,5 @@ img-tmp/
 design-tmp/
 tools/color-audit/node_modules/
 tools/color-audit/reports/
+
+android-e2e/
