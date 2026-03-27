@@ -8,6 +8,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import dev.toastlabs.toastlift.data.ActiveSession
 import dev.toastlabs.toastlift.data.AbandonedWorkoutSummary
+import dev.toastlabs.toastlift.data.AdherenceCurrencyTrend
 import dev.toastlabs.toastlift.data.AppContainer
 import dev.toastlabs.toastlift.data.CheckpointAction
 import dev.toastlabs.toastlift.data.CheckpointResult
@@ -79,6 +80,7 @@ import dev.toastlabs.toastlift.data.WorkoutPlan
 import dev.toastlabs.toastlift.data.WorkoutExerciseSetDraft
 import dev.toastlabs.toastlift.data.buildTodayCompletionFeedbackAbFlags
 import dev.toastlabs.toastlift.data.buildAdherenceCurrencySnapshot
+import dev.toastlabs.toastlift.data.buildAdherenceCurrencyTrend
 import dev.toastlabs.toastlift.data.toPendingWorkoutShare
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -319,6 +321,7 @@ data class AppUiState(
     // ── Adaptive Program Engine state ──
     val activeProgram: TrainingProgram? = null,
     val programOverview: ProgramOverview? = null,
+    val tokenBalanceTrend: AdherenceCurrencyTrend? = null,
     val programProgress: ProgramProgressSummary? = null,
     val weeklyMuscleTargets: WeeklyMuscleTargetSummary? = null,
     val nextPlannedSession: PlannedSession? = null,
@@ -3254,10 +3257,11 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
             if (program == null) {
                 uiState = uiState.copy(
                     activeProgram = null,
-                    programOverview = null,
-                    programProgress = null,
-                    nextPlannedSession = null,
-                    recoverableSkippedSession = null,
+                programOverview = null,
+                tokenBalanceTrend = null,
+                programProgress = null,
+                nextPlannedSession = null,
+                recoverableSkippedSession = null,
                     nextSessionExercises = emptyList(),
                     upcomingProgramSessions = emptyList(),
                     pendingCheckpoint = null,
@@ -3271,16 +3275,23 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
             val completedSetCountsByWorkoutId = container.workoutRepository.loadCompletedSetCountsForWorkouts(
                 allSessions.mapNotNull { it.actualWorkoutId },
             )
-            val adherenceSnapshot = buildAdherenceCurrencySnapshot(
-                allSessions.map { session ->
-                    AdherenceSessionSignal(
-                        sequenceNumber = session.sequenceNumber,
-                        status = session.status,
-                        plannedSets = session.plannedSets,
-                        completedSetCount = session.actualWorkoutId?.let { completedSetCountsByWorkoutId[it] } ?: 0,
-                    )
-                },
+            val completedWorkoutTimestampsById = container.workoutRepository.loadCompletedWorkoutTimestamps(
+                allSessions.mapNotNull { it.actualWorkoutId },
             )
+            val adherenceSignals = allSessions.map { session ->
+                AdherenceSessionSignal(
+                    sequenceNumber = session.sequenceNumber,
+                    status = session.status,
+                    plannedSets = session.plannedSets,
+                    completedSetCount = session.actualWorkoutId?.let { completedSetCountsByWorkoutId[it] } ?: 0,
+                    occurredAtUtc = session.statusUpdatedAtUtc
+                        ?: session.actualWorkoutId?.let { completedWorkoutTimestampsById[it] },
+                )
+            }
+            val adherenceSnapshot = buildAdherenceCurrencySnapshot(
+                adherenceSignals,
+            )
+            val tokenBalanceTrend = buildAdherenceCurrencyTrend(adherenceSignals)
             val upcomingSessions = allSessions
                 .asSequence()
                 .filter { it.status == SessionStatus.UPCOMING }
@@ -3334,6 +3345,7 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
             uiState = uiState.copy(
                 activeProgram = program,
                 programOverview = overview,
+                tokenBalanceTrend = tokenBalanceTrend,
                 programProgress = progressSummary,
                 nextPlannedSession = nextSession,
                 recoverableSkippedSession = recoverableSkippedSession,

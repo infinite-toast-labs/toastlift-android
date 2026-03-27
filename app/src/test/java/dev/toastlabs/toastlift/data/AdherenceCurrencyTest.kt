@@ -3,6 +3,8 @@ package dev.toastlabs.toastlift.data
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.time.LocalDate
+import java.time.ZoneOffset
 
 class AdherenceCurrencyTest {
 
@@ -69,11 +71,70 @@ class AdherenceCurrencyTest {
         assertEquals(10, snapshot.balance)
     }
 
-    private fun skippedSignal(sequence: Int): AdherenceSessionSignal {
+    @Test
+    fun trendUsesDatedSignalsAcrossTheSelectedWindow() {
+        val trend = buildAdherenceCurrencyTrend(
+            signals = listOf(
+                completedSignal(
+                    sequence = 1,
+                    plannedSets = 10,
+                    completedSetCount = 10,
+                    occurredAtUtc = "2026-03-20T12:00:00Z",
+                ),
+                skippedSignal(
+                    sequence = 2,
+                    occurredAtUtc = "2026-03-22T12:00:00Z",
+                ),
+                completedSignal(
+                    sequence = 3,
+                    plannedSets = 10,
+                    completedSetCount = 10,
+                    occurredAtUtc = "2026-03-24T12:00:00Z",
+                ),
+            ),
+            today = LocalDate.parse("2026-03-25"),
+            zoneId = ZoneOffset.UTC,
+        )
+
+        assertEquals(3, trend.snapshot.balance)
+        assertEquals(3, trend.weeklyDelta)
+        assertEquals(3, trend.monthlyDelta)
+        assertEquals(3, trend.latestDelta)
+        assertEquals(LocalDate.parse("2026-03-24"), trend.latestDate)
+        assertEquals(3, trend.dailyPoints.last().balance)
+    }
+
+    @Test
+    fun trendOffsetsUndatedSignalsSoChartEndsAtCurrentBalance() {
+        val trend = buildAdherenceCurrencyTrend(
+            signals = listOf(
+                skippedSignal(sequence = 1),
+                completedSignal(
+                    sequence = 2,
+                    plannedSets = 10,
+                    completedSetCount = 10,
+                    occurredAtUtc = "2026-03-24T12:00:00Z",
+                ),
+            ),
+            today = LocalDate.parse("2026-03-25"),
+            zoneId = ZoneOffset.UTC,
+        )
+
+        assertEquals(1, trend.snapshot.balance)
+        assertEquals(1, trend.undatedSignalCount)
+        assertEquals(1, trend.dailyPoints.last().balance)
+        assertEquals(4, trend.latestDelta)
+    }
+
+    private fun skippedSignal(
+        sequence: Int,
+        occurredAtUtc: String? = null,
+    ): AdherenceSessionSignal {
         return AdherenceSessionSignal(
             sequenceNumber = sequence,
             status = SessionStatus.SKIPPED,
             plannedSets = 16,
+            occurredAtUtc = occurredAtUtc,
         )
     }
 
@@ -81,12 +142,14 @@ class AdherenceCurrencyTest {
         sequence: Int,
         plannedSets: Int,
         completedSetCount: Int,
+        occurredAtUtc: String? = null,
     ): AdherenceSessionSignal {
         return AdherenceSessionSignal(
             sequenceNumber = sequence,
             status = SessionStatus.COMPLETED,
             plannedSets = plannedSets,
             completedSetCount = completedSetCount,
+            occurredAtUtc = occurredAtUtc,
         )
     }
 }

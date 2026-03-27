@@ -1,5 +1,9 @@
 package dev.toastlabs.toastlift.data
 
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
+
 internal const val ADHERENCE_CURRENCY_FLOOR = -12
 internal const val ADHERENCE_CURRENCY_CEILING = 24
 
@@ -22,16 +26,124 @@ data class AdherenceCurrencySnapshot(
     val detail: String,
 )
 
+data class AdherenceCurrencyTrendPoint(
+    val date: LocalDate,
+    val balance: Int,
+    val delta: Int,
+    val completedSessions: Int,
+    val skippedSessions: Int,
+)
+
+data class AdherenceCurrencyTrend(
+    val snapshot: AdherenceCurrencySnapshot,
+    val dailyPoints: List<AdherenceCurrencyTrendPoint>,
+    val latestDelta: Int,
+    val latestDate: LocalDate?,
+    val weeklyDelta: Int,
+    val monthlyDelta: Int,
+    val bestBalance: Int,
+    val worstBalance: Int,
+    val undatedSignalCount: Int,
+)
+
 internal data class AdherenceSessionSignal(
     val sequenceNumber: Int,
     val status: SessionStatus,
     val plannedSets: Int,
     val completedSetCount: Int = 0,
+    val occurredAtUtc: String? = null,
 )
 
 internal fun buildAdherenceCurrencySnapshot(signals: List<AdherenceSessionSignal>): AdherenceCurrencySnapshot {
+    return buildAdherenceCurrencyLedger(signals).snapshot
+}
+
+internal fun buildAdherenceCurrencyTrend(
+    signals: List<AdherenceSessionSignal>,
+    today: LocalDate = LocalDate.now(),
+    zoneId: ZoneId = ZoneId.systemDefault(),
+): AdherenceCurrencyTrend {
+    val ledger = buildAdherenceCurrencyLedger(signals)
+    val snapshot = ledger.snapshot
+    val datedEntries = ledger.entries
+        .mapNotNull { entry ->
+            entry.occurredAtUtc?.let { occurredAtUtc ->
+                runCatching { Instant.parse(occurredAtUtc) }.getOrNull()?.let { instant ->
+                    DatedAdherenceLedgerEntry(
+                        ledgerEntry = entry,
+                        instant = instant,
+                        date = instant.atZone(zoneId).toLocalDate(),
+                    )
+                }
+            }
+        }
+        .sortedWith(compareBy<DatedAdherenceLedgerEntry> { it.instant }.thenBy { it.ledgerEntry.sequenceNumber })
+
+    val startDate = today.minusDays(29)
+    val entriesWithinWindow = datedEntries.filter { it.date >= startDate && it.date <= today }
+    val entriesBeforeWindow = datedEntries.filter { it.date < startDate }
+    val datedFinalBalance = datedEntries.lastOrNull()?.ledgerEntry?.balanceAfter ?: 0
+    val balanceOffset = snapshot.balance - datedFinalBalance
+    val groupedEntries = entriesWithinWindow.groupBy { it.date }
+    var runningBalance = entriesBeforeWindow.lastOrNull()?.ledgerEntry?.balanceAfter?.plus(balanceOffset) ?: balanceOffset
+
+    val dailyPoints = buildList {
+        var currentDate = startDate
+        while (!currentDate.isAfter(today)) {
+            val dayEntries = groupedEntries[currentDate].orEmpty()
+            if (dayEntries.isNotEmpty()) {
+                runningBalance = dayEntries.last().ledgerEntry.balanceAfter + balanceOffset
+            }
+            add(
+                AdherenceCurrencyTrendPoint(
+                    date = currentDate,
+                    balance = runningBalance,
+                    delta = dayEntries.sumOf { it.ledgerEntry.delta },
+                    completedSessions = dayEntries.count { it.ledgerEntry.status == SessionStatus.COMPLETED },
+                    skippedSessions = dayEntries.count { it.ledgerEntry.status == SessionStatus.SKIPPED },
+                ),
+            )
+            currentDate = currentDate.plusDays(1)
+        }
+    }
+
+    val latestChangedPoint = dailyPoints.lastOrNull { it.delta != 0 }
+    return AdherenceCurrencyTrend(
+        snapshot = snapshot,
+        dailyPoints = dailyPoints,
+        latestDelta = latestChangedPoint?.delta ?: 0,
+        latestDate = latestChangedPoint?.date,
+        weeklyDelta = dailyPoints.takeLast(7).sumOf(AdherenceCurrencyTrendPoint::delta),
+        monthlyDelta = dailyPoints.sumOf(AdherenceCurrencyTrendPoint::delta),
+        bestBalance = dailyPoints.maxOfOrNull(AdherenceCurrencyTrendPoint::balance) ?: snapshot.balance,
+        worstBalance = dailyPoints.minOfOrNull(AdherenceCurrencyTrendPoint::balance) ?: snapshot.balance,
+        undatedSignalCount = ledger.entries.count { it.occurredAtUtc == null },
+    )
+}
+
+private data class AdherenceLedgerEntry(
+    val sequenceNumber: Int,
+    val status: SessionStatus,
+    val delta: Int,
+    val balanceAfter: Int,
+    val occurredAtUtc: String?,
+)
+
+private data class AdherenceLedger(
+    val snapshot: AdherenceCurrencySnapshot,
+    val entries: List<AdherenceLedgerEntry>,
+)
+
+private data class DatedAdherenceLedgerEntry(
+    val ledgerEntry: AdherenceLedgerEntry,
+    val instant: Instant,
+    val date: LocalDate,
+)
+
+private fun buildAdherenceCurrencyLedger(signals: List<AdherenceSessionSignal>): AdherenceLedger {
     var balance = 0
     var consecutiveSolidCompletions = 0
+    val entries = mutableListOf<AdherenceLedgerEntry>()
 
     signals
         .sortedBy { it.sequenceNumber }
@@ -48,6 +160,13 @@ internal fun buildAdherenceCurrencySnapshot(signals: List<AdherenceSessionSignal
                         consecutiveSolidCompletionsBefore = consecutiveSolidCompletions,
                     )
                     balance = clampAdherenceBalance(balance + reward)
+                    entries += AdherenceLedgerEntry(
+                        sequenceNumber = signal.sequenceNumber,
+                        status = signal.status,
+                        delta = reward,
+                        balanceAfter = balance,
+                        occurredAtUtc = signal.occurredAtUtc,
+                    )
                     consecutiveSolidCompletions = if (completionRatio >= ADHERENCE_SOLID_COMPLETION_THRESHOLD && reward > 0) {
                         consecutiveSolidCompletions + 1
                     } else {
@@ -57,6 +176,13 @@ internal fun buildAdherenceCurrencySnapshot(signals: List<AdherenceSessionSignal
 
                 SessionStatus.SKIPPED -> {
                     balance = clampAdherenceBalance(balance + ADHERENCE_SKIP_PENALTY)
+                    entries += AdherenceLedgerEntry(
+                        sequenceNumber = signal.sequenceNumber,
+                        status = signal.status,
+                        delta = ADHERENCE_SKIP_PENALTY,
+                        balanceAfter = balance,
+                        occurredAtUtc = signal.occurredAtUtc,
+                    )
                     consecutiveSolidCompletions = 0
                 }
 
@@ -67,13 +193,16 @@ internal fun buildAdherenceCurrencySnapshot(signals: List<AdherenceSessionSignal
             }
         }
 
-    return AdherenceCurrencySnapshot(
-        balance = balance,
-        floor = ADHERENCE_CURRENCY_FLOOR,
-        ceiling = ADHERENCE_CURRENCY_CEILING,
-        displayValue = if (balance > 0) "+$balance" else balance.toString(),
-        statusLabel = adherenceStatusLabel(balance),
-        detail = adherenceDetail(balance),
+    return AdherenceLedger(
+        snapshot = AdherenceCurrencySnapshot(
+            balance = balance,
+            floor = ADHERENCE_CURRENCY_FLOOR,
+            ceiling = ADHERENCE_CURRENCY_CEILING,
+            displayValue = if (balance > 0) "+$balance" else balance.toString(),
+            statusLabel = adherenceStatusLabel(balance),
+            detail = adherenceDetail(balance),
+        ),
+        entries = entries,
     )
 }
 

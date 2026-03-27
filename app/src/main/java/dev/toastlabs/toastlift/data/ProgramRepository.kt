@@ -3,6 +3,7 @@ package dev.toastlabs.toastlift.data
 import android.content.ContentValues
 import org.json.JSONArray
 import org.json.JSONObject
+import java.time.Instant
 
 open class ProgramRepository(private val database: ToastLiftDatabase?) {
 
@@ -126,6 +127,7 @@ open class ProgramRepository(private val database: ToastLiftDatabase?) {
                     if (session.timeBudgetMinutes != null) put("time_budget_minutes", session.timeBudgetMinutes) else putNull("time_budget_minutes")
                     put("status", session.status.name)
                     if (session.actualWorkoutId != null) put("actual_workout_id", session.actualWorkoutId) else putNull("actual_workout_id")
+                    if (session.statusUpdatedAtUtc != null) put("status_updated_at_utc", session.statusUpdatedAtUtc) else putNull("status_updated_at_utc")
                     if (session.coachBrief != null) put("coach_brief", session.coachBrief) else putNull("coach_brief")
                 }
                 db.insert("planned_sessions", null, cv)
@@ -150,19 +152,21 @@ open class ProgramRepository(private val database: ToastLiftDatabase?) {
         }
     }
 
-    fun updateSessionStatus(sessionId: Long, status: SessionStatus, actualWorkoutId: Long? = null) {
+    fun updateSessionStatus(
+        sessionId: Long,
+        status: SessionStatus,
+        actualWorkoutId: Long? = null,
+        statusUpdatedAtUtc: String? = if (status == SessionStatus.UPCOMING) null else Instant.now().toString(),
+    ) {
         val db = db()
-        if (actualWorkoutId != null) {
-            db.execSQL(
-                "UPDATE planned_sessions SET status = ?, actual_workout_id = ? WHERE id = ?",
-                arrayOf(status.name, actualWorkoutId, sessionId),
-            )
-        } else {
-            db.execSQL(
-                "UPDATE planned_sessions SET status = ? WHERE id = ?",
-                arrayOf(status.name, sessionId),
-            )
-        }
+        db.execSQL(
+            """
+            UPDATE planned_sessions
+            SET status = ?, actual_workout_id = ?, status_updated_at_utc = ?
+            WHERE id = ?
+            """.trimIndent(),
+            arrayOf(status.name, actualWorkoutId, statusUpdatedAtUtc, sessionId),
+        )
     }
 
     fun updateSessionCoachBrief(sessionId: Long, coachBrief: String) {
@@ -217,6 +221,7 @@ open class ProgramRepository(private val database: ToastLiftDatabase?) {
             put("planned_sets", session.plannedSets)
             if (session.timeBudgetMinutes != null) put("time_budget_minutes", session.timeBudgetMinutes) else putNull("time_budget_minutes")
             put("status", session.status.name)
+            if (session.statusUpdatedAtUtc != null) put("status_updated_at_utc", session.statusUpdatedAtUtc) else putNull("status_updated_at_utc")
             if (session.coachBrief != null) put("coach_brief", session.coachBrief) else putNull("coach_brief")
         }
         return db.insert("planned_sessions", null, cv)
@@ -581,6 +586,7 @@ open class ProgramRepository(private val database: ToastLiftDatabase?) {
             status = SessionStatus.valueOf(cursor.getString(cursor.getColumnIndexOrThrow("status"))),
             actualWorkoutId = if (cursor.isNull(cursor.getColumnIndexOrThrow("actual_workout_id"))) null
             else cursor.getLong(cursor.getColumnIndexOrThrow("actual_workout_id")),
+            statusUpdatedAtUtc = cursor.getStringOrNull(cursor.getColumnIndexOrThrow("status_updated_at_utc")),
             coachBrief = cursor.getStringOrNull(cursor.getColumnIndexOrThrow("coach_brief")),
         )
     }

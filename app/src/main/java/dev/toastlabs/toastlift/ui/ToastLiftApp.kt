@@ -180,6 +180,8 @@ import dev.toastlabs.toastlift.data.CustomExerciseDraft
 import dev.toastlabs.toastlift.data.DailyCoachMessage
 import dev.toastlabs.toastlift.data.ExerciseDetail
 import dev.toastlabs.toastlift.data.ExerciseHistoryDetail
+import dev.toastlabs.toastlift.data.AdherenceCurrencyTrend
+import dev.toastlabs.toastlift.data.AdherenceCurrencyTrendPoint
 import dev.toastlabs.toastlift.data.HistoryShareFormat
 import dev.toastlabs.toastlift.data.ExerciseSummary
 import dev.toastlabs.toastlift.data.ExerciseVideoLinks
@@ -371,6 +373,99 @@ private fun topBorderAccentColor(accent: GlowAccent): Color {
     return if (LocalToastLiftIsDarkTheme.current) DarkTopBorderAccent else LightTopBorderAccent
 }
 
+private enum class TokenBalanceWindow(val label: String, val days: Int, val labelStep: Int) {
+    Last7Days("7D", 7, 2),
+    Last30Days("30D", 30, 6),
+}
+
+private data class TokenWalletPalette(
+    val shellTop: Color,
+    val shellBottom: Color,
+    val shellStroke: Color,
+    val glow: Color,
+    val gold: Color,
+    val goldSoft: Color,
+    val positive: Color,
+    val negative: Color,
+    val graphGrid: Color,
+    val graphLabel: Color,
+)
+
+@Composable
+private fun rememberTokenWalletPalette(): TokenWalletPalette {
+    val onSurfaceVariant = MaterialTheme.colorScheme.onSurfaceVariant
+    return if (LocalToastLiftIsDarkTheme.current) {
+        TokenWalletPalette(
+            shellTop = Color(0xFF201A0A),
+            shellBottom = Color(0xFF0E1418),
+            shellStroke = Color(0xFF5D4A17),
+            glow = Color(0x66FFD86B),
+            gold = Color(0xFFFFD15C),
+            goldSoft = Color(0xFFF7B733),
+            positive = Color(0xFF45E08E),
+            negative = Color(0xFFFF6B61),
+            graphGrid = Color(0x33FFD15C),
+            graphLabel = onSurfaceVariant,
+        )
+    } else {
+        TokenWalletPalette(
+            shellTop = Color(0xFFFFF2CC),
+            shellBottom = Color(0xFFF6FBFF),
+            shellStroke = Color(0xFFD7B15A),
+            glow = Color(0x40E4B04D),
+            gold = Color(0xFFC98A11),
+            goldSoft = Color(0xFFE5A62F),
+            positive = Color(0xFF0D8B4E),
+            negative = Color(0xFFC24B42),
+            graphGrid = Color(0x339F7B20),
+            graphLabel = onSurfaceVariant,
+        )
+    }
+}
+
+private fun AdherenceCurrencyTrend.pointsFor(window: TokenBalanceWindow): List<AdherenceCurrencyTrendPoint> {
+    return dailyPoints.takeLast(window.days)
+}
+
+private fun AdherenceCurrencyTrend.windowDelta(window: TokenBalanceWindow): Int {
+    return pointsFor(window).sumOf(AdherenceCurrencyTrendPoint::delta)
+}
+
+private fun AdherenceCurrencyTrend.windowEarned(window: TokenBalanceWindow): Int {
+    return pointsFor(window).sumOf { point -> point.delta.coerceAtLeast(0) }
+}
+
+private fun AdherenceCurrencyTrend.windowSpent(window: TokenBalanceWindow): Int {
+    return pointsFor(window).sumOf { point -> (-point.delta).coerceAtLeast(0) }
+}
+
+private fun AdherenceCurrencyTrend.windowBestBalance(window: TokenBalanceWindow): Int {
+    return pointsFor(window).maxOfOrNull(AdherenceCurrencyTrendPoint::balance) ?: snapshot.balance
+}
+
+private fun AdherenceCurrencyTrend.windowWorstBalance(window: TokenBalanceWindow): Int {
+    return pointsFor(window).minOfOrNull(AdherenceCurrencyTrendPoint::balance) ?: snapshot.balance
+}
+
+private fun signedCompactNumber(value: Int): String {
+    return when {
+        value > 0 -> "+$value"
+        else -> value.toString()
+    }
+}
+
+private fun tokenTrendDirection(delta: Int): ImageVector = when {
+    delta > 0 -> Icons.Rounded.KeyboardArrowUp
+    delta < 0 -> Icons.Rounded.KeyboardArrowDown
+    else -> Icons.Rounded.QueryStats
+}
+
+@Composable
+private fun tokenTrendColor(delta: Int, palette: TokenWalletPalette): Color = when {
+    delta > 0 -> palette.positive
+    delta < 0 -> palette.negative
+    else -> palette.gold
+}
 
 @Composable
 private fun readableTextColorFor(background: Color): Color {
@@ -965,6 +1060,8 @@ fun ToastLiftApp(
                                     MainTab.History -> HistoryScreen(
                                         profile = state.profile,
                                         history = state.history,
+                                        activeProgramTitle = state.activeProgram?.title,
+                                        tokenBalanceTrend = state.tokenBalanceTrend,
                                         weeklyMuscleTargets = state.weeklyMuscleTargets,
                                         topExercise = state.historyTopExercise,
                                         topEquipment = state.historyTopEquipment,
@@ -2183,6 +2280,8 @@ private fun historyMuscleFilterFor(muscle: String): HistoryMuscleFilter? = when 
 private fun HistoryScreen(
     profile: UserProfile?,
     history: List<HistorySummary>,
+    activeProgramTitle: String?,
+    tokenBalanceTrend: AdherenceCurrencyTrend?,
     weeklyMuscleTargets: WeeklyMuscleTargetSummary?,
     topExercise: String?,
     topEquipment: String?,
@@ -2242,6 +2341,14 @@ private fun HistoryScreen(
         )
         return
     }
+    if (destination == "token-balance" && tokenBalanceTrend != null) {
+        TokenBalanceDetailScreen(
+            title = activeProgramTitle ?: "Guided Program",
+            trend = tokenBalanceTrend,
+            onBack = { destination = "dashboard" },
+        )
+        return
+    }
 
     LazyColumn(
         modifier = Modifier
@@ -2255,6 +2362,13 @@ private fun HistoryScreen(
                 onOpenWorkouts = { destination = "workouts" },
                 onOpenMilestones = { destination = "milestones" },
                 onOpenStreak = { destination = "streak" },
+            )
+        }
+        item {
+            TokenBalanceOverviewCard(
+                title = activeProgramTitle,
+                trend = tokenBalanceTrend,
+                onOpen = { destination = "token-balance" },
             )
         }
         weeklyMuscleTargets?.let { summary ->
@@ -2589,6 +2703,545 @@ private fun HistoryOverviewHeader(
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TokenBalanceOverviewCard(
+    title: String?,
+    trend: AdherenceCurrencyTrend?,
+    onOpen: () -> Unit,
+) {
+    val palette = rememberTokenWalletPalette()
+    val modifier = if (trend != null) Modifier.clickable(onClick = onOpen) else Modifier
+    val quickPoints = trend?.pointsFor(TokenBalanceWindow.Last7Days).orEmpty()
+    val quickDelta = trend?.windowDelta(TokenBalanceWindow.Last7Days) ?: 0
+    val trendColor = tokenTrendColor(quickDelta, palette)
+
+    FeatureCard(
+        modifier = modifier,
+        containerColor = palette.shellBottom.copy(alpha = if (LocalToastLiftIsDarkTheme.current) 0.82f else 0.98f),
+        border = BorderStroke(1.dp, palette.shellStroke.copy(alpha = 0.34f)),
+        showTopAccent = false,
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(
+                    brush = Brush.verticalGradient(
+                        colors = listOf(
+                            palette.shellTop.copy(alpha = if (LocalToastLiftIsDarkTheme.current) 0.92f else 0.98f),
+                            palette.shellBottom.copy(alpha = if (LocalToastLiftIsDarkTheme.current) 0.98f else 1f),
+                        ),
+                    ),
+                ),
+        ) {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("Token Balance", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black)
+                        Text(
+                            if (title != null) "$title wallet" else "Guided-program reward wallet",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    MiniTag(
+                        text = if (trend != null) "Tap for breakdown" else "Starts with a program",
+                        accent = palette.gold.copy(alpha = 0.18f),
+                    )
+                }
+
+                if (trend == null) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        TokenCoinBadge(
+                            palette = palette,
+                            modifier = Modifier.size(72.dp),
+                        )
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(
+                                "No wallet yet",
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold,
+                            )
+                            Text(
+                                "Start a guided program and completed or skipped sessions will bank tokens here with a capped downside.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                } else {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        TokenCoinBadge(
+                            palette = palette,
+                            modifier = Modifier.size(78.dp),
+                        )
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(
+                                    trend.snapshot.displayValue,
+                                    style = MaterialTheme.typography.displaySmall,
+                                    fontWeight = FontWeight.Black,
+                                )
+                                MiniTag(
+                                    text = trend.snapshot.statusLabel,
+                                    accent = palette.gold.copy(alpha = 0.18f),
+                                )
+                            }
+                            Text(
+                                trend.snapshot.detail,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(30.dp)
+                                        .clip(CircleShape)
+                                        .background(trendColor.copy(alpha = 0.16f)),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Icon(
+                                        imageVector = tokenTrendDirection(quickDelta),
+                                        contentDescription = null,
+                                        tint = trendColor,
+                                    )
+                                }
+                                Text(
+                                    "${signedCompactNumber(quickDelta)} in the last 7 days",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = trendColor,
+                                )
+                            }
+                        }
+                    }
+
+                    TokenBalanceChart(
+                        points = quickPoints,
+                        delta = quickDelta,
+                        palette = palette,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(92.dp),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TokenBalanceDetailScreen(
+    title: String,
+    trend: AdherenceCurrencyTrend,
+    onBack: () -> Unit,
+) {
+    var selectedWindow by rememberSaveable { mutableStateOf(TokenBalanceWindow.Last7Days) }
+    val palette = rememberTokenWalletPalette()
+    val windowPoints = trend.pointsFor(selectedWindow)
+    val windowDelta = trend.windowDelta(selectedWindow)
+    val windowEarned = trend.windowEarned(selectedWindow)
+    val windowSpent = trend.windowSpent(selectedWindow)
+    val windowBest = trend.windowBestBalance(selectedWindow)
+    val windowWorst = trend.windowWorstBalance(selectedWindow)
+    val deltaColor = tokenTrendColor(windowDelta, palette)
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp)
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        HistoryDetailHeader(title = "Token Balance", onBack = onBack)
+
+        FeatureCard(
+            containerColor = palette.shellBottom.copy(alpha = if (LocalToastLiftIsDarkTheme.current) 0.82f else 0.98f),
+            border = BorderStroke(1.dp, palette.shellStroke.copy(alpha = 0.34f)),
+            showTopAccent = false,
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(
+                        brush = Brush.verticalGradient(
+                            colors = listOf(
+                                palette.shellTop.copy(alpha = if (LocalToastLiftIsDarkTheme.current) 0.94f else 0.98f),
+                                palette.shellBottom.copy(alpha = if (LocalToastLiftIsDarkTheme.current) 0.98f else 1f),
+                            ),
+                        ),
+                    ),
+            ) {
+                Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            MiniTag(text = title, accent = palette.gold.copy(alpha = 0.18f))
+                            Text(
+                                trend.snapshot.displayValue,
+                                style = MaterialTheme.typography.displayLarge,
+                                fontWeight = FontWeight.Black,
+                            )
+                            Text(
+                                trend.snapshot.detail,
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        TokenCoinBadge(
+                            palette = palette,
+                            modifier = Modifier.size(104.dp),
+                        )
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        MiniTag(text = trend.snapshot.statusLabel, accent = palette.gold.copy(alpha = 0.18f))
+                        MiniTag(
+                            text = "Floor ${trend.snapshot.floor}",
+                            accent = palette.negative.copy(alpha = 0.16f),
+                        )
+                        MiniTag(
+                            text = "Ceiling +${trend.snapshot.ceiling}",
+                            accent = palette.positive.copy(alpha = 0.16f),
+                        )
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .background(deltaColor.copy(alpha = 0.16f)),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                imageVector = tokenTrendDirection(windowDelta),
+                                contentDescription = null,
+                                tint = deltaColor,
+                            )
+                        }
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text(
+                                "${signedCompactNumber(windowDelta)} over ${selectedWindow.days} days",
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = deltaColor,
+                            )
+                            Text(
+                                "Checking your wallet should feel rewarding, not punitive. Downside is capped and clean sessions pull it back up.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        FeatureCard(
+            containerColor = MaterialTheme.colorScheme.surface,
+            accentKey = "token trend",
+        ) {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                Text("Balance Trend", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black)
+                ChoiceChipRow(
+                    values = TokenBalanceWindow.entries.map(TokenBalanceWindow::label),
+                    selected = selectedWindow.label,
+                    onSelect = { label ->
+                        selectedWindow = TokenBalanceWindow.entries.firstOrNull { it.label == label }
+                            ?: TokenBalanceWindow.Last7Days
+                    },
+                )
+                TokenBalanceChart(
+                    points = windowPoints,
+                    delta = windowDelta,
+                    palette = palette,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(184.dp),
+                )
+                TokenBalanceAxisLabels(points = windowPoints, labelStep = selectedWindow.labelStep)
+            }
+        }
+
+        StatRail(
+            items = listOf(
+                Triple("Earned", signedCompactNumber(windowEarned), "positive tokens"),
+                Triple("Spent", signedCompactNumber(-windowSpent), "skip penalties"),
+                Triple("Range", "$windowWorst to $windowBest", "${selectedWindow.days}-day band"),
+            ),
+        )
+
+        StatRail(
+            items = listOf(
+                Triple("Last swing", signedCompactNumber(trend.latestDelta), trend.latestDate?.format(DateTimeFormatter.ofPattern("MMM d")) ?: "No dated swing"),
+                Triple("Monthly", signedCompactNumber(trend.monthlyDelta), "last 30 days"),
+                Triple("Bounds", "${trend.snapshot.floor} / +${trend.snapshot.ceiling}", "hard limits"),
+            ),
+        )
+
+        if (trend.undatedSignalCount > 0) {
+            FeatureCard(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)) {
+                Text(
+                    text = "${
+                        trend.undatedSignalCount
+                    } older session outcome${if (trend.undatedSignalCount == 1) "" else "s"} are folded into the balance without a chart timestamp. New skips and completions now plot directly.",
+                    modifier = Modifier.padding(14.dp),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun TokenBalanceAxisLabels(
+    points: List<AdherenceCurrencyTrendPoint>,
+    labelStep: Int,
+) {
+    if (points.isEmpty()) {
+        Text(
+            "No dated sessions plotted yet.",
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodySmall,
+        )
+        return
+    }
+    val labelIndices = points.indices.filter { index ->
+        index == 0 || index == points.lastIndex || index % labelStep == 0
+    }.distinct()
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        labelIndices.forEach { index ->
+            Text(
+                text = points[index].date.format(DateTimeFormatter.ofPattern(if (points.size > 14) "MMM d" else "E")),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun TokenCoinBadge(
+    palette: TokenWalletPalette,
+    modifier: Modifier = Modifier,
+) {
+    val infiniteTransition = rememberInfiniteTransition(label = "tokenCoin")
+    val haloScale by infiniteTransition.animateFloat(
+        initialValue = 0.92f,
+        targetValue = 1.08f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 1800, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "tokenHaloScale",
+    )
+    val shineShift by infiniteTransition.animateFloat(
+        initialValue = 0.18f,
+        targetValue = 0.42f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 1300, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "tokenShineShift",
+    )
+
+    Box(modifier = modifier, contentAlignment = Alignment.Center) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val center = androidx.compose.ui.geometry.Offset(size.width / 2f, size.height / 2f)
+            val radius = size.minDimension * 0.3f
+            drawCircle(
+                color = palette.glow,
+                radius = radius * 1.75f * haloScale,
+                center = center,
+            )
+            drawCircle(
+                brush = Brush.radialGradient(
+                    colors = listOf(
+                        palette.gold.copy(alpha = 0.98f),
+                        palette.goldSoft.copy(alpha = 0.94f),
+                    ),
+                    center = center,
+                    radius = radius,
+                ),
+                radius = radius,
+                center = center,
+            )
+            drawCircle(
+                color = Color.White.copy(alpha = 0.26f),
+                radius = radius * 0.72f,
+                center = center.copy(y = center.y - radius * shineShift),
+                style = Stroke(width = radius * 0.22f),
+            )
+            drawCircle(
+                color = palette.shellStroke.copy(alpha = 0.24f),
+                radius = radius * 0.94f,
+                center = center,
+                style = Stroke(width = radius * 0.1f),
+            )
+            drawCircle(
+                color = Color.White.copy(alpha = 0.18f),
+                radius = radius * 0.14f,
+                center = center.copy(x = center.x + radius * 0.54f, y = center.y - radius * 0.48f),
+            )
+        }
+        Text(
+            text = "TL",
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Black,
+            color = readableTextColorFor(palette.gold),
+        )
+    }
+}
+
+@Composable
+private fun TokenBalanceChart(
+    points: List<AdherenceCurrencyTrendPoint>,
+    delta: Int,
+    palette: TokenWalletPalette,
+    modifier: Modifier = Modifier,
+) {
+    val chartColor = tokenTrendColor(delta, palette)
+    val chartAlpha by animateFloatAsState(
+        targetValue = 1f,
+        animationSpec = tween(durationMillis = 700, easing = FastOutSlowInEasing),
+        label = "tokenChartAlpha",
+    )
+
+    if (points.isEmpty()) {
+        Box(
+            modifier = modifier
+                .clip(RoundedCornerShape(14.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.48f)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = "Dated token swings will appear here.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        return
+    }
+
+    Box(
+        modifier = modifier
+            .graphicsLayer {
+                alpha = chartAlpha
+                translationY = (1f - chartAlpha) * 18f
+            }
+            .clip(RoundedCornerShape(14.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.38f)),
+            contentAlignment = Alignment.Center,
+    ) {
+        Canvas(modifier = Modifier.fillMaxSize().padding(horizontal = 10.dp, vertical = 8.dp)) {
+            val minBalance = points.minOfOrNull { it.balance } ?: 0
+            val maxBalance = points.maxOfOrNull { it.balance } ?: 0
+            val balanceRange = (maxBalance - minBalance).coerceAtLeast(1)
+            val width = size.width
+            val height = size.height
+
+            repeat(4) { index ->
+                val y = (height / 3f) * index
+                drawLine(
+                    color = palette.graphGrid,
+                    start = androidx.compose.ui.geometry.Offset(0f, y),
+                    end = androidx.compose.ui.geometry.Offset(width, y),
+                    strokeWidth = 1.dp.toPx(),
+                    pathEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 8f)),
+                )
+            }
+
+            fun pointOffset(index: Int, point: AdherenceCurrencyTrendPoint): androidx.compose.ui.geometry.Offset {
+                val denominator = (points.size - 1).coerceAtLeast(1)
+                val x = if (points.size == 1) width / 2f else (index.toFloat() / denominator.toFloat()) * width
+                val normalized = (point.balance - minBalance).toFloat() / balanceRange.toFloat()
+                val y = height - (normalized * height)
+                return androidx.compose.ui.geometry.Offset(x, y)
+            }
+
+            val linePath = Path()
+            val areaPath = Path()
+            points.forEachIndexed { index, point ->
+                val offset = pointOffset(index, point)
+                if (index == 0) {
+                    linePath.moveTo(offset.x, offset.y)
+                    areaPath.moveTo(offset.x, height)
+                    areaPath.lineTo(offset.x, offset.y)
+                } else {
+                    linePath.lineTo(offset.x, offset.y)
+                    areaPath.lineTo(offset.x, offset.y)
+                }
+            }
+            val lastOffset = pointOffset(points.lastIndex, points.last())
+            areaPath.lineTo(lastOffset.x, height)
+            areaPath.close()
+
+            drawPath(
+                path = areaPath,
+                brush = Brush.verticalGradient(
+                    colors = listOf(
+                        chartColor.copy(alpha = 0.28f),
+                        chartColor.copy(alpha = 0.02f),
+                    ),
+                ),
+            )
+            drawPath(
+                path = linePath,
+                color = chartColor,
+                style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round),
+            )
+
+            points.forEachIndexed { index, point ->
+                if (point.delta == 0) return@forEachIndexed
+                val offset = pointOffset(index, point)
+                val pointColor = if (point.delta > 0) palette.positive else palette.negative
+                drawCircle(
+                    color = pointColor.copy(alpha = 0.18f),
+                    radius = 7.dp.toPx(),
+                    center = offset,
+                )
+                drawCircle(
+                    color = pointColor,
+                    radius = 3.4.dp.toPx(),
+                    center = offset,
+                )
             }
         }
     }

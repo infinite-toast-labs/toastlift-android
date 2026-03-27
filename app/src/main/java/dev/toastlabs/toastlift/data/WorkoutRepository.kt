@@ -952,6 +952,27 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
         return distinctIds.associateWith { workoutId -> counts[workoutId] ?: 0 }
     }
 
+    fun loadCompletedWorkoutTimestamps(workoutIds: Collection<Long>): Map<Long, String> {
+        val distinctIds = workoutIds.distinct()
+        if (distinctIds.isEmpty()) return emptyMap()
+
+        val placeholders = distinctIds.joinToString(",") { "?" }
+        return database.open().rawQuery(
+            """
+            SELECT performed_workout_id, completed_at_utc
+            FROM performed_workouts
+            WHERE performed_workout_id IN ($placeholders)
+            """.trimIndent(),
+            distinctIds.map(Long::toString).toTypedArray(),
+        ).use { cursor ->
+            buildMap {
+                while (cursor.moveToNext()) {
+                    put(cursor.getLong(0), cursor.getString(1))
+                }
+            }
+        }
+    }
+
     fun loadCompletedSetCountsByWorkoutAndExercise(workoutIds: Collection<Long>): Map<Long, Map<Long, Int>> {
         val distinctIds = workoutIds.distinct()
         if (distinctIds.isEmpty()) return emptyMap()

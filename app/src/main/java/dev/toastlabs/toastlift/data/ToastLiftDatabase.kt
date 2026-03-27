@@ -10,7 +10,7 @@ import java.util.Locale
 class ToastLiftDatabase(private val context: Context) {
     private val databaseName = "toastlift.db"
     private val assetName = "functional_fitness_workout_generator.sqlite"
-    private val appVersion = 16
+    private val appVersion = 17
 
     @Volatile
     private var database: SQLiteDatabase? = null
@@ -763,6 +763,12 @@ class ToastLiftDatabase(private val context: Context) {
                 coach_brief TEXT
             )
             """.trimIndent(),
+        )
+        ensureColumn(
+            db = db,
+            table = "planned_sessions",
+            column = "status_updated_at_utc",
+            definition = "TEXT",
         )
         db.execSQL(
             "CREATE INDEX IF NOT EXISTS idx_planned_sessions_program ON planned_sessions (program_id, sequence_number)",

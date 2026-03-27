@@ -752,6 +752,7 @@ data class PlannedSession(
     val timeBudgetMinutes: Int? = null,
     val status: SessionStatus = SessionStatus.UPCOMING,
     val actualWorkoutId: Long? = null,
+    val statusUpdatedAtUtc: String? = null,
     val coachBrief: String? = null,
 )
 
