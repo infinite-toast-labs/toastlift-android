@@ -378,11 +378,14 @@ data class EditableTemplate(
 data class HistorySummary(
     val id: Long,
     val title: String,
+    val origin: String = "",
     val completedAtUtc: String,
     val durationSeconds: Int,
     val totalVolume: Double,
     val exerciseCount: Int,
     val exerciseNames: List<String>,
+    val focusKey: String? = null,
+    val completionReceipt: CompletionReceiptSnapshot? = null,
     val strengthScore: Int? = null,
 )
 
@@ -410,18 +413,239 @@ data class WorkoutAbFlagSnapshot(
 
 data class CompletedWorkoutAbFlags(
     val completionFeedbackFlag: WorkoutAbFlagSnapshot? = null,
+    val receiptExperienceFlag: WorkoutAbFlagSnapshot? = null,
 )
 
 data class HistoryDetail(
     val id: Long,
     val title: String,
     val origin: String,
+    val focusKey: String? = null,
     val completedAtUtc: String,
     val durationSeconds: Int,
     val totalVolume: Double,
     val exerciseCount: Int,
     val exercises: List<HistoryExerciseDetail>,
     val abFlags: CompletedWorkoutAbFlags? = null,
+    val completionReceipt: CompletionReceiptSnapshot? = null,
+)
+
+enum class SessionOutcomeTier {
+    CLOSED_CLEAN,
+    SOLID_SESSION,
+    MEANINGFUL_PARTIAL,
+    SHOWED_UP,
+}
+
+enum class ProgramCompletionTruth {
+    ON_PLAN,
+    PARTIAL_CREDIT,
+    MINIMUM_DOSE,
+}
+
+enum class CompletionReceiptHighlightKind {
+    PR,
+    REP_GAIN,
+    LOAD_GAIN,
+    FIRST_COMPLETION,
+    CONSISTENCY,
+}
+
+enum class CompletionReceiptMeaningKind {
+    PROGRAM_CREDIT,
+    TOKEN_BALANCE,
+    WEEKLY_TARGET,
+    WEEKLY_PROMISE,
+    STREAK,
+    STRENGTH_SCORE,
+    MILESTONE,
+    CHECKPOINT,
+}
+
+enum class CompletionReceiptReferenceType {
+    SAME_PROGRAM_FOCUS,
+    SAME_TEMPLATE,
+    SAME_GENERATED_FOCUS,
+    SAME_ORIGIN_FALLBACK,
+    HISTORY_REPLAY_SOURCE,
+}
+
+enum class CompletionReceiptComparisonKind {
+    COMPLETION_CREDIT,
+    COMPLETED_SETS,
+    DURATION,
+    TOP_SET,
+    STRENGTH_SCORE,
+}
+
+enum class CompletionFrictionReason {
+    TOO_LONG,
+    WRONG_EXERCISE,
+    ENERGY_CRASHED,
+    ALL_GOOD,
+}
+
+data class CompletionReceiptSnapshot(
+    val version: Int = 2,
+    val workoutId: Long,
+    val createdAtUtc: String,
+    val origin: String,
+    val focusKey: String? = null,
+    val experiment: CompletionReceiptExperimentSnapshot? = null,
+    val accounting: CompletionReceiptAccountingSnapshot? = null,
+    val comparison: CompletionReceiptComparisonSnapshot? = null,
+    val achievements: CompletionReceiptAchievementSnapshot? = null,
+    val splitProgress: CompletionReceiptSplitProgressSnapshot? = null,
+    val statsRail: CompletionReceiptStatsRailSnapshot? = null,
+    val hero: CompletionReceiptHeroSnapshot,
+    val evidence: CompletionReceiptEvidenceSnapshot,
+    val meaning: CompletionReceiptMeaningSnapshot,
+    val bridge: CompletionReceiptBridgeSnapshot? = null,
+    val learning: CompletionReceiptLearningSnapshot? = null,
+)
+
+data class CompletionReceiptExperimentSnapshot(
+    val experimentKey: String,
+    val variantKey: String,
+    val variantName: String,
+)
+
+data class CompletionReceiptAccountingSnapshot(
+    val completionRatio: Double,
+    val completionCredit: Double,
+    val truth: ProgramCompletionTruth? = null,
+    val tokenDelta: Int? = null,
+)
+
+data class CompletionReceiptAchievementSnapshot(
+    val title: String,
+    val prCount: Int = 0,
+    val chips: List<String> = emptyList(),
+    val fallbackLabel: String? = null,
+    val fallbackValue: String? = null,
+    val supportingText: String? = null,
+)
+
+data class CompletionReceiptSplitProgressSnapshot(
+    val overallBeforeCompletedSets: Double,
+    val overallAfterCompletedSets: Double,
+    val overallTargetSets: Double,
+    val groupRows: List<CompletionReceiptSplitProgressRowSnapshot> = emptyList(),
+)
+
+data class CompletionReceiptSplitProgressRowSnapshot(
+    val key: String,
+    val label: String,
+    val beforeCompletedSets: Double,
+    val afterCompletedSets: Double,
+    val targetSets: Double,
+)
+
+data class CompletionReceiptStatsRailSnapshot(
+    val items: List<CompletionReceiptStatSnapshot> = emptyList(),
+)
+
+data class CompletionReceiptStatSnapshot(
+    val label: String,
+    val value: String,
+    val supportingText: String? = null,
+)
+
+data class CompletionReceiptHeroSnapshot(
+    val title: String,
+    val subtitle: String,
+    val outcomeTier: SessionOutcomeTier,
+    val accentKey: String,
+)
+
+data class CompletionReceiptEvidenceSnapshot(
+    val completedSets: Int,
+    val plannedSets: Int,
+    val completedExercises: Int,
+    val totalExercises: Int,
+    val durationSeconds: Int,
+    val volume: Double?,
+    val highlights: List<CompletionReceiptHighlightSnapshot> = emptyList(),
+)
+
+data class CompletionReceiptHighlightSnapshot(
+    val kind: CompletionReceiptHighlightKind,
+    val label: String,
+    val deltaLabel: String,
+    val detail: String,
+)
+
+data class CompletionReceiptMeaningSnapshot(
+    val summaryLine: String,
+    val rows: List<CompletionReceiptMeaningRowSnapshot> = emptyList(),
+)
+
+data class CompletionReceiptMeaningRowSnapshot(
+    val kind: CompletionReceiptMeaningKind,
+    val label: String,
+    val value: String,
+    val supportingText: String? = null,
+)
+
+data class CompletionReceiptBridgeSnapshot(
+    val suggestedNextLabel: String? = null,
+    val fallbackLabel: String? = null,
+)
+
+data class CompletionReceiptComparisonSnapshot(
+    val reference: CompletionReceiptReferenceSnapshot,
+    val headline: String,
+    val rows: List<CompletionReceiptComparisonRowSnapshot> = emptyList(),
+)
+
+data class CompletionReceiptReferenceSnapshot(
+    val workoutId: Long,
+    val type: CompletionReceiptReferenceType,
+    val label: String,
+    val completedAtUtc: String,
+)
+
+data class CompletionReceiptComparisonRowSnapshot(
+    val kind: CompletionReceiptComparisonKind,
+    val label: String,
+    val currentValue: String,
+    val previousValue: String,
+    val deltaLabel: String,
+)
+
+data class CompletionReceiptLearningSnapshot(
+    val programFeelRows: List<CompletionReceiptProgramFeelRowSnapshot> = emptyList(),
+    val frictionPrompt: CompletionReceiptFrictionPromptSnapshot? = null,
+)
+
+data class CompletionReceiptProgramFeelRowSnapshot(
+    val exerciseId: Long,
+    val exerciseName: String,
+    val selectedTag: SfrTag? = null,
+)
+
+data class CompletionReceiptFrictionPromptSnapshot(
+    val skippedExerciseId: Long? = null,
+    val skippedExerciseName: String? = null,
+    val selectedReason: CompletionFrictionReason? = null,
+    val biasAwaySelected: Boolean = false,
+)
+
+data class WeeklyPromiseSnapshot(
+    val weekStartLocal: String,
+    val targetSessions: Int,
+    val completedSessions: Int,
+)
+
+data class ReceiptReferenceCandidate(
+    val workoutId: Long,
+    val title: String,
+    val origin: String,
+    val focusKey: String?,
+    val completedAtUtc: String,
+    val durationSeconds: Int,
+    val completedSetCount: Int,
+    val exerciseIds: List<Long>,
 )
 
 data class ExerciseHistorySet(
@@ -754,6 +978,9 @@ data class PlannedSession(
     val actualWorkoutId: Long? = null,
     val statusUpdatedAtUtc: String? = null,
     val coachBrief: String? = null,
+    val completionRatio: Double? = null,
+    val completionCredit: Double? = null,
+    val completionTruth: ProgramCompletionTruth? = null,
 )
 
 enum class ExecutionStyle { NORMAL, SUPERSET, REST_PAUSE, DROP_SET }

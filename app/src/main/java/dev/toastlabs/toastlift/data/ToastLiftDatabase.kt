@@ -415,17 +415,31 @@ class ToastLiftDatabase(private val context: Context) {
                 title TEXT NOT NULL,
                 origin_type TEXT NOT NULL,
                 location_mode_id INTEGER NOT NULL,
+                focus_key TEXT,
                 started_at_utc TEXT NOT NULL,
                 completed_at_utc TEXT NOT NULL,
                 actual_duration_seconds INTEGER NOT NULL,
-                ab_flags_snapshot_json TEXT
+                ab_flags_snapshot_json TEXT,
+                completion_receipt_snapshot_json TEXT
             )
             """.trimIndent(),
         )
         ensureColumn(
             db = db,
             table = "performed_workouts",
+            column = "focus_key",
+            definition = "TEXT",
+        )
+        ensureColumn(
+            db = db,
+            table = "performed_workouts",
             column = "ab_flags_snapshot_json",
+            definition = "TEXT",
+        )
+        ensureColumn(
+            db = db,
+            table = "performed_workouts",
+            column = "completion_receipt_snapshot_json",
             definition = "TEXT",
         )
         db.execSQL(
@@ -760,7 +774,10 @@ class ToastLiftDatabase(private val context: Context) {
                 time_budget_minutes INTEGER,
                 status TEXT NOT NULL DEFAULT 'UPCOMING',
                 actual_workout_id INTEGER,
-                coach_brief TEXT
+                coach_brief TEXT,
+                completion_ratio REAL,
+                completion_credit REAL,
+                completion_truth TEXT
             )
             """.trimIndent(),
         )
@@ -768,6 +785,24 @@ class ToastLiftDatabase(private val context: Context) {
             db = db,
             table = "planned_sessions",
             column = "status_updated_at_utc",
+            definition = "TEXT",
+        )
+        ensureColumn(
+            db = db,
+            table = "planned_sessions",
+            column = "completion_ratio",
+            definition = "REAL",
+        )
+        ensureColumn(
+            db = db,
+            table = "planned_sessions",
+            column = "completion_credit",
+            definition = "REAL",
+        )
+        ensureColumn(
+            db = db,
+            table = "planned_sessions",
+            column = "completion_truth",
             definition = "TEXT",
         )
         db.execSQL(

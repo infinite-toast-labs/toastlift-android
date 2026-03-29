@@ -54,6 +54,23 @@ internal data class AdherenceSessionSignal(
     val occurredAtUtc: String? = null,
 )
 
+internal data class CompletedWorkoutAdherenceSignal(
+    val workoutId: Long,
+    val completedAtUtc: String,
+    val plannedSetCount: Int,
+    val completedSetCount: Int,
+)
+
+private data class SequencedAdherenceEvent(
+    val occurredAtUtc: String?,
+    val parsedInstant: Instant?,
+    val fallbackSequenceNumber: Int,
+    val tieBreaker: String,
+    val status: SessionStatus,
+    val plannedSets: Int,
+    val completedSetCount: Int = 0,
+)
+
 internal fun buildAdherenceCurrencySnapshot(signals: List<AdherenceSessionSignal>): AdherenceCurrencySnapshot {
     return buildAdherenceCurrencyLedger(signals).snapshot
 }
@@ -118,6 +135,71 @@ internal fun buildAdherenceCurrencyTrend(
         bestBalance = dailyPoints.maxOfOrNull(AdherenceCurrencyTrendPoint::balance) ?: snapshot.balance,
         worstBalance = dailyPoints.minOfOrNull(AdherenceCurrencyTrendPoint::balance) ?: snapshot.balance,
         undatedSignalCount = ledger.entries.count { it.occurredAtUtc == null },
+    )
+}
+
+internal fun buildGlobalAdherenceCurrencyTrend(
+    completedWorkouts: List<CompletedWorkoutAdherenceSignal>,
+    skippedSessions: List<PlannedSession>,
+    today: LocalDate = LocalDate.now(),
+    zoneId: ZoneId = ZoneId.systemDefault(),
+): AdherenceCurrencyTrend? {
+    val events = buildList {
+        completedWorkouts.forEach { workout ->
+            add(
+                SequencedAdherenceEvent(
+                    occurredAtUtc = workout.completedAtUtc,
+                    parsedInstant = runCatching { Instant.parse(workout.completedAtUtc) }.getOrNull(),
+                    fallbackSequenceNumber = workout.workoutId.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
+                    tieBreaker = "workout:${workout.workoutId}",
+                    status = SessionStatus.COMPLETED,
+                    plannedSets = workout.plannedSetCount,
+                    completedSetCount = workout.completedSetCount,
+                ),
+            )
+        }
+        skippedSessions
+            .filter { it.status == SessionStatus.SKIPPED }
+            .forEach { session ->
+                add(
+                    SequencedAdherenceEvent(
+                        occurredAtUtc = session.statusUpdatedAtUtc,
+                        parsedInstant = session.statusUpdatedAtUtc?.let { timestamp ->
+                            runCatching { Instant.parse(timestamp) }.getOrNull()
+                        },
+                        fallbackSequenceNumber = session.sequenceNumber,
+                        tieBreaker = "skip:${session.programId}:${session.sequenceNumber}:${session.id}",
+                        status = SessionStatus.SKIPPED,
+                        plannedSets = session.plannedSets,
+                    ),
+                )
+            }
+    }
+    if (events.isEmpty()) return null
+
+    val resequencedSignals = events
+        .sortedWith(
+            compareBy<SequencedAdherenceEvent>(
+                { it.parsedInstant == null },
+                { it.parsedInstant },
+                { it.fallbackSequenceNumber },
+                { it.tieBreaker },
+            ),
+        )
+        .mapIndexed { index, event ->
+            AdherenceSessionSignal(
+                sequenceNumber = index + 1,
+                status = event.status,
+                plannedSets = event.plannedSets,
+                completedSetCount = event.completedSetCount,
+                occurredAtUtc = event.occurredAtUtc,
+            )
+        }
+
+    return buildAdherenceCurrencyTrend(
+        signals = resequencedSignals,
+        today = today,
+        zoneId = zoneId,
     )
 }
 

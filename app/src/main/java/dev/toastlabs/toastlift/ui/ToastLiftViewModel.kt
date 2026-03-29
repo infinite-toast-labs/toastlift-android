@@ -6,12 +6,28 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import dev.toastlabs.toastlift.BuildConfig
 import dev.toastlabs.toastlift.data.ActiveSession
 import dev.toastlabs.toastlift.data.AbandonedWorkoutSummary
 import dev.toastlabs.toastlift.data.AdherenceCurrencyTrend
 import dev.toastlabs.toastlift.data.AppContainer
 import dev.toastlabs.toastlift.data.CheckpointAction
 import dev.toastlabs.toastlift.data.CheckpointResult
+import dev.toastlabs.toastlift.data.CompletionReceiptAccountingSnapshot
+import dev.toastlabs.toastlift.data.CompletionReceiptAchievementSnapshot
+import dev.toastlabs.toastlift.data.CompletionReceiptBridgeSnapshot
+import dev.toastlabs.toastlift.data.CompletionReceiptEvidenceSnapshot
+import dev.toastlabs.toastlift.data.CompletionReceiptExperimentSnapshot
+import dev.toastlabs.toastlift.data.CompletionReceiptExperienceVariant
+import dev.toastlabs.toastlift.data.CompletionReceiptHeroSnapshot
+import dev.toastlabs.toastlift.data.CompletionReceiptLearningSnapshot
+import dev.toastlabs.toastlift.data.CompletionReceiptMeaningKind
+import dev.toastlabs.toastlift.data.CompletionReceiptMeaningRowSnapshot
+import dev.toastlabs.toastlift.data.CompletionReceiptMeaningSnapshot
+import dev.toastlabs.toastlift.data.CompletionReceiptSnapshot
+import dev.toastlabs.toastlift.data.CompletionReceiptSplitProgressSnapshot
+import dev.toastlabs.toastlift.data.CompletionReceiptStatSnapshot
+import dev.toastlabs.toastlift.data.CompletionReceiptStatsRailSnapshot
 import dev.toastlabs.toastlift.data.CustomExerciseDraft
 import dev.toastlabs.toastlift.data.DailyCoachMessage
 import dev.toastlabs.toastlift.data.EquipmentConflictItem
@@ -51,6 +67,7 @@ import dev.toastlabs.toastlift.data.PendingWorkoutShare
 import dev.toastlabs.toastlift.data.PlannedSession
 import dev.toastlabs.toastlift.data.PlannedSessionExercise
 import dev.toastlabs.toastlift.data.ProgramCheckpoint
+import dev.toastlabs.toastlift.data.ProgramCompletionTruth
 import dev.toastlabs.toastlift.data.ProgramOverview
 import dev.toastlabs.toastlift.data.ProgramSetupDraft
 import dev.toastlabs.toastlift.data.ProgramStatus
@@ -71,6 +88,7 @@ import dev.toastlabs.toastlift.data.ThemePreference
 import dev.toastlabs.toastlift.data.TrainingProgram
 import dev.toastlabs.toastlift.data.TrainingSplitProgram
 import dev.toastlabs.toastlift.data.UserProfile
+import dev.toastlabs.toastlift.data.WeeklyPromiseSnapshot
 import dev.toastlabs.toastlift.data.WeeklyMuscleTargetWorkoutRow
 import dev.toastlabs.toastlift.data.WorkoutExercise
 import dev.toastlabs.toastlift.data.WorkoutFeedbackSignalType
@@ -78,9 +96,10 @@ import dev.toastlabs.toastlift.data.WorkoutMovementInsight
 import dev.toastlabs.toastlift.data.WorkoutMuscleInsight
 import dev.toastlabs.toastlift.data.WorkoutPlan
 import dev.toastlabs.toastlift.data.WorkoutExerciseSetDraft
+import dev.toastlabs.toastlift.data.buildCompletionReceiptAbFlags
 import dev.toastlabs.toastlift.data.buildTodayCompletionFeedbackAbFlags
 import dev.toastlabs.toastlift.data.buildAdherenceCurrencySnapshot
-import dev.toastlabs.toastlift.data.buildAdherenceCurrencyTrend
+import dev.toastlabs.toastlift.data.buildGlobalAdherenceCurrencyTrend
 import dev.toastlabs.toastlift.data.toPendingWorkoutShare
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -261,7 +280,7 @@ data class ProjectedMovementInsight(
     val exerciseCount: Int,
 )
 
-data class AppUiState(
+internal data class AppUiState(
     val isLoading: Boolean = true,
     val selectedTab: MainTab = MainTab.Today,
     val themePreference: ThemePreference = ThemePreference.Dark,
@@ -302,6 +321,7 @@ data class AppUiState(
     val projectedMovementInsights: List<ProjectedMovementInsight> = emptyList(),
     val abandonedWorkout: AbandonedWorkoutSummary? = null,
     val selectedHistoryDetail: HistoryDetail? = null,
+    val completionReceipt: CompletionReceiptUiState? = null,
     val activeSession: ActiveSession? = null,
     val activeSessionExerciseIndex: Int? = null,
     val activeSessionAddExerciseVisible: Boolean = false,
@@ -318,6 +338,8 @@ data class AppUiState(
         isCompletedToday = false,
         progressFraction = 0f,
     ),
+    val todayReceiptRecap: TodayReceiptRecapState? = null,
+    val debugReceiptLaunch: CompletionReceiptDebugLaunch? = null,
     // ── Adaptive Program Engine state ──
     val activeProgram: TrainingProgram? = null,
     val programOverview: ProgramOverview? = null,
@@ -1446,7 +1468,7 @@ internal fun smartPickExerciseScore(
 }
 
 class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
-    var uiState by mutableStateOf(AppUiState())
+    internal var uiState by mutableStateOf(AppUiState())
         private set
 
     private var customExerciseNameLookupJob: Job? = null
@@ -1563,6 +1585,7 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
                     zoneId = zoneId,
                 )
             }
+            val tokenBalanceTrend = buildTokenBalanceTrend()
             val restoredActiveSession = uiState.activeSession?.let {
                 null
             } ?: container.workoutRepository.loadActiveSession()?.let { persisted ->
@@ -1574,6 +1597,10 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
                 TodayCompletionFeedbackVariant.DONE_TODAY_BADGE
             }
             val todayWorkoutCompletion = buildTodayWorkoutCompletionState(history = history)
+            val todayReceiptRecap = uiState.debugReceiptLaunch
+                ?.takeIf { it.surface.equals("today_receipt_recap", ignoreCase = true) }
+                ?.let { buildDebugReceiptFixture(it).recap }
+                ?: buildTodayReceiptRecapState(history = history)
             uiState = uiState.copy(
                 isLoading = false,
                 themePreference = profile?.themePreference ?: ThemePreference.Dark,
@@ -1596,10 +1623,12 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
                 historicalMovementInsights = historicalAnalytics.movements,
                 projectedMuscleInsights = projectedAnalytics.muscles,
                 projectedMovementInsights = projectedAnalytics.movements,
+                tokenBalanceTrend = tokenBalanceTrend,
                 weeklyMuscleTargets = weeklyMuscleTargets,
                 abandonedWorkout = abandonedWorkout,
                 todayCompletionFeedbackVariant = todayCompletionFeedbackVariant,
                 todayWorkoutCompletion = todayWorkoutCompletion,
+                todayReceiptRecap = todayReceiptRecap,
                 activeSession = uiState.activeSession ?: restoredActiveSession?.session,
                 activeSessionExerciseIndex = uiState.activeSessionExerciseIndex ?: restoredActiveSession?.selectedExerciseIndex,
                 selectedHistoryDetail = if (selectedHistoryDetail != null) {
@@ -1615,6 +1644,7 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
                     )
                 },
                 programSetupDraft = programSetupDraft,
+                debugReceiptLaunch = uiState.debugReceiptLaunch,
                 message = null,
             )
         }
@@ -3130,9 +3160,26 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
             val skippedExercisePrompt = firstSkippedExerciseFeedbackPrompt(session)
             val splitName = uiState.profile
                 ?.let { profile -> uiState.splitPrograms.firstOrNull { it.id == profile.splitProgramId }?.name }
+            val profile = uiState.profile
+            val activeProgram = uiState.activeProgram
+            val plannedSession = uiState.nextPlannedSession
+            val beforeHistory = uiState.history
+            val beforeStrengthScore = uiState.historyStrengthScore
+            val beforeWeeklyTargets = uiState.weeklyMuscleTargets
+            val beforeProgramSessions = activeProgram?.let { container.programRepository.loadSessionsForProgram(it.id) }.orEmpty()
+            val beforeTokenTrend = buildTokenBalanceTrend()
+            val beforeWeekCredit = if (plannedSession != null) {
+                weekCreditForProgramSessions(beforeProgramSessions, plannedSession.weekNumber)
+            } else {
+                null
+            }
+            val receiptVariant = container.experimentRepository.loadCompletionReceiptVariant()
             val workoutId = container.workoutRepository.saveCompletedWorkout(
                 session = session,
-                abFlags = buildTodayCompletionFeedbackAbFlags(uiState.todayCompletionFeedbackVariant),
+                abFlags = buildCompletionReceiptAbFlags(
+                    variant = receiptVariant,
+                    legacyTodayVariant = uiState.todayCompletionFeedbackVariant,
+                ),
             )
             container.workoutRepository.clearActiveSession()
             if (session.focusKey != null && splitName != null) {
@@ -3140,15 +3187,14 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
                     container.generatorRepository.nextFocusAfter(splitName, session.focusKey),
                 )
             }
-
-            // If program is active, mark the planned session as completed and show SFR debrief
-            val activeProgram = uiState.activeProgram
-            val plannedSession = uiState.nextPlannedSession
             if (activeProgram != null && plannedSession != null && workoutId != null) {
-                container.programRepository.updateSessionStatus(
-                    plannedSession.id,
-                    SessionStatus.COMPLETED,
-                    workoutId,
+                val accounting = computeProgramCompletionAccounting(session, plannedSession)
+                container.programRepository.updateSessionCompletionAccounting(
+                    sessionId = plannedSession.id,
+                    actualWorkoutId = workoutId,
+                    completionRatio = accounting.completionRatio,
+                    completionCredit = accounting.completionCredit,
+                    completionTruth = accounting.truth ?: ProgramCompletionTruth.MINIMUM_DOSE,
                 )
                 container.programRepository.logEvent(
                     dev.toastlabs.toastlift.data.ProgramEvent(
@@ -3158,34 +3204,1052 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
                         createdAt = System.currentTimeMillis(),
                     ),
                 )
-                val programExerciseIds = container.programRepository.loadSlotsForProgram(activeProgram.id)
-                    .map { it.exerciseId }
-                    .toSet()
-                val sessionExercises = session.exercises
-                    .filter { it.exerciseId in programExerciseIds }
-                    .distinctBy { it.exerciseId }
-                    .map { SfrDebriefExercise(exerciseId = it.exerciseId, exerciseName = it.name) }
-                uiState = uiState.copy(
-                    showSfrDebrief = sessionExercises.isNotEmpty(),
-                    sfrDebriefExercises = sessionExercises,
-                )
                 completeProgramIfFinished(activeProgram.id)
             }
+            val currentDetail = workoutId?.let { container.workoutRepository.loadHistoryDetail(it) }
+            val afterStrengthScore = container.workoutRepository.loadStrengthScoreSummary()
+            val afterHistory = container.workoutRepository.loadHistory(afterStrengthScore)
+            val todayReceiptRecap = buildTodayReceiptRecapState(afterHistory)
+            val afterWeeklyTargets = profile?.let { loadWeeklyMuscleTargetSummary(it) }
+            val afterProgramSessions = activeProgram?.let { container.programRepository.loadSessionsForProgram(it.id) }.orEmpty()
+            val afterTokenTrend = buildTokenBalanceTrend()
+            val afterNextPlannedSession = activeProgram?.let { container.programRepository.currentPosition(it.id) }
+            val afterWeekCredit = if (plannedSession != null) {
+                weekCreditForProgramSessions(afterProgramSessions, plannedSession.weekNumber)
+            } else {
+                null
+            }
+            val referenceCandidate = workoutId?.let {
+                selectReceiptReferenceCandidate(
+                    session = session,
+                    candidates = container.workoutRepository.loadRecentReceiptReferenceCandidates(it),
+                )
+            }
+            val referenceDetail = referenceCandidate?.let { candidate ->
+                container.workoutRepository.loadHistoryDetail(candidate.workoutId)
+            }
+            val programExerciseIds = activeProgram?.let { loadProgramExerciseIds(it.id) }.orEmpty()
+            val accounting = if (activeProgram != null && plannedSession != null) {
+                computeProgramCompletionAccounting(session, plannedSession)
+            } else {
+                null
+            }
+            val receiptSnapshot = if (workoutId != null && currentDetail != null) {
+                val exerciseHistories = session.exercises
+                    .distinctBy(SessionExercise::exerciseId)
+                    .map { exercise ->
+                        container.workoutRepository.loadExerciseHistory(
+                            exerciseId = exercise.exerciseId,
+                            fallbackName = exercise.name,
+                        )
+                    }
+                buildCompletionReceiptSnapshot(
+                    workoutId = workoutId,
+                    completedAtUtc = currentDetail.completedAtUtc,
+                    session = session,
+                    durationSeconds = currentDetail.durationSeconds,
+                    totalVolume = currentDetail.totalVolume.takeIf { it > 0.0 },
+                    profile = profile,
+                    activeProgram = activeProgram,
+                    plannedSession = plannedSession,
+                    beforeHistory = beforeHistory,
+                    afterHistory = afterHistory,
+                    beforeStrengthScore = beforeStrengthScore,
+                    afterStrengthScore = afterStrengthScore,
+                    beforeWeeklyTargets = beforeWeeklyTargets,
+                    afterWeeklyTargets = afterWeeklyTargets,
+                    beforeTokenTrend = beforeTokenTrend,
+                    afterTokenTrend = afterTokenTrend,
+                    afterNextPlannedSession = afterNextPlannedSession,
+                    beforeWeekCredit = beforeWeekCredit,
+                    afterWeekCredit = afterWeekCredit,
+                    accounting = accounting,
+                    comparison = buildComparisonSnapshot(
+                        session = session,
+                        durationSeconds = currentDetail.durationSeconds,
+                        candidate = referenceCandidate,
+                        referenceDetail = referenceDetail,
+                    ),
+                    exerciseHistories = exerciseHistories,
+                    programExerciseIds = programExerciseIds,
+                    skippedExercisePrompt = skippedExercisePrompt,
+                    receiptVariant = receiptVariant,
+                )
+            } else {
+                null
+            }
+            if (workoutId != null && receiptSnapshot != null) {
+                container.workoutRepository.updateCompletionReceiptSnapshot(workoutId, receiptSnapshot)
+            }
 
-            refreshAll()
             uiState = uiState.copy(
                 activeSession = null,
                 activeSessionExerciseIndex = null,
                 activeSessionAddExerciseVisible = false,
-                skippedExerciseFeedbackPrompt = skippedExercisePrompt,
+                skippedExerciseFeedbackPrompt = null,
                 customExerciseDraft = null,
                 generatedWorkout = null,
                 projectedMuscleInsights = emptyList(),
                 projectedMovementInsights = emptyList(),
+                showSfrDebrief = false,
+                sfrDebriefExercises = emptyList(),
+                history = afterHistory,
+                historyStrengthScore = afterStrengthScore,
+                todayReceiptRecap = todayReceiptRecap,
+                completionReceipt = receiptSnapshot?.let { CompletionReceiptUiState(snapshot = it) },
                 message = "${session.title} logged.",
             )
+            refreshAll()
             loadProgramState()
         }
+    }
+
+    fun dismissCompletionReceipt() {
+        uiState = uiState.copy(completionReceipt = null)
+    }
+
+    fun openHistoryReceipt(workoutId: Long) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val detail = container.workoutRepository.loadHistoryDetail(workoutId)
+            val snapshot = detail?.completionReceipt
+            if (detail == null || snapshot == null) {
+                uiState = uiState.copy(message = "No saved receipt for this workout.")
+                return@launch
+            }
+            uiState = uiState.copy(
+                selectedHistoryDetail = null,
+                completionReceipt = CompletionReceiptUiState(
+                    snapshot = snapshot,
+                    isReplay = true,
+                ),
+            )
+        }
+    }
+
+    fun shareVisibleCompletionReceipt() {
+        val receipt = uiState.completionReceipt ?: return
+        prepareHistoryWorkoutShare(receipt.snapshot.workoutId, HistoryShareFormat.FormattedText)
+    }
+
+    fun tagCompletionReceiptProgramFeel(exerciseId: Long, tag: SfrTag) {
+        val receipt = uiState.completionReceipt ?: return
+        if (receipt.isReplay) return
+        submitSfrFeedback(exerciseId, tag)
+        updateVisibleCompletionReceiptSnapshot { snapshot ->
+            val updatedLearning = snapshot.learning?.copy(
+                programFeelRows = snapshot.learning.programFeelRows.map { row ->
+                    if (row.exerciseId == exerciseId) {
+                        row.copy(selectedTag = tag)
+                    } else {
+                        row
+                    }
+                },
+            )
+            snapshot.copy(learning = updatedLearning)
+        }
+    }
+
+    fun tagCompletionReceiptFriction(
+        reason: dev.toastlabs.toastlift.data.CompletionFrictionReason,
+        biasAwaySelected: Boolean = false,
+    ) {
+        val receipt = uiState.completionReceipt ?: return
+        if (receipt.isReplay) return
+        val frictionPrompt = receipt.snapshot.learning?.frictionPrompt ?: return
+        val prompt = skippedExerciseFeedbackPromptFromReceipt(receipt.snapshot) ?: return
+
+        viewModelScope.launch(Dispatchers.IO) {
+            val signalType = if (biasAwaySelected || reason == dev.toastlabs.toastlift.data.CompletionFrictionReason.WRONG_EXERCISE) {
+                WorkoutFeedbackSignalType.SKIPPED_EXERCISE_DISLIKED
+            } else {
+                WorkoutFeedbackSignalType.SKIPPED_EXERCISE_DISMISSED
+            }
+            container.workoutRepository.recordSkippedExerciseFeedback(prompt, signalType)
+            if (signalType == WorkoutFeedbackSignalType.SKIPPED_EXERCISE_DISLIKED) {
+                refreshRecommendationBiasState(prompt.exerciseId)
+            }
+            updateVisibleCompletionReceiptSnapshot { snapshot ->
+                snapshot.copy(
+                    learning = snapshot.learning?.copy(
+                        frictionPrompt = frictionPrompt.copy(
+                            selectedReason = reason,
+                            biasAwaySelected = biasAwaySelected,
+                        ),
+                    ),
+                )
+            }
+        }
+    }
+
+    private fun updateVisibleCompletionReceiptSnapshot(
+        transform: (CompletionReceiptSnapshot) -> CompletionReceiptSnapshot,
+    ) {
+        val receipt = uiState.completionReceipt ?: return
+        if (receipt.isReplay) return
+        val updatedSnapshot = transform(receipt.snapshot)
+        uiState = uiState.copy(
+            completionReceipt = receipt.copy(snapshot = updatedSnapshot),
+            history = uiState.history.map { entry ->
+                if (entry.id == updatedSnapshot.workoutId) {
+                    entry.copy(completionReceipt = updatedSnapshot)
+                } else {
+                    entry
+                }
+            },
+            todayReceiptRecap = buildTodayReceiptRecapState(
+                history = uiState.history.map { entry ->
+                    if (entry.id == updatedSnapshot.workoutId) {
+                        entry.copy(completionReceipt = updatedSnapshot)
+                    } else {
+                        entry
+                    }
+                },
+            ),
+        )
+        viewModelScope.launch(Dispatchers.IO) {
+            container.workoutRepository.updateCompletionReceiptSnapshot(updatedSnapshot.workoutId, updatedSnapshot)
+        }
+    }
+
+    private fun buildCompletionReceiptSnapshot(
+        workoutId: Long,
+        completedAtUtc: String,
+        session: ActiveSession,
+        durationSeconds: Int,
+        totalVolume: Double?,
+        profile: UserProfile?,
+        activeProgram: TrainingProgram?,
+        plannedSession: PlannedSession?,
+        beforeHistory: List<HistorySummary>,
+        afterHistory: List<HistorySummary>,
+        beforeStrengthScore: StrengthScoreSummary?,
+        afterStrengthScore: StrengthScoreSummary?,
+        beforeWeeklyTargets: WeeklyMuscleTargetSummary?,
+        afterWeeklyTargets: WeeklyMuscleTargetSummary?,
+        beforeTokenTrend: AdherenceCurrencyTrend?,
+        afterTokenTrend: AdherenceCurrencyTrend?,
+        afterNextPlannedSession: PlannedSession?,
+        beforeWeekCredit: Double?,
+        afterWeekCredit: Double?,
+        accounting: CompletionReceiptAccountingSnapshot?,
+        comparison: dev.toastlabs.toastlift.data.CompletionReceiptComparisonSnapshot?,
+        exerciseHistories: List<ExerciseHistoryDetail>,
+        programExerciseIds: Set<Long>,
+        skippedExercisePrompt: SkippedExerciseFeedbackPrompt?,
+        receiptVariant: CompletionReceiptExperienceVariant,
+    ): CompletionReceiptSnapshot {
+        val completedSets = computeCompletedSetCount(session)
+        val plannedSets = plannedSession?.plannedSets ?: computePlannedSetCount(session)
+        val completedExercises = computeCompletedExerciseCount(session)
+        val totalExercises = session.exercises.size
+        val receiptAccounting = (accounting ?: computeSessionCompletionAccounting(session)).copy(
+            tokenDelta = completionReceiptTokenDelta(
+                beforeTokenTrend = beforeTokenTrend,
+                afterTokenTrend = afterTokenTrend,
+            ),
+        )
+        val outcomeTier = determineOutcomeTier(session, receiptAccounting)
+        val achievements = buildReceiptAchievementSnapshot(
+            session = session,
+            workoutTitle = session.title,
+            completedAtUtc = completedAtUtc,
+            exerciseHistories = exerciseHistories,
+        )
+        val splitProgress = buildReceiptSplitProgressSnapshot(
+            beforeWeeklyTargets = beforeWeeklyTargets,
+            afterWeeklyTargets = afterWeeklyTargets,
+        )
+        val statsRail = buildReceiptStatsRailSnapshot(
+            session = session,
+            durationSeconds = durationSeconds,
+            volume = totalVolume,
+        )
+        val evidence = CompletionReceiptEvidenceSnapshot(
+            completedSets = completedSets,
+            plannedSets = plannedSets,
+            completedExercises = completedExercises,
+            totalExercises = totalExercises,
+            durationSeconds = durationSeconds,
+            volume = totalVolume,
+            highlights = buildEvidenceHighlights(session, comparison),
+        )
+        val learning = buildDefaultLearningSnapshot(
+            session = session,
+            programExerciseIds = programExerciseIds,
+            skippedPrompt = skippedExercisePrompt,
+        )
+        val meaning = if (activeProgram != null && plannedSession != null) {
+            buildProgramReceiptMeaningSnapshot(
+                plannedSession = plannedSession,
+                accounting = receiptAccounting,
+                comparison = comparison,
+                beforeWeekCredit = beforeWeekCredit,
+                afterWeekCredit = afterWeekCredit,
+                beforeWeeklyTargets = beforeWeeklyTargets,
+                afterWeeklyTargets = afterWeeklyTargets,
+                beforeTokenTrend = beforeTokenTrend,
+                afterTokenTrend = afterTokenTrend,
+            )
+        } else {
+            buildNonProgramReceiptMeaningSnapshot(
+                profile = profile,
+                beforeHistory = beforeHistory,
+                afterHistory = afterHistory,
+                accounting = receiptAccounting,
+                beforeTokenTrend = beforeTokenTrend,
+                afterTokenTrend = afterTokenTrend,
+                beforeStrengthScore = beforeStrengthScore,
+                afterStrengthScore = afterStrengthScore,
+                comparison = comparison,
+            )
+        }
+        return CompletionReceiptSnapshot(
+            workoutId = workoutId,
+            createdAtUtc = Instant.now().toString(),
+            origin = session.origin,
+            focusKey = session.focusKey,
+            experiment = CompletionReceiptExperimentSnapshot(
+                experimentKey = dev.toastlabs.toastlift.data.COMPLETION_RECEIPT_EXPERIMENT_KEY,
+                variantKey = receiptVariant.storageKey,
+                variantName = dev.toastlabs.toastlift.data.completionReceiptVariantName(receiptVariant),
+            ),
+            accounting = receiptAccounting,
+            comparison = comparison,
+            achievements = achievements,
+            splitProgress = splitProgress,
+            statsRail = statsRail,
+            hero = CompletionReceiptHeroSnapshot(
+                title = session.title,
+                subtitle = "${formatMinutesCompact(durationSeconds)} • $completedSets/$plannedSets sets • ${receiptOriginLabel(session.origin)}",
+                outcomeTier = outcomeTier,
+                accentKey = session.title,
+            ),
+            evidence = evidence,
+            meaning = meaning,
+            bridge = buildReceiptBridgeSnapshot(
+                session = session,
+                activeProgram = activeProgram,
+                nextPlannedSession = afterNextPlannedSession,
+            ),
+            learning = learning,
+        )
+    }
+
+    private fun buildProgramReceiptMeaningSnapshot(
+        plannedSession: PlannedSession,
+        accounting: CompletionReceiptAccountingSnapshot?,
+        comparison: dev.toastlabs.toastlift.data.CompletionReceiptComparisonSnapshot?,
+        beforeWeekCredit: Double?,
+        afterWeekCredit: Double?,
+        beforeWeeklyTargets: WeeklyMuscleTargetSummary?,
+        afterWeeklyTargets: WeeklyMuscleTargetSummary?,
+        beforeTokenTrend: AdherenceCurrencyTrend?,
+        afterTokenTrend: AdherenceCurrencyTrend?,
+    ): CompletionReceiptMeaningSnapshot {
+        val rows = mutableListOf<CompletionReceiptMeaningRowSnapshot>()
+        val totalSessionsThisWeek = uiState.programProgress?.weekSummaries
+            ?.firstOrNull { it.weekNumber == plannedSession.weekNumber }
+            ?.totalSessions
+            ?.coerceAtLeast(1)
+            ?: 1
+        if (beforeWeekCredit != null && afterWeekCredit != null) {
+            rows += CompletionReceiptMeaningRowSnapshot(
+                kind = CompletionReceiptMeaningKind.PROGRAM_CREDIT,
+                label = "Week ${plannedSession.weekNumber} credit",
+                value = "${"%.1f".format(beforeWeekCredit)} -> ${"%.1f".format(afterWeekCredit)} of ${"%.1f".format(totalSessionsThisWeek.toDouble())}",
+                supportingText = programTruthSupportingText(accounting?.truth),
+            )
+        }
+        if (beforeTokenTrend != null && afterTokenTrend != null) {
+            rows += CompletionReceiptMeaningRowSnapshot(
+                kind = CompletionReceiptMeaningKind.TOKEN_BALANCE,
+                label = "Token balance",
+                value = "${beforeTokenTrend.snapshot.displayValue} -> ${afterTokenTrend.snapshot.displayValue}",
+                supportingText = afterTokenTrend.snapshot.statusLabel,
+            )
+        }
+        if (beforeWeeklyTargets != null && afterWeeklyTargets != null) {
+            rows += CompletionReceiptMeaningRowSnapshot(
+                kind = CompletionReceiptMeaningKind.WEEKLY_TARGET,
+                label = "Weekly target coverage",
+                value = "${percentLabel(beforeWeeklyTargets.overallCompletionRatio)} -> ${percentLabel(afterWeeklyTargets.overallCompletionRatio)}",
+            )
+        }
+        val summaryLine = when (accounting?.truth) {
+            ProgramCompletionTruth.ON_PLAN -> "This session moved week ${plannedSession.weekNumber} forward."
+            ProgramCompletionTruth.PARTIAL_CREDIT -> "This session partially advanced week ${plannedSession.weekNumber}."
+            ProgramCompletionTruth.MINIMUM_DOSE -> "This session kept continuity without overstating program progress."
+            null -> comparison?.headline ?: "This session counted."
+        }
+        return CompletionReceiptMeaningSnapshot(
+            summaryLine = comparison?.headline ?: summaryLine,
+            rows = rows.take(3),
+        )
+    }
+
+    private fun buildNonProgramReceiptMeaningSnapshot(
+        profile: UserProfile?,
+        beforeHistory: List<HistorySummary>,
+        afterHistory: List<HistorySummary>,
+        accounting: CompletionReceiptAccountingSnapshot?,
+        beforeTokenTrend: AdherenceCurrencyTrend?,
+        afterTokenTrend: AdherenceCurrencyTrend?,
+        beforeStrengthScore: StrengthScoreSummary?,
+        afterStrengthScore: StrengthScoreSummary?,
+        comparison: dev.toastlabs.toastlift.data.CompletionReceiptComparisonSnapshot?,
+    ): CompletionReceiptMeaningSnapshot {
+        val weeklyTarget = profile?.weeklyFrequency ?: 3
+        val beforePromise = buildWeeklyPromiseSnapshot(beforeHistory, weeklyTarget)
+        val afterPromise = buildWeeklyPromiseSnapshot(afterHistory, weeklyTarget)
+        val rows = mutableListOf<CompletionReceiptMeaningRowSnapshot>()
+        rows += CompletionReceiptMeaningRowSnapshot(
+            kind = CompletionReceiptMeaningKind.WEEKLY_PROMISE,
+            label = "Weekly promise",
+            value = "${beforePromise.completedSessions}/${beforePromise.targetSessions} -> ${afterPromise.completedSessions}/${afterPromise.targetSessions}",
+            supportingText = "Current local week",
+        )
+        if (afterTokenTrend != null) {
+            rows += CompletionReceiptMeaningRowSnapshot(
+                kind = CompletionReceiptMeaningKind.TOKEN_BALANCE,
+                label = "Token balance",
+                value = "${beforeTokenTrend?.snapshot?.displayValue ?: "0"} -> ${afterTokenTrend.snapshot.displayValue}",
+                supportingText = afterTokenTrend.snapshot.statusLabel,
+            )
+        }
+        if (beforeStrengthScore != null && afterStrengthScore != null) {
+            rows += CompletionReceiptMeaningRowSnapshot(
+                kind = CompletionReceiptMeaningKind.STRENGTH_SCORE,
+                label = "Strength score",
+                value = "${beforeStrengthScore.currentScore} -> ${afterStrengthScore.currentScore}",
+                supportingText = signedIntLabel(afterStrengthScore.deltaFromPrevious),
+            )
+        }
+        rows += CompletionReceiptMeaningRowSnapshot(
+            kind = CompletionReceiptMeaningKind.MILESTONE,
+            label = "Lifetime workouts",
+            value = "${beforeHistory.size} -> ${afterHistory.size}",
+        )
+        val summaryLine = comparison?.headline ?: when {
+            accounting?.tokenDelta != null && accounting.tokenDelta > 0 ->
+                "This banked ${signedIntLabel(accounting.tokenDelta)} TL and counted toward your weekly training target."
+            else -> "This counted toward your weekly training target."
+        }
+        return CompletionReceiptMeaningSnapshot(
+            summaryLine = summaryLine,
+            rows = rows.take(3),
+        )
+    }
+
+    private fun buildReceiptBridgeSnapshot(
+        session: ActiveSession,
+        activeProgram: TrainingProgram?,
+        nextPlannedSession: PlannedSession?,
+    ): CompletionReceiptBridgeSnapshot? {
+        val suggestedNextLabel = when {
+            activeProgram != null && nextPlannedSession != null ->
+                "Next: Week ${nextPlannedSession.weekNumber} Day ${nextPlannedSession.dayIndex + 1} • ${programFocusLabel(nextPlannedSession.focusKey)}"
+            session.origin.contains("template", ignoreCase = true) ->
+                "Next: repeat this template in 2-3 days"
+            session.focusKey != null ->
+                "Next: rotate to a different focus in the next 2-3 days"
+            else -> "Next: keep the next workout small and easy to start"
+        }
+        val fallbackLabel = "If that slips: 20-min minimum dose"
+        return CompletionReceiptBridgeSnapshot(
+            suggestedNextLabel = suggestedNextLabel,
+            fallbackLabel = fallbackLabel,
+        )
+    }
+
+    private fun loadProgramExerciseIds(programId: String): Set<Long> {
+        return container.programRepository.loadSlotsForProgram(programId)
+            .map { it.exerciseId }
+            .toSet()
+    }
+
+    private fun buildTokenBalanceTrend(): AdherenceCurrencyTrend? {
+        return buildGlobalAdherenceCurrencyTrend(
+            completedWorkouts = container.workoutRepository.loadCompletedWorkoutAdherenceSignals(),
+            skippedSessions = container.programRepository.loadSessionsByStatus(SessionStatus.SKIPPED),
+        )
+    }
+
+    private fun weekCreditForProgramSessions(
+        sessions: List<PlannedSession>,
+        weekNumber: Int,
+    ): Double {
+        return sessions
+            .filter { it.weekNumber == weekNumber }
+            .sumOf { programSession ->
+                programSession.completionCredit ?: if (programSession.status == SessionStatus.COMPLETED) 1.0 else 0.0
+            }
+    }
+
+    private fun loadWeeklyMuscleTargetSummary(profile: UserProfile): WeeklyMuscleTargetSummary? {
+        val now = LocalDate.now()
+        val zoneId = ZoneId.systemDefault()
+        val historyStart = now
+            .with(TemporalAdjusters.previousOrSame(DayOfWeek.SUNDAY))
+            .minusWeeks(3)
+            .atStartOfDay(zoneId)
+            .toInstant()
+            .toString()
+        val weeklyTargetRows = container.workoutRepository.loadWeeklyMuscleTargetRows(historyStart)
+        val exerciseDetailsById = weeklyTargetRows
+            .map(WeeklyMuscleTargetWorkoutRow::exerciseId)
+            .distinct()
+            .mapNotNull { exerciseId ->
+                container.catalogRepository.getExerciseDetail(exerciseId)?.let { detail -> exerciseId to detail }
+            }
+            .toMap()
+        return buildWeeklyMuscleTargetSummary(
+            profile = profile,
+            rows = weeklyTargetRows,
+            exerciseDetailsById = exerciseDetailsById,
+            now = now,
+            zoneId = zoneId,
+        )
+    }
+
+    private fun skippedExerciseFeedbackPromptFromReceipt(
+        snapshot: CompletionReceiptSnapshot,
+    ): SkippedExerciseFeedbackPrompt? {
+        val frictionPrompt = snapshot.learning?.frictionPrompt ?: return null
+        val skippedExerciseId = frictionPrompt.skippedExerciseId ?: return null
+        val skippedExerciseName = frictionPrompt.skippedExerciseName ?: return null
+        return SkippedExerciseFeedbackPrompt(
+            exerciseId = skippedExerciseId,
+            exerciseName = skippedExerciseName,
+            workoutTitle = snapshot.hero.title,
+            workoutOrigin = snapshot.origin,
+            workoutFocusKey = snapshot.focusKey,
+            sessionStartedAtUtc = snapshot.createdAtUtc,
+        )
+    }
+
+    private fun receiptOriginLabel(origin: String): String {
+        return when {
+            origin.contains("program", ignoreCase = true) -> "Program day"
+            origin.contains("template", ignoreCase = true) -> "Template"
+            origin.contains("history_reuse", ignoreCase = true) -> "History replay"
+            origin.contains("manual", ignoreCase = true) -> "Manual workout"
+            else -> origin.replace('_', ' ').replaceFirstChar { it.uppercase() }
+        }
+    }
+
+    private fun programTruthSupportingText(truth: ProgramCompletionTruth?): String = when (truth) {
+        ProgramCompletionTruth.ON_PLAN -> "On-plan session credit."
+        ProgramCompletionTruth.PARTIAL_CREDIT -> "Progress banked without overstating compliance."
+        ProgramCompletionTruth.MINIMUM_DOSE -> "Continuity preserved."
+        null -> ""
+    }
+
+    private fun percentLabel(ratio: Double): String {
+        return "${(ratio * 100).roundToInt()}%"
+    }
+
+    private fun signedIntLabel(value: Int): String {
+        return when {
+            value > 0 -> "+$value"
+            value < 0 -> value.toString()
+            else -> "Flat"
+        }
+    }
+
+    fun applyDebugReceiptLaunch(launch: CompletionReceiptDebugLaunch) {
+        if (!BuildConfig.DEBUG) return
+        val fixture = buildDebugReceiptFixture(launch)
+        uiState = uiState.copy(
+            completionReceipt = fixture.receipt,
+            todayReceiptRecap = fixture.recap,
+            debugReceiptLaunch = launch,
+            selectedHistoryDetail = null,
+            activeSession = null,
+            activeSessionExerciseIndex = null,
+            skippedExerciseFeedbackPrompt = null,
+            showSfrDebrief = false,
+            sfrDebriefExercises = emptyList(),
+            message = null,
+        )
+    }
+
+    private data class DebugReceiptFixture(
+        val receipt: CompletionReceiptUiState? = null,
+        val recap: TodayReceiptRecapState? = null,
+    )
+
+    private fun buildDebugReceiptFixture(launch: CompletionReceiptDebugLaunch): DebugReceiptFixture {
+        val scenario = launch.scenario
+        return when (launch.surface.lowercase()) {
+            "completion_receipt" -> {
+                val snapshot = when (scenario) {
+                    "program_clean_comparison" -> debugCompletionReceiptSnapshot(
+                        title = "Upper Push",
+                        subtitle = "46 min • 21/24 sets • Program day",
+                        outcomeTier = dev.toastlabs.toastlift.data.SessionOutcomeTier.SOLID_SESSION,
+                        tokenDelta = 3,
+                        summaryLine = "More work closed than last time.",
+                        meaningRows = listOf(
+                            CompletionReceiptMeaningRowSnapshot(
+                                kind = CompletionReceiptMeaningKind.PROGRAM_CREDIT,
+                                label = "Week 2 credit",
+                                value = "2.0 -> 2.9 of 4.0",
+                                supportingText = "On-plan session credit.",
+                            ),
+                            CompletionReceiptMeaningRowSnapshot(
+                                kind = CompletionReceiptMeaningKind.TOKEN_BALANCE,
+                                label = "Token balance",
+                                value = "+4 -> +7",
+                                supportingText = "Steady",
+                            ),
+                            CompletionReceiptMeaningRowSnapshot(
+                                kind = CompletionReceiptMeaningKind.WEEKLY_TARGET,
+                                label = "Weekly target coverage",
+                                value = "62% -> 81%",
+                            ),
+                        ),
+                        comparison = dev.toastlabs.toastlift.data.CompletionReceiptComparisonSnapshot(
+                            reference = dev.toastlabs.toastlift.data.CompletionReceiptReferenceSnapshot(
+                                workoutId = 41L,
+                                type = dev.toastlabs.toastlift.data.CompletionReceiptReferenceType.SAME_PROGRAM_FOCUS,
+                                label = "Upper Push",
+                                completedAtUtc = "2026-03-22T18:30:00Z",
+                            ),
+                            headline = "More work closed than last time.",
+                            rows = listOf(
+                                dev.toastlabs.toastlift.data.CompletionReceiptComparisonRowSnapshot(
+                                    kind = dev.toastlabs.toastlift.data.CompletionReceiptComparisonKind.COMPLETED_SETS,
+                                    label = "Completed sets",
+                                    currentValue = "21",
+                                    previousValue = "18",
+                                    deltaLabel = "+3 sets",
+                                ),
+                                dev.toastlabs.toastlift.data.CompletionReceiptComparisonRowSnapshot(
+                                    kind = dev.toastlabs.toastlift.data.CompletionReceiptComparisonKind.TOP_SET,
+                                    label = "Bench Press",
+                                    currentValue = "185 x 6",
+                                    previousValue = "180 x 6",
+                                    deltaLabel = "+5 lb",
+                                ),
+                            ),
+                        ),
+                        bridge = CompletionReceiptBridgeSnapshot(
+                            suggestedNextLabel = "Next: Week 2 Day 4 • Pull",
+                            fallbackLabel = "If that slips: 20-min minimum dose",
+                        ),
+                    )
+
+                    "program_partial_friction" -> debugCompletionReceiptSnapshot(
+                        title = "Lower Body",
+                        subtitle = "39 min • 12/24 sets • Program day",
+                        outcomeTier = dev.toastlabs.toastlift.data.SessionOutcomeTier.MEANINGFUL_PARTIAL,
+                        tokenDelta = 1,
+                        summaryLine = "This session partially advanced week 2.",
+                        meaningRows = listOf(
+                            CompletionReceiptMeaningRowSnapshot(
+                                kind = CompletionReceiptMeaningKind.PROGRAM_CREDIT,
+                                label = "Week 2 credit",
+                                value = "1.8 -> 2.3 of 4.0",
+                                supportingText = "Progress banked without overstating compliance.",
+                            ),
+                            CompletionReceiptMeaningRowSnapshot(
+                                kind = CompletionReceiptMeaningKind.TOKEN_BALANCE,
+                                label = "Token balance",
+                                value = "+1 -> +2",
+                                supportingText = "Steady",
+                            ),
+                        ),
+                        comparison = null,
+                        bridge = CompletionReceiptBridgeSnapshot(
+                            suggestedNextLabel = "Next: return with a shorter lower session",
+                            fallbackLabel = "If that slips: 20-min minimum dose",
+                        ),
+                        learning = CompletionReceiptLearningSnapshot(
+                            programFeelRows = listOf(
+                                dev.toastlabs.toastlift.data.CompletionReceiptProgramFeelRowSnapshot(
+                                    exerciseId = 10L,
+                                    exerciseName = "Leg Press",
+                                    selectedTag = null,
+                                ),
+                            ),
+                            frictionPrompt = dev.toastlabs.toastlift.data.CompletionReceiptFrictionPromptSnapshot(
+                                skippedExerciseId = 22L,
+                                skippedExerciseName = "Bulgarian Split Squat",
+                                selectedReason = dev.toastlabs.toastlift.data.CompletionFrictionReason.TOO_LONG,
+                                biasAwaySelected = true,
+                            ),
+                        ),
+                    )
+
+                    "generated_clean_comparison" -> debugCompletionReceiptSnapshot(
+                        title = "Upper Focus Generator",
+                        subtitle = "42 min • 18/18 sets • Generated workout",
+                        outcomeTier = dev.toastlabs.toastlift.data.SessionOutcomeTier.CLOSED_CLEAN,
+                        summaryLine = "This counted toward your weekly training target.",
+                        meaningRows = listOf(
+                            CompletionReceiptMeaningRowSnapshot(
+                                kind = CompletionReceiptMeaningKind.WEEKLY_PROMISE,
+                                label = "Weekly promise",
+                                value = "1/3 -> 2/3",
+                                supportingText = "Current local week",
+                            ),
+                            CompletionReceiptMeaningRowSnapshot(
+                                kind = CompletionReceiptMeaningKind.MILESTONE,
+                                label = "Lifetime workouts",
+                                value = "19 -> 20",
+                            ),
+                        ),
+                        comparison = dev.toastlabs.toastlift.data.CompletionReceiptComparisonSnapshot(
+                            reference = dev.toastlabs.toastlift.data.CompletionReceiptReferenceSnapshot(
+                                workoutId = 32L,
+                                type = dev.toastlabs.toastlift.data.CompletionReceiptReferenceType.SAME_GENERATED_FOCUS,
+                                label = "Upper Focus Generator",
+                                completedAtUtc = "2026-03-19T17:00:00Z",
+                            ),
+                            headline = "Matched the work in less time.",
+                            rows = listOf(
+                                dev.toastlabs.toastlift.data.CompletionReceiptComparisonRowSnapshot(
+                                    kind = dev.toastlabs.toastlift.data.CompletionReceiptComparisonKind.DURATION,
+                                    label = "Duration",
+                                    currentValue = "42 min",
+                                    previousValue = "48 min",
+                                    deltaLabel = "-6 mins",
+                                ),
+                            ),
+                        ),
+                        bridge = CompletionReceiptBridgeSnapshot(
+                            suggestedNextLabel = "Next: rotate to a different focus in the next 2-3 days",
+                            fallbackLabel = "If that slips: 20-min minimum dose",
+                        ),
+                    )
+
+                    "template_replay_comparison", "history_replay" -> debugCompletionReceiptSnapshot(
+                        title = "Posterior Chain Replay",
+                        subtitle = "44 min • 16/18 sets • History replay",
+                        outcomeTier = dev.toastlabs.toastlift.data.SessionOutcomeTier.SOLID_SESSION,
+                        summaryLine = "A close match to the last comparable session.",
+                        meaningRows = listOf(
+                            CompletionReceiptMeaningRowSnapshot(
+                                kind = CompletionReceiptMeaningKind.MILESTONE,
+                                label = "Lifetime workouts",
+                                value = "24 -> 25",
+                            ),
+                        ),
+                        comparison = dev.toastlabs.toastlift.data.CompletionReceiptComparisonSnapshot(
+                            reference = dev.toastlabs.toastlift.data.CompletionReceiptReferenceSnapshot(
+                                workoutId = 27L,
+                                type = dev.toastlabs.toastlift.data.CompletionReceiptReferenceType.HISTORY_REPLAY_SOURCE,
+                                label = "Posterior Chain Replay",
+                                completedAtUtc = "2026-03-10T17:00:00Z",
+                            ),
+                            headline = "A close match to the last comparable session.",
+                            rows = listOf(
+                                dev.toastlabs.toastlift.data.CompletionReceiptComparisonRowSnapshot(
+                                    kind = dev.toastlabs.toastlift.data.CompletionReceiptComparisonKind.COMPLETED_SETS,
+                                    label = "Completed sets",
+                                    currentValue = "16",
+                                    previousValue = "15",
+                                    deltaLabel = "+1 set",
+                                ),
+                            ),
+                        ),
+                        bridge = CompletionReceiptBridgeSnapshot(
+                            suggestedNextLabel = "Next: repeat this template in 2-3 days",
+                            fallbackLabel = "If that slips: 20-min minimum dose",
+                        ),
+                    )
+
+                    "no_comparison_fallback" -> debugCompletionReceiptSnapshot(
+                        title = "Travel Circuit",
+                        subtitle = "28 min • 10/12 sets • Manual workout",
+                        outcomeTier = dev.toastlabs.toastlift.data.SessionOutcomeTier.SOLID_SESSION,
+                        summaryLine = "This counted toward your weekly training target.",
+                        meaningRows = listOf(
+                            CompletionReceiptMeaningRowSnapshot(
+                                kind = CompletionReceiptMeaningKind.WEEKLY_PROMISE,
+                                label = "Weekly promise",
+                                value = "0/3 -> 1/3",
+                                supportingText = "Current local week",
+                            ),
+                        ),
+                        comparison = null,
+                        bridge = CompletionReceiptBridgeSnapshot(
+                            suggestedNextLabel = "Next: keep the next workout small and easy to start",
+                            fallbackLabel = "If that slips: 20-min minimum dose",
+                        ),
+                    )
+
+                    "program_learning_card" -> debugCompletionReceiptSnapshot(
+                        title = "Upper Pull",
+                        subtitle = "41 min • 18/20 sets • Program day",
+                        outcomeTier = dev.toastlabs.toastlift.data.SessionOutcomeTier.SOLID_SESSION,
+                        tokenDelta = 2,
+                        summaryLine = "This session moved week 3 forward.",
+                        meaningRows = listOf(
+                            CompletionReceiptMeaningRowSnapshot(
+                                kind = CompletionReceiptMeaningKind.PROGRAM_CREDIT,
+                                label = "Week 3 credit",
+                                value = "0.9 -> 1.8 of 4.0",
+                                supportingText = "On-plan session credit.",
+                            ),
+                        ),
+                        comparison = null,
+                        bridge = CompletionReceiptBridgeSnapshot(
+                            suggestedNextLabel = "Next: Week 3 Day 2 • Lower",
+                            fallbackLabel = "If that slips: 20-min minimum dose",
+                        ),
+                        learning = CompletionReceiptLearningSnapshot(
+                            programFeelRows = listOf(
+                                dev.toastlabs.toastlift.data.CompletionReceiptProgramFeelRowSnapshot(
+                                    exerciseId = 31L,
+                                    exerciseName = "Chest-Supported Row",
+                                    selectedTag = dev.toastlabs.toastlift.data.SfrTag.GREAT_STIMULUS,
+                                ),
+                                dev.toastlabs.toastlift.data.CompletionReceiptProgramFeelRowSnapshot(
+                                    exerciseId = 32L,
+                                    exerciseName = "Lat Pulldown",
+                                    selectedTag = null,
+                                ),
+                            ),
+                        ),
+                    )
+
+                    else -> debugCompletionReceiptSnapshot(
+                        title = "Workout Logged",
+                        subtitle = "36 min • 14/16 sets • Receipt debug",
+                        outcomeTier = dev.toastlabs.toastlift.data.SessionOutcomeTier.SOLID_SESSION,
+                        summaryLine = "Debug receipt fixture.",
+                        meaningRows = listOf(
+                            CompletionReceiptMeaningRowSnapshot(
+                                kind = CompletionReceiptMeaningKind.MILESTONE,
+                                label = "Fixture",
+                                value = scenario,
+                            ),
+                        ),
+                        comparison = null,
+                        bridge = CompletionReceiptBridgeSnapshot(
+                            suggestedNextLabel = "Next: debug fixture",
+                            fallbackLabel = "If that slips: 20-min minimum dose",
+                        ),
+                    )
+                }
+                DebugReceiptFixture(
+                    receipt = CompletionReceiptUiState(
+                        snapshot = if (scenario == "history_replay") snapshot.copy(origin = "history_reuse_exact") else snapshot,
+                        isReplay = scenario == "history_replay",
+                        debugSurface = launch.surface,
+                        debugScenario = scenario,
+                    ),
+                    recap = null,
+                )
+            }
+
+            "today_receipt_recap" -> {
+                val recap = when (scenario) {
+                    "today_recap_multi" -> TodayReceiptRecapState(
+                        todayWorkoutIds = listOf(81L, 82L),
+                        latestWorkoutId = 82L,
+                        latestWorkoutTitle = "Lower Body",
+                        latestEvidenceLine = "Completed sets: +3 sets",
+                        latestMeaningLine = "This session partially advanced week 2.",
+                        workoutCountToday = 2,
+                        debugSurface = launch.surface,
+                        debugScenario = scenario,
+                    )
+
+                    else -> TodayReceiptRecapState(
+                        todayWorkoutIds = listOf(80L),
+                        latestWorkoutId = 80L,
+                        latestWorkoutTitle = "Upper Push",
+                        latestEvidenceLine = "Bench Press: +5 lb",
+                        latestMeaningLine = "This session moved week 2 forward.",
+                        workoutCountToday = 1,
+                        debugSurface = launch.surface,
+                        debugScenario = scenario,
+                    )
+                }
+                DebugReceiptFixture(recap = recap)
+            }
+
+            "history_receipt_replay" -> DebugReceiptFixture(
+                    receipt = CompletionReceiptUiState(
+                        snapshot = debugCompletionReceiptSnapshot(
+                        title = "Posterior Chain Replay",
+                        subtitle = "44 min • 16/18 sets • History replay",
+                        outcomeTier = dev.toastlabs.toastlift.data.SessionOutcomeTier.SOLID_SESSION,
+                        summaryLine = "A close match to the last comparable session.",
+                        meaningRows = listOf(
+                            CompletionReceiptMeaningRowSnapshot(
+                                kind = CompletionReceiptMeaningKind.MILESTONE,
+                                label = "Lifetime workouts",
+                                value = "24 -> 25",
+                            ),
+                        ),
+                        comparison = null,
+                        bridge = CompletionReceiptBridgeSnapshot(
+                            suggestedNextLabel = "Next: repeat this template in 2-3 days",
+                            fallbackLabel = "If that slips: 20-min minimum dose",
+                        ),
+                        ),
+                        isReplay = true,
+                        debugSurface = launch.surface,
+                        debugScenario = scenario,
+                    ),
+                )
+
+            else -> DebugReceiptFixture()
+        }
+    }
+
+    private fun debugCompletionReceiptSnapshot(
+        title: String,
+        subtitle: String,
+        outcomeTier: dev.toastlabs.toastlift.data.SessionOutcomeTier,
+        summaryLine: String,
+        meaningRows: List<CompletionReceiptMeaningRowSnapshot>,
+        comparison: dev.toastlabs.toastlift.data.CompletionReceiptComparisonSnapshot?,
+        bridge: CompletionReceiptBridgeSnapshot,
+        learning: CompletionReceiptLearningSnapshot? = null,
+        achievements: CompletionReceiptAchievementSnapshot? = null,
+        splitProgress: CompletionReceiptSplitProgressSnapshot? = null,
+        statsRail: CompletionReceiptStatsRailSnapshot? = null,
+        tokenDelta: Int? = null,
+    ): CompletionReceiptSnapshot {
+        val debugDurationSeconds = if (outcomeTier == dev.toastlabs.toastlift.data.SessionOutcomeTier.MEANINGFUL_PARTIAL) {
+            39 * 60
+        } else {
+            46 * 60
+        }
+        val debugVolume = if (outcomeTier == dev.toastlabs.toastlift.data.SessionOutcomeTier.MEANINGFUL_PARTIAL) {
+            5400.0
+        } else {
+            9400.0
+        }
+        return CompletionReceiptSnapshot(
+            workoutId = 999L,
+            createdAtUtc = "2026-03-28T12:00:00Z",
+            origin = "debug",
+            focusKey = "upper_push_strength",
+            experiment = CompletionReceiptExperimentSnapshot(
+                experimentKey = dev.toastlabs.toastlift.data.COMPLETION_RECEIPT_EXPERIMENT_KEY,
+                variantKey = CompletionReceiptExperienceVariant.MULTI_LAYER_RECEIPT.storageKey,
+                variantName = dev.toastlabs.toastlift.data.completionReceiptVariantName(
+                    CompletionReceiptExperienceVariant.MULTI_LAYER_RECEIPT,
+                ),
+            ),
+            accounting = CompletionReceiptAccountingSnapshot(
+                completionRatio = if (outcomeTier == dev.toastlabs.toastlift.data.SessionOutcomeTier.MEANINGFUL_PARTIAL) 0.5 else 0.92,
+                completionCredit = if (outcomeTier == dev.toastlabs.toastlift.data.SessionOutcomeTier.MEANINGFUL_PARTIAL) 0.5 else 1.0,
+                truth = if (outcomeTier == dev.toastlabs.toastlift.data.SessionOutcomeTier.MEANINGFUL_PARTIAL) {
+                    ProgramCompletionTruth.PARTIAL_CREDIT
+                } else {
+                    ProgramCompletionTruth.ON_PLAN
+                },
+                tokenDelta = tokenDelta,
+            ),
+            comparison = comparison,
+            achievements = achievements ?: if (comparison != null) {
+                CompletionReceiptAchievementSnapshot(
+                    title = "2 PRs Broken",
+                    prCount = 2,
+                    chips = listOf("Bench 185 lb PR", "Chest-Supported Row Rep PR"),
+                    supportingText = "New bests from this workout are now saved to history.",
+                )
+            } else {
+                CompletionReceiptAchievementSnapshot(
+                    title = "Best Set Today",
+                    fallbackLabel = "Bench Press",
+                    fallbackValue = "185 x 6",
+                    supportingText = "No new PRs, but this was the strongest set you logged today.",
+                )
+            },
+            splitProgress = splitProgress ?: CompletionReceiptSplitProgressSnapshot(
+                overallBeforeCompletedSets = if (outcomeTier == dev.toastlabs.toastlift.data.SessionOutcomeTier.MEANINGFUL_PARTIAL) 11.0 else 18.5,
+                overallAfterCompletedSets = if (outcomeTier == dev.toastlabs.toastlift.data.SessionOutcomeTier.MEANINGFUL_PARTIAL) 14.0 else 24.5,
+                overallTargetSets = 30.0,
+                groupRows = listOf(
+                    dev.toastlabs.toastlift.data.CompletionReceiptSplitProgressRowSnapshot(
+                        key = "push",
+                        label = "Push Muscles",
+                        beforeCompletedSets = if (outcomeTier == dev.toastlabs.toastlift.data.SessionOutcomeTier.MEANINGFUL_PARTIAL) 4.0 else 6.5,
+                        afterCompletedSets = if (outcomeTier == dev.toastlabs.toastlift.data.SessionOutcomeTier.MEANINGFUL_PARTIAL) 5.5 else 10.5,
+                        targetSets = 10.0,
+                    ),
+                    dev.toastlabs.toastlift.data.CompletionReceiptSplitProgressRowSnapshot(
+                        key = "pull",
+                        label = "Pull Muscles",
+                        beforeCompletedSets = 6.0,
+                        afterCompletedSets = 8.0,
+                        targetSets = 10.0,
+                    ),
+                    dev.toastlabs.toastlift.data.CompletionReceiptSplitProgressRowSnapshot(
+                        key = "legs",
+                        label = "Legs Muscles",
+                        beforeCompletedSets = if (outcomeTier == dev.toastlabs.toastlift.data.SessionOutcomeTier.MEANINGFUL_PARTIAL) 1.0 else 6.0,
+                        afterCompletedSets = if (outcomeTier == dev.toastlabs.toastlift.data.SessionOutcomeTier.MEANINGFUL_PARTIAL) 3.0 else 6.0,
+                        targetSets = 10.0,
+                    ),
+                ),
+            ),
+            statsRail = statsRail ?: CompletionReceiptStatsRailSnapshot(
+                items = listOf(
+                    CompletionReceiptStatSnapshot(
+                        label = "Volume",
+                        value = formatVolumeShort(debugVolume),
+                        supportingText = "Completed load",
+                    ),
+                    CompletionReceiptStatSnapshot(
+                        label = "Time",
+                        value = formatMinutesCompact(debugDurationSeconds),
+                        supportingText = "Elapsed",
+                    ),
+                    CompletionReceiptStatSnapshot(
+                        label = "Sets",
+                        value = if (outcomeTier == dev.toastlabs.toastlift.data.SessionOutcomeTier.MEANINGFUL_PARTIAL) "12" else "21",
+                        supportingText = "Completed",
+                    ),
+                    CompletionReceiptStatSnapshot(
+                        label = "Closed",
+                        value = if (outcomeTier == dev.toastlabs.toastlift.data.SessionOutcomeTier.MEANINGFUL_PARTIAL) "3/6" else "5/6",
+                        supportingText = "Exercises",
+                    ),
+                ),
+            ),
+            hero = CompletionReceiptHeroSnapshot(
+                title = title,
+                subtitle = subtitle,
+                outcomeTier = outcomeTier,
+                accentKey = title,
+            ),
+            evidence = CompletionReceiptEvidenceSnapshot(
+                completedSets = if (outcomeTier == dev.toastlabs.toastlift.data.SessionOutcomeTier.MEANINGFUL_PARTIAL) 12 else 21,
+                plannedSets = if (outcomeTier == dev.toastlabs.toastlift.data.SessionOutcomeTier.MEANINGFUL_PARTIAL) 24 else 24,
+                completedExercises = if (outcomeTier == dev.toastlabs.toastlift.data.SessionOutcomeTier.MEANINGFUL_PARTIAL) 3 else 5,
+                totalExercises = 6,
+                durationSeconds = debugDurationSeconds,
+                volume = debugVolume,
+                highlights = listOfNotNull(
+                    dev.toastlabs.toastlift.data.CompletionReceiptHighlightSnapshot(
+                        kind = dev.toastlabs.toastlift.data.CompletionReceiptHighlightKind.LOAD_GAIN,
+                        label = "Bench Press",
+                        deltaLabel = "+5 lb",
+                        detail = "Compared to last time",
+                    ),
+                    dev.toastlabs.toastlift.data.CompletionReceiptHighlightSnapshot(
+                        kind = dev.toastlabs.toastlift.data.CompletionReceiptHighlightKind.FIRST_COMPLETION,
+                        label = "Exercises closed",
+                        deltaLabel = if (outcomeTier == dev.toastlabs.toastlift.data.SessionOutcomeTier.MEANINGFUL_PARTIAL) "3/6" else "5/6",
+                        detail = "Most useful view of finished work",
+                    ),
+                ),
+            ),
+            meaning = CompletionReceiptMeaningSnapshot(
+                summaryLine = summaryLine,
+                rows = meaningRows,
+            ),
+            bridge = bridge,
+            learning = learning,
+        )
     }
 
     fun markSkippedExerciseAsDisliked() {
@@ -3257,11 +4321,10 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
             if (program == null) {
                 uiState = uiState.copy(
                     activeProgram = null,
-                programOverview = null,
-                tokenBalanceTrend = null,
-                programProgress = null,
-                nextPlannedSession = null,
-                recoverableSkippedSession = null,
+                    programOverview = null,
+                    programProgress = null,
+                    nextPlannedSession = null,
+                    recoverableSkippedSession = null,
                     nextSessionExercises = emptyList(),
                     upcomingProgramSessions = emptyList(),
                     pendingCheckpoint = null,
@@ -3291,7 +4354,6 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
             val adherenceSnapshot = buildAdherenceCurrencySnapshot(
                 adherenceSignals,
             )
-            val tokenBalanceTrend = buildAdherenceCurrencyTrend(adherenceSignals)
             val upcomingSessions = allSessions
                 .asSequence()
                 .filter { it.status == SessionStatus.UPCOMING }
@@ -3345,7 +4407,6 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
             uiState = uiState.copy(
                 activeProgram = program,
                 programOverview = overview,
-                tokenBalanceTrend = tokenBalanceTrend,
                 programProgress = progressSummary,
                 nextPlannedSession = nextSession,
                 recoverableSkippedSession = recoverableSkippedSession,
@@ -3486,6 +4547,7 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
                 uiState = uiState.copy(message = "Session skipped. Volume redistributed to next session.")
             }
             completeProgramIfFinished(program.id)
+            refreshAll()
             loadProgramState()
         }
     }
@@ -3508,6 +4570,7 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
 
             container.programRepository.updateSessionStatus(skippedSession.id, SessionStatus.UPCOMING, null)
             uiState = uiState.copy(message = "Skipped session restored.")
+            refreshAll()
             loadProgramState()
         }
     }

@@ -1,5 +1,7 @@
 package dev.toastlabs.toastlift.data
 
+import org.json.JSONArray
+import org.json.JSONObject
 import java.time.Duration
 import java.time.Instant
 
@@ -333,18 +335,20 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
             db.execSQL(
                 """
                 INSERT INTO performed_workouts (
-                    title, origin_type, location_mode_id, started_at_utc, completed_at_utc, actual_duration_seconds,
-                    ab_flags_snapshot_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    title, origin_type, location_mode_id, focus_key, started_at_utc, completed_at_utc,
+                    actual_duration_seconds, ab_flags_snapshot_json, completion_receipt_snapshot_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """.trimIndent(),
                 arrayOf(
                     session.title,
                     session.origin,
                     session.locationModeId,
+                    session.focusKey,
                     session.startedAtUtc,
                     completedAt.toString(),
                     durationSeconds,
                     serializeCompletedWorkoutAbFlags(abFlags),
+                    null,
                 ),
             )
             workoutId = db.rawQuery("SELECT last_insert_rowid()", null).use { cursor ->
@@ -846,6 +850,7 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
             SELECT
                 pw.performed_workout_id,
                 pw.title,
+                pw.origin_type,
                 pw.completed_at_utc,
                 pw.actual_duration_seconds,
                 COALESCE(SUM(
@@ -854,11 +859,20 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
                         ELSE 0
                     END
                 ), 0),
-                COUNT(DISTINCT pe.performed_exercise_id)
+                COUNT(DISTINCT pe.performed_exercise_id),
+                pw.focus_key,
+                pw.completion_receipt_snapshot_json
             FROM performed_workouts pw
             LEFT JOIN performed_exercises pe ON pe.performed_workout_id = pw.performed_workout_id
             LEFT JOIN performed_sets ps ON ps.performed_exercise_id = pe.performed_exercise_id
-            GROUP BY pw.performed_workout_id, pw.title, pw.completed_at_utc, pw.actual_duration_seconds
+            GROUP BY
+                pw.performed_workout_id,
+                pw.title,
+                pw.origin_type,
+                pw.completed_at_utc,
+                pw.actual_duration_seconds,
+                pw.focus_key,
+                pw.completion_receipt_snapshot_json
             ORDER BY completed_at_utc DESC
             LIMIT 20
             """.trimIndent(),
@@ -871,11 +885,14 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
                         HistorySummary(
                             id = workoutId,
                             title = cursor.getString(1),
-                            completedAtUtc = cursor.getString(2),
-                            durationSeconds = cursor.getInt(3),
-                            totalVolume = cursor.getDouble(4),
-                            exerciseCount = cursor.getInt(5),
+                            origin = cursor.getString(2),
+                            completedAtUtc = cursor.getString(3),
+                            durationSeconds = cursor.getInt(4),
+                            totalVolume = cursor.getDouble(5),
+                            exerciseCount = cursor.getInt(6),
                             exerciseNames = loadExerciseNamesForWorkout(workoutId),
+                            focusKey = cursor.getStringOrNull(7),
+                            completionReceipt = deserializeCompletionReceiptSnapshot(cursor.getStringOrNull(8)),
                         ),
                     )
                 }
@@ -973,6 +990,41 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
         }
     }
 
+    internal fun loadCompletedWorkoutAdherenceSignals(): List<CompletedWorkoutAdherenceSignal> {
+        return database.open().rawQuery(
+            """
+            SELECT
+                pw.performed_workout_id,
+                pw.completed_at_utc,
+                COALESCE(MAX(psn.planned_sets), COUNT(ps.performed_set_id)) AS planned_set_count,
+                COALESCE(SUM(CASE WHEN ps.is_completed = 1 THEN 1 ELSE 0 END), 0) AS completed_set_count
+            FROM performed_workouts pw
+            LEFT JOIN planned_sessions psn
+                ON psn.actual_workout_id = pw.performed_workout_id
+               AND psn.status = 'COMPLETED'
+            LEFT JOIN performed_exercises pe ON pe.performed_workout_id = pw.performed_workout_id
+            LEFT JOIN performed_sets ps ON ps.performed_exercise_id = pe.performed_exercise_id
+            WHERE pw.completed_at_utc IS NOT NULL
+            GROUP BY pw.performed_workout_id, pw.completed_at_utc
+            ORDER BY pw.completed_at_utc ASC, pw.performed_workout_id ASC
+            """.trimIndent(),
+            null,
+        ).use { cursor ->
+            buildList {
+                while (cursor.moveToNext()) {
+                    add(
+                        CompletedWorkoutAdherenceSignal(
+                            workoutId = cursor.getLong(0),
+                            completedAtUtc = cursor.getString(1),
+                            plannedSetCount = cursor.getInt(2),
+                            completedSetCount = cursor.getInt(3),
+                        ),
+                    )
+                }
+            }
+        }
+    }
+
     fun loadCompletedSetCountsByWorkoutAndExercise(workoutIds: Collection<Long>): Map<Long, Map<Long, Int>> {
         val distinctIds = workoutIds.distinct()
         if (distinctIds.isEmpty()) return emptyMap()
@@ -1056,6 +1108,7 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
             SELECT
                 pw.title,
                 pw.origin_type,
+                pw.focus_key,
                 pw.completed_at_utc,
                 pw.actual_duration_seconds,
                 COALESCE(SUM(
@@ -1065,13 +1118,21 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
                     END
                 ), 0),
                 COUNT(DISTINCT pe.performed_exercise_id),
-                pw.ab_flags_snapshot_json
+                pw.ab_flags_snapshot_json,
+                pw.completion_receipt_snapshot_json
             FROM performed_workouts pw
             LEFT JOIN performed_exercises pe ON pe.performed_workout_id = pw.performed_workout_id
             LEFT JOIN performed_sets ps ON ps.performed_exercise_id = pe.performed_exercise_id
             WHERE pw.performed_workout_id = ?
-            GROUP BY pw.performed_workout_id, pw.title, pw.origin_type, pw.completed_at_utc, pw.actual_duration_seconds,
-                     pw.ab_flags_snapshot_json
+            GROUP BY
+                pw.performed_workout_id,
+                pw.title,
+                pw.origin_type,
+                pw.focus_key,
+                pw.completed_at_utc,
+                pw.actual_duration_seconds,
+                pw.ab_flags_snapshot_json,
+                pw.completion_receipt_snapshot_json
             """.trimIndent(),
             arrayOf(workoutId.toString()),
         ).use { cursor ->
@@ -1080,12 +1141,14 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
                 id = workoutId,
                 title = cursor.getString(0),
                 origin = cursor.getString(1),
-                completedAtUtc = cursor.getString(2),
-                durationSeconds = cursor.getInt(3),
-                totalVolume = cursor.getDouble(4),
-                exerciseCount = cursor.getInt(5),
+                focusKey = cursor.getStringOrNull(2),
+                completedAtUtc = cursor.getString(3),
+                durationSeconds = cursor.getInt(4),
+                totalVolume = cursor.getDouble(5),
+                exerciseCount = cursor.getInt(6),
                 exercises = emptyList(),
-                abFlags = deserializeCompletedWorkoutAbFlags(cursor.getStringOrNull(6)),
+                abFlags = deserializeCompletedWorkoutAbFlags(cursor.getStringOrNull(7)),
+                completionReceipt = deserializeCompletionReceiptSnapshot(cursor.getStringOrNull(8)),
             )
         }
 
@@ -1136,6 +1199,88 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
         }
 
         return header.copy(exercises = exercises)
+    }
+
+    fun updateCompletionReceiptSnapshot(
+        workoutId: Long,
+        snapshot: CompletionReceiptSnapshot,
+    ) {
+        database.open().execSQL(
+            """
+            UPDATE performed_workouts
+            SET completion_receipt_snapshot_json = ?
+            WHERE performed_workout_id = ?
+            """.trimIndent(),
+            arrayOf(serializeCompletionReceiptSnapshot(snapshot), workoutId),
+        )
+    }
+
+    fun loadCompletionReceiptSnapshot(workoutId: Long): CompletionReceiptSnapshot? {
+        return database.open().rawQuery(
+            """
+            SELECT completion_receipt_snapshot_json
+            FROM performed_workouts
+            WHERE performed_workout_id = ?
+            """.trimIndent(),
+            arrayOf(workoutId.toString()),
+        ).use { cursor ->
+            if (!cursor.moveToFirst()) {
+                null
+            } else {
+                deserializeCompletionReceiptSnapshot(cursor.getStringOrNull(0))
+            }
+        }
+    }
+
+    fun loadRecentReceiptReferenceCandidates(
+        excludeWorkoutId: Long,
+        limit: Int = 24,
+    ): List<ReceiptReferenceCandidate> {
+        val db = database.open()
+        return db.rawQuery(
+            """
+            SELECT
+                pw.performed_workout_id,
+                pw.title,
+                pw.origin_type,
+                pw.focus_key,
+                pw.completed_at_utc,
+                pw.actual_duration_seconds,
+                COALESCE(SUM(CASE WHEN ps.is_completed = 1 THEN 1 ELSE 0 END), 0) AS completed_set_count
+            FROM performed_workouts pw
+            LEFT JOIN performed_exercises pe ON pe.performed_workout_id = pw.performed_workout_id
+            LEFT JOIN performed_sets ps ON ps.performed_exercise_id = pe.performed_exercise_id
+            WHERE pw.performed_workout_id != ?
+            GROUP BY
+                pw.performed_workout_id,
+                pw.title,
+                pw.origin_type,
+                pw.focus_key,
+                pw.completed_at_utc,
+                pw.actual_duration_seconds
+            ORDER BY pw.completed_at_utc DESC
+            LIMIT ?
+            """.trimIndent(),
+            arrayOf(excludeWorkoutId.toString(), limit.toString()),
+        ).use { cursor ->
+            buildList {
+                while (cursor.moveToNext()) {
+                    val workoutId = cursor.getLong(0)
+                    add(
+                        ReceiptReferenceCandidate(
+                            workoutId = workoutId,
+                            title = cursor.getString(1),
+                            origin = cursor.getString(2),
+                            focusKey = cursor.getStringOrNull(3),
+                            completedAtUtc = cursor.getString(4),
+                            durationSeconds = cursor.getInt(5),
+                            completedSetCount = cursor.getInt(6),
+                            exerciseIds = loadExerciseIdsForWorkout(workoutId),
+                        ),
+                    )
+                }
+            }
+        }
     }
 
     fun loadHistoryWorkoutShareDetail(workoutId: Long): HistoryWorkoutShareDetail? {
@@ -1412,6 +1557,424 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
                 while (cursor.moveToNext()) add(cursor.getString(0))
             }
         }
+    }
+
+    private fun loadExerciseIdsForWorkout(workoutId: Long): List<Long> {
+        val db = database.open()
+        return db.rawQuery(
+            """
+            SELECT exercise_id
+            FROM performed_exercises
+            WHERE performed_workout_id = ?
+            ORDER BY sort_order
+            """.trimIndent(),
+            arrayOf(workoutId.toString()),
+        ).use { cursor ->
+            buildList {
+                while (cursor.moveToNext()) add(cursor.getLong(0))
+            }
+        }
+    }
+
+    private fun serializeCompletionReceiptSnapshot(snapshot: CompletionReceiptSnapshot): String {
+        val root = JSONObject()
+            .put("version", snapshot.version)
+            .put("workoutId", snapshot.workoutId)
+            .put("createdAtUtc", snapshot.createdAtUtc)
+            .put("origin", snapshot.origin)
+            .putNullable("focusKey", snapshot.focusKey)
+            .putNullable("experiment", snapshot.experiment?.toJson())
+            .putNullable("accounting", snapshot.accounting?.toJson())
+            .putNullable("comparison", snapshot.comparison?.toJson())
+            .putNullable("achievements", snapshot.achievements?.toJson())
+            .putNullable("splitProgress", snapshot.splitProgress?.toJson())
+            .putNullable("statsRail", snapshot.statsRail?.toJson())
+            .put("hero", snapshot.hero.toJson())
+            .put("evidence", snapshot.evidence.toJson())
+            .put("meaning", snapshot.meaning.toJson())
+            .putNullable("bridge", snapshot.bridge?.toJson())
+            .putNullable("learning", snapshot.learning?.toJson())
+        return root.toString()
+    }
+
+    private fun deserializeCompletionReceiptSnapshot(payload: String?): CompletionReceiptSnapshot? {
+        if (payload.isNullOrBlank()) return null
+        return runCatching {
+            val root = JSONObject(payload)
+            CompletionReceiptSnapshot(
+                version = root.optInt("version", 1),
+                workoutId = root.getLong("workoutId"),
+                createdAtUtc = root.getString("createdAtUtc"),
+                origin = root.getString("origin"),
+                focusKey = root.toNullableString("focusKey"),
+                experiment = root.optJSONObject("experiment")?.toCompletionReceiptExperimentSnapshot(),
+                accounting = root.optJSONObject("accounting")?.toCompletionReceiptAccountingSnapshot(),
+                comparison = root.optJSONObject("comparison")?.toCompletionReceiptComparisonSnapshot(),
+                achievements = root.optJSONObject("achievements")?.toCompletionReceiptAchievementSnapshot(),
+                splitProgress = root.optJSONObject("splitProgress")?.toCompletionReceiptSplitProgressSnapshot(),
+                statsRail = root.optJSONObject("statsRail")?.toCompletionReceiptStatsRailSnapshot(),
+                hero = root.getJSONObject("hero").toCompletionReceiptHeroSnapshot(),
+                evidence = root.getJSONObject("evidence").toCompletionReceiptEvidenceSnapshot(),
+                meaning = root.getJSONObject("meaning").toCompletionReceiptMeaningSnapshot(),
+                bridge = root.optJSONObject("bridge")?.toCompletionReceiptBridgeSnapshot(),
+                learning = root.optJSONObject("learning")?.toCompletionReceiptLearningSnapshot(),
+            )
+        }.getOrNull()
+    }
+
+    private fun CompletionReceiptExperimentSnapshot.toJson(): JSONObject {
+        return JSONObject()
+            .put("experimentKey", experimentKey)
+            .put("variantKey", variantKey)
+            .put("variantName", variantName)
+    }
+
+    private fun CompletionReceiptAccountingSnapshot.toJson(): JSONObject {
+        return JSONObject()
+            .put("completionRatio", completionRatio)
+            .put("completionCredit", completionCredit)
+            .putNullable("truth", truth?.name)
+            .putNullable("tokenDelta", tokenDelta)
+    }
+
+    private fun CompletionReceiptAchievementSnapshot.toJson(): JSONObject {
+        return JSONObject()
+            .put("title", title)
+            .put("prCount", prCount)
+            .put("chips", JSONArray().apply { chips.forEach(::put) })
+            .putNullable("fallbackLabel", fallbackLabel)
+            .putNullable("fallbackValue", fallbackValue)
+            .putNullable("supportingText", supportingText)
+    }
+
+    private fun CompletionReceiptSplitProgressSnapshot.toJson(): JSONObject {
+        return JSONObject()
+            .put("overallBeforeCompletedSets", overallBeforeCompletedSets)
+            .put("overallAfterCompletedSets", overallAfterCompletedSets)
+            .put("overallTargetSets", overallTargetSets)
+            .put("groupRows", JSONArray().apply { groupRows.forEach { put(it.toJson()) } })
+    }
+
+    private fun CompletionReceiptSplitProgressRowSnapshot.toJson(): JSONObject {
+        return JSONObject()
+            .put("key", key)
+            .put("label", label)
+            .put("beforeCompletedSets", beforeCompletedSets)
+            .put("afterCompletedSets", afterCompletedSets)
+            .put("targetSets", targetSets)
+    }
+
+    private fun CompletionReceiptStatsRailSnapshot.toJson(): JSONObject {
+        return JSONObject()
+            .put("items", JSONArray().apply { items.forEach { put(it.toJson()) } })
+    }
+
+    private fun CompletionReceiptStatSnapshot.toJson(): JSONObject {
+        return JSONObject()
+            .put("label", label)
+            .put("value", value)
+            .putNullable("supportingText", supportingText)
+    }
+
+    private fun CompletionReceiptHeroSnapshot.toJson(): JSONObject {
+        return JSONObject()
+            .put("title", title)
+            .put("subtitle", subtitle)
+            .put("outcomeTier", outcomeTier.name)
+            .put("accentKey", accentKey)
+    }
+
+    private fun CompletionReceiptEvidenceSnapshot.toJson(): JSONObject {
+        return JSONObject()
+            .put("completedSets", completedSets)
+            .put("plannedSets", plannedSets)
+            .put("completedExercises", completedExercises)
+            .put("totalExercises", totalExercises)
+            .put("durationSeconds", durationSeconds)
+            .putNullable("volume", volume)
+            .put("highlights", JSONArray().apply { highlights.forEach { put(it.toJson()) } })
+    }
+
+    private fun CompletionReceiptHighlightSnapshot.toJson(): JSONObject {
+        return JSONObject()
+            .put("kind", kind.name)
+            .put("label", label)
+            .put("deltaLabel", deltaLabel)
+            .put("detail", detail)
+    }
+
+    private fun CompletionReceiptMeaningSnapshot.toJson(): JSONObject {
+        return JSONObject()
+            .put("summaryLine", summaryLine)
+            .put("rows", JSONArray().apply { rows.forEach { put(it.toJson()) } })
+    }
+
+    private fun CompletionReceiptBridgeSnapshot.toJson(): JSONObject {
+        return JSONObject()
+            .putNullable("suggestedNextLabel", suggestedNextLabel)
+            .putNullable("fallbackLabel", fallbackLabel)
+    }
+
+    private fun CompletionReceiptMeaningRowSnapshot.toJson(): JSONObject {
+        return JSONObject()
+            .put("kind", kind.name)
+            .put("label", label)
+            .put("value", value)
+            .putNullable("supportingText", supportingText)
+    }
+
+    private fun CompletionReceiptComparisonSnapshot.toJson(): JSONObject {
+        return JSONObject()
+            .put("reference", reference.toJson())
+            .put("headline", headline)
+            .put("rows", JSONArray().apply { rows.forEach { put(it.toJson()) } })
+    }
+
+    private fun CompletionReceiptReferenceSnapshot.toJson(): JSONObject {
+        return JSONObject()
+            .put("workoutId", workoutId)
+            .put("type", type.name)
+            .put("label", label)
+            .put("completedAtUtc", completedAtUtc)
+    }
+
+    private fun CompletionReceiptComparisonRowSnapshot.toJson(): JSONObject {
+        return JSONObject()
+            .put("kind", kind.name)
+            .put("label", label)
+            .put("currentValue", currentValue)
+            .put("previousValue", previousValue)
+            .put("deltaLabel", deltaLabel)
+    }
+
+    private fun CompletionReceiptLearningSnapshot.toJson(): JSONObject {
+        return JSONObject()
+            .put("programFeelRows", JSONArray().apply { programFeelRows.forEach { put(it.toJson()) } })
+            .putNullable("frictionPrompt", frictionPrompt?.toJson())
+    }
+
+    private fun CompletionReceiptProgramFeelRowSnapshot.toJson(): JSONObject {
+        return JSONObject()
+            .put("exerciseId", exerciseId)
+            .put("exerciseName", exerciseName)
+            .putNullable("selectedTag", selectedTag?.name)
+    }
+
+    private fun CompletionReceiptFrictionPromptSnapshot.toJson(): JSONObject {
+        return JSONObject()
+            .putNullable("skippedExerciseId", skippedExerciseId)
+            .putNullable("skippedExerciseName", skippedExerciseName)
+            .putNullable("selectedReason", selectedReason?.name)
+            .put("biasAwaySelected", biasAwaySelected)
+    }
+
+    private fun JSONObject.toCompletionReceiptExperimentSnapshot(): CompletionReceiptExperimentSnapshot {
+        return CompletionReceiptExperimentSnapshot(
+            experimentKey = getString("experimentKey"),
+            variantKey = getString("variantKey"),
+            variantName = optString("variantName", optString("variantKey")),
+        )
+    }
+
+    private fun JSONObject.toCompletionReceiptAccountingSnapshot(): CompletionReceiptAccountingSnapshot {
+        return CompletionReceiptAccountingSnapshot(
+            completionRatio = getDouble("completionRatio"),
+            completionCredit = getDouble("completionCredit"),
+            truth = toNullableString("truth")?.let(ProgramCompletionTruth::valueOf),
+            tokenDelta = if (has("tokenDelta") && !isNull("tokenDelta")) getInt("tokenDelta") else null,
+        )
+    }
+
+    private fun JSONObject.toCompletionReceiptAchievementSnapshot(): CompletionReceiptAchievementSnapshot {
+        return CompletionReceiptAchievementSnapshot(
+            title = getString("title"),
+            prCount = optInt("prCount", 0),
+            chips = optJSONArray("chips").toStringList(),
+            fallbackLabel = toNullableString("fallbackLabel"),
+            fallbackValue = toNullableString("fallbackValue"),
+            supportingText = toNullableString("supportingText"),
+        )
+    }
+
+    private fun JSONObject.toCompletionReceiptSplitProgressSnapshot(): CompletionReceiptSplitProgressSnapshot {
+        return CompletionReceiptSplitProgressSnapshot(
+            overallBeforeCompletedSets = getDouble("overallBeforeCompletedSets"),
+            overallAfterCompletedSets = getDouble("overallAfterCompletedSets"),
+            overallTargetSets = getDouble("overallTargetSets"),
+            groupRows = optJSONArray("groupRows").toCompletionReceiptSplitProgressRows(),
+        )
+    }
+
+    private fun JSONArray?.toCompletionReceiptSplitProgressRows(): List<CompletionReceiptSplitProgressRowSnapshot> {
+        if (this == null) return emptyList()
+        return List(length()) { index ->
+            getJSONObject(index).let { json ->
+                CompletionReceiptSplitProgressRowSnapshot(
+                    key = json.getString("key"),
+                    label = json.getString("label"),
+                    beforeCompletedSets = json.getDouble("beforeCompletedSets"),
+                    afterCompletedSets = json.getDouble("afterCompletedSets"),
+                    targetSets = json.getDouble("targetSets"),
+                )
+            }
+        }
+    }
+
+    private fun JSONObject.toCompletionReceiptStatsRailSnapshot(): CompletionReceiptStatsRailSnapshot {
+        return CompletionReceiptStatsRailSnapshot(
+            items = optJSONArray("items").toCompletionReceiptStats(),
+        )
+    }
+
+    private fun JSONArray?.toCompletionReceiptStats(): List<CompletionReceiptStatSnapshot> {
+        if (this == null) return emptyList()
+        return List(length()) { index ->
+            getJSONObject(index).let { json ->
+                CompletionReceiptStatSnapshot(
+                    label = json.getString("label"),
+                    value = json.getString("value"),
+                    supportingText = json.toNullableString("supportingText"),
+                )
+            }
+        }
+    }
+
+    private fun JSONObject.toCompletionReceiptHeroSnapshot(): CompletionReceiptHeroSnapshot {
+        return CompletionReceiptHeroSnapshot(
+            title = getString("title"),
+            subtitle = getString("subtitle"),
+            outcomeTier = SessionOutcomeTier.valueOf(getString("outcomeTier")),
+            accentKey = getString("accentKey"),
+        )
+    }
+
+    private fun JSONObject.toCompletionReceiptEvidenceSnapshot(): CompletionReceiptEvidenceSnapshot {
+        return CompletionReceiptEvidenceSnapshot(
+            completedSets = getInt("completedSets"),
+            plannedSets = getInt("plannedSets"),
+            completedExercises = getInt("completedExercises"),
+            totalExercises = getInt("totalExercises"),
+            durationSeconds = getInt("durationSeconds"),
+            volume = if (isNull("volume")) null else getDouble("volume"),
+            highlights = optJSONArray("highlights").toCompletionReceiptHighlightSnapshots(),
+        )
+    }
+
+    private fun JSONArray?.toCompletionReceiptHighlightSnapshots(): List<CompletionReceiptHighlightSnapshot> {
+        if (this == null) return emptyList()
+        return List(length()) { index ->
+            getJSONObject(index).let { json ->
+                CompletionReceiptHighlightSnapshot(
+                    kind = CompletionReceiptHighlightKind.valueOf(json.getString("kind")),
+                    label = json.getString("label"),
+                    deltaLabel = json.getString("deltaLabel"),
+                    detail = json.getString("detail"),
+                )
+            }
+        }
+    }
+
+    private fun JSONObject.toCompletionReceiptMeaningSnapshot(): CompletionReceiptMeaningSnapshot {
+        return CompletionReceiptMeaningSnapshot(
+            summaryLine = getString("summaryLine"),
+            rows = optJSONArray("rows").toCompletionReceiptMeaningRows(),
+        )
+    }
+
+    private fun JSONObject.toCompletionReceiptBridgeSnapshot(): CompletionReceiptBridgeSnapshot {
+        return CompletionReceiptBridgeSnapshot(
+            suggestedNextLabel = toNullableString("suggestedNextLabel"),
+            fallbackLabel = toNullableString("fallbackLabel"),
+        )
+    }
+
+    private fun JSONArray?.toCompletionReceiptMeaningRows(): List<CompletionReceiptMeaningRowSnapshot> {
+        if (this == null) return emptyList()
+        return List(length()) { index ->
+            getJSONObject(index).let { json ->
+                CompletionReceiptMeaningRowSnapshot(
+                    kind = CompletionReceiptMeaningKind.valueOf(json.getString("kind")),
+                    label = json.getString("label"),
+                    value = json.getString("value"),
+                    supportingText = json.toNullableString("supportingText"),
+                )
+            }
+        }
+    }
+
+    private fun JSONObject.toCompletionReceiptComparisonSnapshot(): CompletionReceiptComparisonSnapshot {
+        return CompletionReceiptComparisonSnapshot(
+            reference = getJSONObject("reference").toCompletionReceiptReferenceSnapshot(),
+            headline = getString("headline"),
+            rows = optJSONArray("rows").toCompletionReceiptComparisonRows(),
+        )
+    }
+
+    private fun JSONObject.toCompletionReceiptReferenceSnapshot(): CompletionReceiptReferenceSnapshot {
+        return CompletionReceiptReferenceSnapshot(
+            workoutId = getLong("workoutId"),
+            type = CompletionReceiptReferenceType.valueOf(getString("type")),
+            label = getString("label"),
+            completedAtUtc = getString("completedAtUtc"),
+        )
+    }
+
+    private fun JSONArray?.toCompletionReceiptComparisonRows(): List<CompletionReceiptComparisonRowSnapshot> {
+        if (this == null) return emptyList()
+        return List(length()) { index ->
+            getJSONObject(index).let { json ->
+                CompletionReceiptComparisonRowSnapshot(
+                    kind = CompletionReceiptComparisonKind.valueOf(json.getString("kind")),
+                    label = json.getString("label"),
+                    currentValue = json.getString("currentValue"),
+                    previousValue = json.getString("previousValue"),
+                    deltaLabel = json.getString("deltaLabel"),
+                )
+            }
+        }
+    }
+
+    private fun JSONObject.toCompletionReceiptLearningSnapshot(): CompletionReceiptLearningSnapshot {
+        return CompletionReceiptLearningSnapshot(
+            programFeelRows = optJSONArray("programFeelRows").toCompletionReceiptProgramFeelRows(),
+            frictionPrompt = optJSONObject("frictionPrompt")?.toCompletionReceiptFrictionPromptSnapshot(),
+        )
+    }
+
+    private fun JSONArray?.toCompletionReceiptProgramFeelRows(): List<CompletionReceiptProgramFeelRowSnapshot> {
+        if (this == null) return emptyList()
+        return List(length()) { index ->
+            getJSONObject(index).let { json ->
+                CompletionReceiptProgramFeelRowSnapshot(
+                    exerciseId = json.getLong("exerciseId"),
+                    exerciseName = json.getString("exerciseName"),
+                    selectedTag = json.toNullableString("selectedTag")?.let(SfrTag::valueOf),
+                )
+            }
+        }
+    }
+
+    private fun JSONObject.toCompletionReceiptFrictionPromptSnapshot(): CompletionReceiptFrictionPromptSnapshot {
+        return CompletionReceiptFrictionPromptSnapshot(
+            skippedExerciseId = if (isNull("skippedExerciseId")) null else getLong("skippedExerciseId"),
+            skippedExerciseName = toNullableString("skippedExerciseName"),
+            selectedReason = toNullableString("selectedReason")?.let(CompletionFrictionReason::valueOf),
+            biasAwaySelected = optBoolean("biasAwaySelected", false),
+        )
+    }
+
+    private fun JSONArray?.toStringList(): List<String> {
+        if (this == null) return emptyList()
+        return List(length()) { index -> getString(index) }
+    }
+
+    private fun JSONObject.putNullable(key: String, value: Any?): JSONObject {
+        if (value == null) put(key, JSONObject.NULL) else put(key, value)
+        return this
+    }
+
+    private fun JSONObject.toNullableString(key: String): String? {
+        return if (has(key) && !isNull(key)) getString(key) else null
     }
 
     private fun loadStrengthScoreRows(): List<StrengthScoreSetRow> {

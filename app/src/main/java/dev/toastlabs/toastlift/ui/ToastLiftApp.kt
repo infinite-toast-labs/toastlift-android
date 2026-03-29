@@ -3,6 +3,7 @@ package dev.toastlabs.toastlift.ui
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
+import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
@@ -213,6 +214,7 @@ import dev.toastlabs.toastlift.data.OnboardingDraft
 import dev.toastlabs.toastlift.data.RecommendationBias
 import dev.toastlabs.toastlift.data.SessionExercise
 import dev.toastlabs.toastlift.data.SessionSet
+import dev.toastlabs.toastlift.data.SessionOutcomeTier
 import dev.toastlabs.toastlift.data.SkippedExerciseFeedbackPrompt
 import dev.toastlabs.toastlift.data.TemplateSummary
 import dev.toastlabs.toastlift.data.ThemePreference
@@ -454,6 +456,11 @@ private fun signedCompactNumber(value: Int): String {
     }
 }
 
+private fun sessionTokenLabel(value: Int): String {
+    val suffix = if (kotlin.math.abs(value) == 1) "token" else "tokens"
+    return "${signedCompactNumber(value)} $suffix"
+}
+
 private fun tokenTrendDirection(delta: Int): ImageVector = when {
     delta > 0 -> Icons.Rounded.KeyboardArrowUp
     delta < 0 -> Icons.Rounded.KeyboardArrowDown
@@ -680,6 +687,7 @@ fun ToastLiftApp(
     viewModel: ToastLiftViewModel,
     selectedTabOverride: MainTab? = null,
     themePreferenceOverride: ThemePreference? = null,
+    completionReceiptDebugLaunch: CompletionReceiptDebugLaunch? = null,
 ) {
     val state = viewModel.uiState
     val displayedTab = selectedTabOverride ?: state.selectedTab
@@ -758,6 +766,12 @@ fun ToastLiftApp(
     LaunchedEffect(themePreferenceOverride, state.themePreference) {
         if (themePreferenceOverride != null && state.themePreference != themePreferenceOverride) {
             viewModel.setThemePreference(themePreferenceOverride)
+        }
+    }
+
+    LaunchedEffect(completionReceiptDebugLaunch) {
+        completionReceiptDebugLaunch?.let { launch ->
+            viewModel.applyDebugReceiptLaunch(launch)
         }
     }
 
@@ -989,6 +1003,7 @@ fun ToastLiftApp(
                                         onOpenExerciseHistory = viewModel::openExerciseHistory,
                                         onOpenExerciseVideos = viewModel::openExerciseVideos,
                                         onOpenHistoryWorkout = viewModel::openHistoryWorkout,
+                                        onViewReceipt = viewModel::openHistoryReceipt,
                                         onRestoreAbandonedWorkout = viewModel::restoreAbandonedWorkout,
                                         onFullscreenFlowChange = { isTodayFullscreenFlow = it },
                                         onShowProgramSetup = viewModel::showProgramSetup,
@@ -1060,7 +1075,6 @@ fun ToastLiftApp(
                                     MainTab.History -> HistoryScreen(
                                         profile = state.profile,
                                         history = state.history,
-                                        activeProgramTitle = state.activeProgram?.title,
                                         tokenBalanceTrend = state.tokenBalanceTrend,
                                         weeklyMuscleTargets = state.weeklyMuscleTargets,
                                         topExercise = state.historyTopExercise,
@@ -1126,6 +1140,7 @@ fun ToastLiftApp(
                     detail = detail,
                     showAbFlags = state.profile?.historyWorkoutAbFlagsVisible == true,
                     onDismiss = viewModel::closeHistoryWorkout,
+                    onViewReceipt = { viewModel.openHistoryReceipt(detail.id) },
                     onReuseWorkout = { mode -> viewModel.reuseHistoryWorkout(detail.id, mode) },
                     onShowExerciseDetail = viewModel::showExerciseDetail,
                     onOpenExerciseHistory = viewModel::openExerciseHistory,
@@ -1172,6 +1187,15 @@ fun ToastLiftApp(
                         viewModel.showProgramSetup()
                     },
                     onDismiss = viewModel::dismissProgramWrapUp,
+                )
+            }
+            state.completionReceipt?.let { receipt ->
+                CompletionReceiptScreen(
+                    receipt = receipt,
+                    onDismiss = viewModel::dismissCompletionReceipt,
+                    onShare = viewModel::shareVisibleCompletionReceipt,
+                    onTagProgramFeel = viewModel::tagCompletionReceiptProgramFeel,
+                    onTagFriction = viewModel::tagCompletionReceiptFriction,
                 )
             }
             }
@@ -1295,6 +1319,7 @@ private fun TodayScreen(
     onOpenExerciseHistory: (Long, String) -> Unit,
     onOpenExerciseVideos: (Long, String) -> Unit,
     onOpenHistoryWorkout: (Long) -> Unit,
+    onViewReceipt: (Long) -> Unit,
     onRestoreAbandonedWorkout: () -> Unit,
     onFullscreenFlowChange: (Boolean) -> Unit,
     onShowProgramSetup: () -> Unit,
@@ -1373,6 +1398,8 @@ private fun TodayScreen(
             TodayCompletionFeedbackSection(
                 variant = state.todayCompletionFeedbackVariant,
                 completion = state.todayWorkoutCompletion,
+                recap = state.todayReceiptRecap,
+                onViewReceipt = onViewReceipt,
             )
             state.dailyCoachMessage?.let { coach ->
                 DailyCoachCard(message = coach)
@@ -1454,6 +1481,8 @@ private fun TodayScreen(
             TodayCompletionFeedbackSection(
                 variant = state.todayCompletionFeedbackVariant,
                 completion = state.todayWorkoutCompletion,
+                recap = state.todayReceiptRecap,
+                onViewReceipt = onViewReceipt,
             )
             state.dailyCoachMessage?.let { coach ->
                 DailyCoachCard(message = coach)
@@ -1549,7 +1578,16 @@ private fun TodayScreen(
 private fun TodayCompletionFeedbackSection(
     variant: dev.toastlabs.toastlift.data.TodayCompletionFeedbackVariant,
     completion: TodayWorkoutCompletionState,
+    recap: TodayReceiptRecapState?,
+    onViewReceipt: (Long) -> Unit,
 ) {
+    if (recap != null) {
+        TodayReceiptRecapCard(
+            recap = recap,
+            onViewReceipt = onViewReceipt,
+        )
+        return
+    }
     val model = buildTodayCompletionFeedbackModel(
         variant = variant,
         completion = completion,
@@ -1565,6 +1603,638 @@ private fun TodayCompletionFeedbackSection(
             TodayCompletionMeterCard(model = model)
         }
     }
+}
+
+@Composable
+private fun TodayReceiptRecapCard(
+    recap: TodayReceiptRecapState,
+    onViewReceipt: (Long) -> Unit,
+) {
+    LaunchedEffect(recap.debugSurface, recap.debugScenario, recap.workoutCountToday) {
+        val debugSurface = recap.debugSurface ?: return@LaunchedEffect
+        val debugScenario = recap.debugScenario ?: return@LaunchedEffect
+        Log.d("ToastLiftE2E", "TOASTLIFT_E2E_READY surface=$debugSurface scenario=$debugScenario")
+        Log.d("ToastLiftE2E", "TOASTLIFT_E2E_ASSERT today_count=${recap.workoutCountToday}")
+    }
+    FeatureCard(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f)) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Top,
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Text(
+                        text = recap.latestWorkoutTitle ?: "Workout logged",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    recap.latestEvidenceLine?.let { line ->
+                        Text(
+                            text = line,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    recap.latestMeaningLine?.let { line ->
+                        Text(
+                            text = line,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                MiniTag(
+                    text = if (recap.workoutCountToday > 1) "${recap.workoutCountToday} today" else "Today",
+                    accent = goldAccent.start.copy(alpha = 0.18f),
+                )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = if (recap.workoutCountToday > 1) {
+                        "${recap.workoutCountToday} workouts logged today."
+                    } else {
+                        "Latest receipt stays available from Today and History."
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                recap.latestWorkoutId?.let { workoutId ->
+                    TextButton(onClick = { onViewReceipt(workoutId) }) {
+                        Text("View Receipt")
+                    }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
+@Composable
+private fun CompletionReceiptScreen(
+    receipt: CompletionReceiptUiState,
+    onDismiss: () -> Unit,
+    onShare: () -> Unit,
+    onTagProgramFeel: (Long, SfrTag) -> Unit,
+    onTagFriction: (dev.toastlabs.toastlift.data.CompletionFrictionReason, Boolean) -> Unit,
+) {
+    val snapshot = receipt.snapshot
+    LaunchedEffect(receipt.debugSurface, receipt.debugScenario, receipt.isReplay, snapshot.workoutId) {
+        val debugSurface = receipt.debugSurface ?: return@LaunchedEffect
+        val debugScenario = receipt.debugScenario ?: return@LaunchedEffect
+        Log.d("ToastLiftE2E", "TOASTLIFT_E2E_READY surface=$debugSurface scenario=$debugScenario")
+        Log.d(
+            "ToastLiftE2E",
+            "TOASTLIFT_E2E_ASSERT comparison=${if (snapshot.comparison != null) "present" else "absent"}",
+        )
+        Log.d("ToastLiftE2E", "TOASTLIFT_E2E_ASSERT replay=${receipt.isReplay}")
+    }
+    Surface(
+        modifier = Modifier.fillMaxSize(),
+        color = MaterialTheme.colorScheme.background.copy(alpha = 0.98f),
+    ) {
+        Scaffold(
+            topBar = {
+                CenterAlignedTopAppBar(
+                    title = {
+                        Text(if (receipt.isReplay) "Workout Receipt" else "Workout Logged")
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = onDismiss) {
+                            Icon(
+                                imageVector = Icons.Rounded.Close,
+                                contentDescription = "Close receipt",
+                            )
+                        }
+                    },
+                )
+            },
+            bottomBar = {
+                Surface(
+                    tonalElevation = 8.dp,
+                    shadowElevation = 8.dp,
+                    color = MaterialTheme.colorScheme.surface,
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        Button(
+                            onClick = onDismiss,
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            Text(if (receipt.isReplay) "Close" else "Done")
+                        }
+                        OutlinedButton(
+                            onClick = onShare,
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            Text("Share")
+                        }
+                    }
+                }
+            },
+        ) { innerPadding ->
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(innerPadding)
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                CompletionReceiptHeroCard(
+                    snapshot = snapshot,
+                    isReplay = receipt.isReplay,
+                )
+
+                snapshot.achievements?.let { achievements ->
+                    CompletionReceiptAchievementsCard(achievements = achievements)
+                }
+
+                snapshot.statsRail?.takeIf { it.items.isNotEmpty() }?.let { statsRail ->
+                    StatRail(
+                        items = statsRail.items.map { item ->
+                            Triple(item.label, item.value, item.supportingText.orEmpty())
+                        },
+                    )
+                }
+
+                snapshot.splitProgress?.let { splitProgress ->
+                    CompletionReceiptSplitProgressCard(splitProgress = splitProgress)
+                }
+
+                CompactSectionCard(
+                    title = "Evidence",
+                    subtitle = "${snapshot.evidence.completedSets}/${snapshot.evidence.plannedSets} sets • ${snapshot.evidence.completedExercises}/${snapshot.evidence.totalExercises} exercises",
+                ) {
+                    snapshot.evidence.highlights.forEach { highlight ->
+                        ReceiptInfoRow(
+                            title = highlight.label,
+                            value = highlight.deltaLabel,
+                            supporting = highlight.detail,
+                        )
+                    }
+                    if (snapshot.evidence.highlights.isEmpty()) {
+                        ReceiptInfoRow(
+                            title = "Duration",
+                            value = formatMinutesCompact(snapshot.evidence.durationSeconds),
+                            supporting = "Workout logged",
+                        )
+                    }
+                }
+
+                snapshot.comparison?.let { comparison ->
+                    CompactSectionCard(
+                        title = "Compared To Last Time",
+                        subtitle = comparison.headline,
+                    ) {
+                        comparison.rows.forEach { row ->
+                            ReceiptInfoRow(
+                                title = row.label,
+                                value = row.deltaLabel,
+                                supporting = "${row.previousValue} -> ${row.currentValue}",
+                            )
+                        }
+                    }
+                }
+
+                CompactSectionCard(
+                    title = "Why This Mattered",
+                    subtitle = snapshot.meaning.summaryLine,
+                ) {
+                    snapshot.meaning.rows.forEach { row ->
+                        ReceiptInfoRow(
+                            title = row.label,
+                            value = row.value,
+                            supporting = row.supportingText,
+                        )
+                    }
+                }
+
+                snapshot.bridge?.let { bridge ->
+                    CompactSectionCard(
+                        title = "What Next",
+                        subtitle = bridge.suggestedNextLabel ?: "Pick the next easy re-entry point now.",
+                    ) {
+                        bridge.suggestedNextLabel?.let { label ->
+                            ReceiptInfoRow(
+                                title = "Suggested",
+                                value = label,
+                                supporting = bridge.fallbackLabel,
+                            )
+                        }
+                        if (bridge.suggestedNextLabel == null && bridge.fallbackLabel != null) {
+                            ReceiptInfoRow(
+                                title = "Fallback",
+                                value = bridge.fallbackLabel,
+                                supporting = null,
+                            )
+                        }
+                    }
+                }
+
+                snapshot.learning?.let { learning ->
+                    CompactSectionCard(
+                        title = "Learning",
+                        subtitle = if (receipt.isReplay) "Saved feedback from the original receipt." else "Optional feedback that improves the next session.",
+                    ) {
+                        if (learning.programFeelRows.isNotEmpty()) {
+                            Text(
+                                text = "How did these feel?",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                            learning.programFeelRows.forEach { row ->
+                                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Text(row.exerciseName, fontWeight = FontWeight.Medium)
+                                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        SfrTag.entries.forEach { tag ->
+                                            ToastLiftFilterChip(
+                                                selected = row.selectedTag == tag,
+                                                onClick = {
+                                                    if (!receipt.isReplay) {
+                                                        onTagProgramFeel(row.exerciseId, tag)
+                                                    }
+                                                },
+                                                enabled = !receipt.isReplay,
+                                                label = { Text(sfrTagLabel(tag)) },
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        learning.frictionPrompt?.let { frictionPrompt ->
+                            if (learning.programFeelRows.isNotEmpty()) {
+                                Divider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.18f))
+                            }
+                            Text(
+                                text = "Anything here felt off?",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                            frictionPrompt.skippedExerciseName?.let { name ->
+                                Text(
+                                    text = name,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                dev.toastlabs.toastlift.data.CompletionFrictionReason.entries.forEach { reason ->
+                                    ToastLiftFilterChip(
+                                        selected = frictionPrompt.selectedReason == reason,
+                                        onClick = {
+                                            if (!receipt.isReplay) {
+                                                onTagFriction(reason, frictionPrompt.biasAwaySelected)
+                                            }
+                                        },
+                                        enabled = !receipt.isReplay,
+                                        label = { Text(frictionReasonLabel(reason)) },
+                                    )
+                                }
+                            }
+                            if (frictionPrompt.skippedExerciseId != null) {
+                                OutlinedButton(
+                                    onClick = {
+                                        if (!receipt.isReplay) {
+                                            onTagFriction(
+                                                frictionPrompt.selectedReason
+                                                    ?: dev.toastlabs.toastlift.data.CompletionFrictionReason.WRONG_EXERCISE,
+                                                true,
+                                            )
+                                        }
+                                    },
+                                    enabled = !receipt.isReplay,
+                                ) {
+                                    Text(
+                                        if (frictionPrompt.biasAwaySelected) {
+                                            "Bias Away Next Time: Saved"
+                                        } else {
+                                            "Bias Away Next Time"
+                                        },
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(88.dp))
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun CompletionReceiptHeroCard(
+    snapshot: dev.toastlabs.toastlift.data.CompletionReceiptSnapshot,
+    isReplay: Boolean,
+) {
+    val accent = accentForKey("${snapshot.hero.accentKey} ${snapshot.achievements?.title.orEmpty()}")
+    val splitProgress = snapshot.splitProgress
+    val weeklyProgressLabel = splitProgress
+        ?.takeIf { it.overallTargetSets > 0.0 }
+        ?.let { percentString((it.overallAfterCompletedSets / it.overallTargetSets).coerceIn(0.0, 1.0)) }
+    val medalValue = when {
+        (snapshot.achievements?.prCount ?: 0) > 0 -> "+${snapshot.achievements?.prCount}"
+        !weeklyProgressLabel.isNullOrBlank() -> weeklyProgressLabel
+        else -> null
+    }
+
+    FeatureCard(
+        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
+        border = BorderStroke(1.dp, accent.start.copy(alpha = 0.24f)),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(
+                            accent.glow.copy(alpha = 0.18f),
+                            MaterialTheme.colorScheme.surface.copy(alpha = 0.0f),
+                        ),
+                    ),
+                ),
+        ) {
+            Row(
+                modifier = Modifier.padding(18.dp),
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        MiniTag(
+                            text = outcomeTierLabel(snapshot.hero.outcomeTier),
+                            accent = accent.start.copy(alpha = 0.18f),
+                        )
+                        if ((snapshot.achievements?.prCount ?: 0) > 0) {
+                            MiniTag(
+                                text = snapshot.achievements?.title.orEmpty(),
+                                accent = goldAccent.start.copy(alpha = 0.18f),
+                            )
+                        }
+                        snapshot.accounting?.tokenDelta?.let { tokenDelta ->
+                            val tokenAccent = when {
+                                tokenDelta > 0 -> surgeAccent.start.copy(alpha = 0.18f)
+                                tokenDelta < 0 -> emberAccent.start.copy(alpha = 0.18f)
+                                else -> MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
+                            }
+                            MiniTag(
+                                text = sessionTokenLabel(tokenDelta),
+                                accent = tokenAccent,
+                            )
+                        }
+                        if (isReplay) {
+                            MiniTag(
+                                text = "Read only",
+                                accent = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f),
+                            )
+                        }
+                    }
+                    Text(
+                        text = snapshot.hero.title,
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Black,
+                    )
+                    Text(
+                        text = snapshot.hero.subtitle,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Box(
+                    modifier = Modifier
+                        .size(92.dp)
+                        .clip(CircleShape)
+                        .background(
+                            Brush.radialGradient(
+                                colors = listOf(
+                                    accent.start.copy(alpha = 0.95f),
+                                    accent.end.copy(alpha = 0.78f),
+                                ),
+                            ),
+                        )
+                        .border(
+                            BorderStroke(1.dp, accent.textOnAccent.copy(alpha = 0.22f)),
+                            CircleShape,
+                        ),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        Icon(
+                            imageVector = completionReceiptOutcomeIcon(snapshot.hero.outcomeTier),
+                            contentDescription = null,
+                            tint = accent.textOnAccent,
+                            modifier = Modifier.size(24.dp),
+                        )
+                        medalValue?.let { value ->
+                            Text(
+                                text = value,
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Black,
+                                color = accent.textOnAccent,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun CompletionReceiptAchievementsCard(
+    achievements: dev.toastlabs.toastlift.data.CompletionReceiptAchievementSnapshot,
+) {
+    CompactSectionCard(
+        title = achievements.title,
+        subtitle = achievements.supportingText ?: "Session highlights",
+    ) {
+        if (achievements.chips.isNotEmpty()) {
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                achievements.chips.take(6).forEach { chip ->
+                    MiniTag(
+                        text = chip,
+                        accent = goldAccent.start.copy(alpha = 0.18f),
+                    )
+                }
+            }
+        } else if (!achievements.fallbackLabel.isNullOrBlank() && !achievements.fallbackValue.isNullOrBlank()) {
+            ReceiptInfoRow(
+                title = achievements.fallbackLabel,
+                value = achievements.fallbackValue,
+                supporting = null,
+            )
+        }
+    }
+}
+
+@Composable
+private fun CompletionReceiptSplitProgressCard(
+    splitProgress: dev.toastlabs.toastlift.data.CompletionReceiptSplitProgressSnapshot,
+) {
+    val overallRatio = if (splitProgress.overallTargetSets > 0.0) {
+        (splitProgress.overallAfterCompletedSets / splitProgress.overallTargetSets).coerceIn(0.0, 1.0)
+    } else {
+        0.0
+    }
+    CompactSectionCard(
+        title = "Weekly Push / Pull / Legs",
+        subtitle = "${decimalString(splitProgress.overallAfterCompletedSets)} / ${decimalString(splitProgress.overallTargetSets)} weighted sets • ${percentString(overallRatio)} cleared",
+    ) {
+        splitProgress.groupRows.forEach { row ->
+            CompletionReceiptSplitProgressRow(row = row)
+        }
+    }
+}
+
+@Composable
+private fun CompletionReceiptSplitProgressRow(
+    row: dev.toastlabs.toastlift.data.CompletionReceiptSplitProgressRowSnapshot,
+) {
+    val accent = weeklyMuscleAccent(row.key)
+    val beforeRatio = if (row.targetSets > 0.0) (row.beforeCompletedSets / row.targetSets).coerceIn(0.0, 1.0) else 0.0
+    val afterRatio = if (row.targetSets > 0.0) (row.afterCompletedSets / row.targetSets).coerceIn(0.0, 1.0) else 0.0
+    val deltaSets = row.afterCompletedSets - row.beforeCompletedSets
+
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                Text(
+                    text = row.label.removeSuffix(" Muscles"),
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text = "${percentString(beforeRatio)} -> ${percentString(afterRatio)}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            MiniTag(
+                text = deltaSetLabel(deltaSets),
+                accent = accent.start.copy(alpha = 0.18f),
+            )
+        }
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(8.dp)
+                .clip(RoundedCornerShape(999.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f)),
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(afterRatio.toFloat())
+                    .fillMaxHeight()
+                    .background(accent.start.copy(alpha = 0.24f)),
+            )
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(beforeRatio.toFloat())
+                    .fillMaxHeight()
+                    .background(accent.color),
+            )
+        }
+    }
+}
+
+@Composable
+private fun ReceiptInfoRow(
+    title: String,
+    value: String,
+    supporting: String?,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.Top,
+    ) {
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Medium,
+            )
+            supporting?.let {
+                Text(
+                    text = it,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+    }
+}
+
+private fun completionReceiptOutcomeIcon(tier: SessionOutcomeTier): ImageVector = when (tier) {
+    SessionOutcomeTier.CLOSED_CLEAN -> Icons.Rounded.EmojiEvents
+    SessionOutcomeTier.SOLID_SESSION -> Icons.Rounded.WorkspacePremium
+    SessionOutcomeTier.MEANINGFUL_PARTIAL -> Icons.Rounded.FitnessCenter
+    SessionOutcomeTier.SHOWED_UP -> Icons.Rounded.LocalFireDepartment
+}
+
+private fun deltaSetLabel(delta: Double): String = when {
+    delta > 0.0 -> "+${decimalString(delta)} sets"
+    delta < 0.0 -> "${decimalString(delta)} sets"
+    else -> "Flat"
+}
+
+private fun sfrTagLabel(tag: SfrTag): String = when (tag) {
+    SfrTag.GREAT_STIMULUS -> "Great stimulus"
+    SfrTag.JOINT_DISCOMFORT -> "Joint discomfort"
+    SfrTag.NO_OPINION -> "No opinion"
+}
+
+private fun frictionReasonLabel(reason: dev.toastlabs.toastlift.data.CompletionFrictionReason): String = when (reason) {
+    dev.toastlabs.toastlift.data.CompletionFrictionReason.TOO_LONG -> "Too long"
+    dev.toastlabs.toastlift.data.CompletionFrictionReason.WRONG_EXERCISE -> "Wrong exercise"
+    dev.toastlabs.toastlift.data.CompletionFrictionReason.ENERGY_CRASHED -> "Energy crashed"
+    dev.toastlabs.toastlift.data.CompletionFrictionReason.ALL_GOOD -> "All good"
 }
 
 @Composable
@@ -2280,7 +2950,6 @@ private fun historyMuscleFilterFor(muscle: String): HistoryMuscleFilter? = when 
 private fun HistoryScreen(
     profile: UserProfile?,
     history: List<HistorySummary>,
-    activeProgramTitle: String?,
     tokenBalanceTrend: AdherenceCurrencyTrend?,
     weeklyMuscleTargets: WeeklyMuscleTargetSummary?,
     topExercise: String?,
@@ -2343,7 +3012,6 @@ private fun HistoryScreen(
     }
     if (destination == "token-balance" && tokenBalanceTrend != null) {
         TokenBalanceDetailScreen(
-            title = activeProgramTitle ?: "Guided Program",
             trend = tokenBalanceTrend,
             onBack = { destination = "dashboard" },
         )
@@ -2366,7 +3034,6 @@ private fun HistoryScreen(
         }
         item {
             TokenBalanceOverviewCard(
-                title = activeProgramTitle,
                 trend = tokenBalanceTrend,
                 onOpen = { destination = "token-balance" },
             )
@@ -2710,7 +3377,6 @@ private fun HistoryOverviewHeader(
 
 @Composable
 private fun TokenBalanceOverviewCard(
-    title: String?,
     trend: AdherenceCurrencyTrend?,
     onOpen: () -> Unit,
 ) {
@@ -2747,13 +3413,13 @@ private fun TokenBalanceOverviewCard(
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text("Token Balance", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black)
                         Text(
-                            if (title != null) "$title wallet" else "Guided-program reward wallet",
+                            "Shared across workouts and program adherence",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                     MiniTag(
-                        text = if (trend != null) "Tap for breakdown" else "Starts with a program",
+                        text = if (trend != null) "Tap for breakdown" else "Starts after your first workout",
                         accent = palette.gold.copy(alpha = 0.18f),
                     )
                 }
@@ -2774,7 +3440,7 @@ private fun TokenBalanceOverviewCard(
                                 fontWeight = FontWeight.Bold,
                             )
                             Text(
-                                "Start a guided program and completed or skipped sessions will bank tokens here with a capped downside.",
+                                "Completed workouts bank tokens here. Skipped program sessions spend from the same wallet with capped downside.",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -2856,7 +3522,6 @@ private fun TokenBalanceOverviewCard(
 
 @Composable
 private fun TokenBalanceDetailScreen(
-    title: String,
     trend: AdherenceCurrencyTrend,
     onBack: () -> Unit,
 ) {
@@ -2903,7 +3568,7 @@ private fun TokenBalanceDetailScreen(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            MiniTag(text = title, accent = palette.gold.copy(alpha = 0.18f))
+                            MiniTag(text = "ToastLift wallet", accent = palette.gold.copy(alpha = 0.18f))
                             Text(
                                 trend.snapshot.displayValue,
                                 style = MaterialTheme.typography.displayLarge,
@@ -2963,7 +3628,7 @@ private fun TokenBalanceDetailScreen(
                                 color = deltaColor,
                             )
                             Text(
-                                "Checking your wallet should feel rewarding, not punitive. Downside is capped and clean sessions pull it back up.",
+                                "Completed workouts grow the wallet. Skipped program sessions spend it. Downside stays capped and solid sessions rebuild it fast.",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -7837,6 +8502,7 @@ private fun HistoryDetailSheet(
     detail: HistoryDetail,
     showAbFlags: Boolean,
     onDismiss: () -> Unit,
+    onViewReceipt: () -> Unit,
     onReuseWorkout: (HistoryReuseMode) -> Unit,
     onShowExerciseDetail: (Long) -> Unit,
     onOpenExerciseHistory: (Long, String) -> Unit,
@@ -7870,8 +8536,19 @@ private fun HistoryDetailSheet(
             ) {
                 Text("Reuse in My Plan")
             }
+            if (detail.completionReceipt != null) {
+                OutlinedButton(
+                    onClick = onViewReceipt,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("View Receipt")
+                }
+            }
             if (showAbFlags) {
-                detail.abFlags?.completionFeedbackFlag?.let { flag ->
+                listOfNotNull(
+                    detail.abFlags?.receiptExperienceFlag,
+                    detail.abFlags?.completionFeedbackFlag,
+                ).forEach { flag ->
                     FeatureCard(
                         modifier = Modifier.fillMaxWidth(),
                         containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.82f),

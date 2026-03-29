@@ -126,6 +126,47 @@ class AdherenceCurrencyTest {
         assertEquals(4, trend.latestDelta)
     }
 
+    @Test
+    fun globalTrendCountsCompletedWorkoutsAndProgramSkipsInOneWallet() {
+        val trend = buildGlobalAdherenceCurrencyTrend(
+            completedWorkouts = listOf(
+                CompletedWorkoutAdherenceSignal(
+                    workoutId = 101L,
+                    completedAtUtc = "2026-03-20T12:00:00Z",
+                    plannedSetCount = 12,
+                    completedSetCount = 12,
+                ),
+                CompletedWorkoutAdherenceSignal(
+                    workoutId = 102L,
+                    completedAtUtc = "2026-03-22T12:00:00Z",
+                    plannedSetCount = 10,
+                    completedSetCount = 5,
+                ),
+            ),
+            skippedSessions = listOf(
+                PlannedSession(
+                    id = 9L,
+                    programId = "spring-block",
+                    weekNumber = 1,
+                    dayIndex = 2,
+                    sequenceNumber = 3,
+                    focusKey = SessionFocus.UPPER_PUSH,
+                    plannedSets = 16,
+                    status = SessionStatus.SKIPPED,
+                    statusUpdatedAtUtc = "2026-03-21T12:00:00Z",
+                ),
+            ),
+            today = LocalDate.parse("2026-03-25"),
+            zoneId = ZoneOffset.UTC,
+        )
+
+        requireNotNull(trend)
+        assertEquals(1, trend.snapshot.balance)
+        assertEquals(1, trend.monthlyDelta)
+        assertEquals(1, trend.latestDelta)
+        assertEquals(1, trend.dailyPoints.last().balance)
+    }
+
     private fun skippedSignal(
         sequence: Int,
         occurredAtUtc: String? = null,

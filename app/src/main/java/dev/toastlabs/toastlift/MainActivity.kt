@@ -10,6 +10,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import dev.toastlabs.toastlift.data.ThemePreference
+import dev.toastlabs.toastlift.ui.CompletionReceiptDebugLaunch
 import dev.toastlabs.toastlift.ui.MainTab
 import dev.toastlabs.toastlift.ui.ToastLiftApp
 import dev.toastlabs.toastlift.ui.ToastLiftViewModel
@@ -21,6 +22,7 @@ class MainActivity : ComponentActivity() {
     }
     private var debugSelectedTab: MainTab? by mutableStateOf(null)
     private var debugThemePreference: ThemePreference? by mutableStateOf(null)
+    private var debugReceiptLaunch: CompletionReceiptDebugLaunch? by mutableStateOf(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -32,6 +34,7 @@ class MainActivity : ComponentActivity() {
                 viewModel = viewModel,
                 selectedTabOverride = debugSelectedTab,
                 themePreferenceOverride = debugThemePreference,
+                completionReceiptDebugLaunch = debugReceiptLaunch,
             )
         }
     }
@@ -51,9 +54,16 @@ class MainActivity : ComponentActivity() {
         if (!BuildConfig.DEBUG || launchIntent == null) {
             debugSelectedTab = null
             debugThemePreference = null
+            debugReceiptLaunch = null
             return
         }
+        val parsedReceiptLaunch = parseReceiptDebugLaunch(
+            surface = launchIntent.getStringExtra(EXTRA_DEBUG_SURFACE),
+            scenario = launchIntent.getStringExtra(EXTRA_DEBUG_RECEIPT_SCENARIO),
+        )
+        debugReceiptLaunch = parsedReceiptLaunch
         debugSelectedTab = parseSelectedTabOverride(launchIntent.getStringExtra(EXTRA_DEBUG_TAB))
+            ?: parsedReceiptLaunch?.surface?.let(::defaultTabForDebugSurface)
         debugThemePreference = parseThemePreferenceOverride(launchIntent.getStringExtra(EXTRA_DEBUG_THEME))
     }
 
@@ -78,8 +88,30 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun parseReceiptDebugLaunch(
+        surface: String?,
+        scenario: String?,
+    ): CompletionReceiptDebugLaunch? {
+        val normalizedSurface = surface?.trim()?.takeIf(String::isNotEmpty) ?: return null
+        val normalizedScenario = scenario?.trim()?.takeIf(String::isNotEmpty) ?: return null
+        return CompletionReceiptDebugLaunch(
+            surface = normalizedSurface,
+            scenario = normalizedScenario,
+        )
+    }
+
+    private fun defaultTabForDebugSurface(surface: String): MainTab? {
+        return when (surface.lowercase()) {
+            "completion_receipt", "today_receipt_recap" -> MainTab.Today
+            "history_receipt_replay" -> MainTab.History
+            else -> null
+        }
+    }
+
     private companion object {
         const val EXTRA_DEBUG_TAB = "dev.toastlabs.toastlift.extra.DEBUG_TAB"
         const val EXTRA_DEBUG_THEME = "dev.toastlabs.toastlift.extra.DEBUG_THEME"
+        const val EXTRA_DEBUG_SURFACE = "dev.toastlabs.toastlift.extra.DEBUG_SURFACE"
+        const val EXTRA_DEBUG_RECEIPT_SCENARIO = "dev.toastlabs.toastlift.extra.DEBUG_RECEIPT_SCENARIO"
     }
 }

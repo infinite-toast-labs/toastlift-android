@@ -129,6 +129,9 @@ open class ProgramRepository(private val database: ToastLiftDatabase?) {
                     if (session.actualWorkoutId != null) put("actual_workout_id", session.actualWorkoutId) else putNull("actual_workout_id")
                     if (session.statusUpdatedAtUtc != null) put("status_updated_at_utc", session.statusUpdatedAtUtc) else putNull("status_updated_at_utc")
                     if (session.coachBrief != null) put("coach_brief", session.coachBrief) else putNull("coach_brief")
+                    if (session.completionRatio != null) put("completion_ratio", session.completionRatio) else putNull("completion_ratio")
+                    if (session.completionCredit != null) put("completion_credit", session.completionCredit) else putNull("completion_credit")
+                    if (session.completionTruth != null) put("completion_truth", session.completionTruth.name) else putNull("completion_truth")
                 }
                 db.insert("planned_sessions", null, cv)
             }
@@ -152,6 +155,20 @@ open class ProgramRepository(private val database: ToastLiftDatabase?) {
         }
     }
 
+    open fun loadSessionsByStatus(status: SessionStatus): List<PlannedSession> {
+        val db = db()
+        return db.rawQuery(
+            "SELECT * FROM planned_sessions WHERE status = ? ORDER BY status_updated_at_utc, sequence_number",
+            arrayOf(status.name),
+        ).use { cursor ->
+            buildList {
+                while (cursor.moveToNext()) {
+                    add(parsePlannedSession(cursor))
+                }
+            }
+        }
+    }
+
     fun updateSessionStatus(
         sessionId: Long,
         status: SessionStatus,
@@ -162,10 +179,49 @@ open class ProgramRepository(private val database: ToastLiftDatabase?) {
         db.execSQL(
             """
             UPDATE planned_sessions
-            SET status = ?, actual_workout_id = ?, status_updated_at_utc = ?
+            SET
+                status = ?,
+                actual_workout_id = ?,
+                status_updated_at_utc = ?,
+                completion_ratio = CASE WHEN ? = 'COMPLETED' THEN completion_ratio ELSE NULL END,
+                completion_credit = CASE WHEN ? = 'COMPLETED' THEN completion_credit ELSE NULL END,
+                completion_truth = CASE WHEN ? = 'COMPLETED' THEN completion_truth ELSE NULL END
             WHERE id = ?
             """.trimIndent(),
-            arrayOf(status.name, actualWorkoutId, statusUpdatedAtUtc, sessionId),
+            arrayOf(status.name, actualWorkoutId, statusUpdatedAtUtc, status.name, status.name, status.name, sessionId),
+        )
+    }
+
+    fun updateSessionCompletionAccounting(
+        sessionId: Long,
+        actualWorkoutId: Long,
+        completionRatio: Double,
+        completionCredit: Double,
+        completionTruth: ProgramCompletionTruth,
+        statusUpdatedAtUtc: String = Instant.now().toString(),
+    ) {
+        val db = db()
+        db.execSQL(
+            """
+            UPDATE planned_sessions
+            SET
+                status = ?,
+                actual_workout_id = ?,
+                status_updated_at_utc = ?,
+                completion_ratio = ?,
+                completion_credit = ?,
+                completion_truth = ?
+            WHERE id = ?
+            """.trimIndent(),
+            arrayOf(
+                SessionStatus.COMPLETED.name,
+                actualWorkoutId,
+                statusUpdatedAtUtc,
+                completionRatio,
+                completionCredit,
+                completionTruth.name,
+                sessionId,
+            ),
         )
     }
 
@@ -221,8 +277,12 @@ open class ProgramRepository(private val database: ToastLiftDatabase?) {
             put("planned_sets", session.plannedSets)
             if (session.timeBudgetMinutes != null) put("time_budget_minutes", session.timeBudgetMinutes) else putNull("time_budget_minutes")
             put("status", session.status.name)
+            if (session.actualWorkoutId != null) put("actual_workout_id", session.actualWorkoutId) else putNull("actual_workout_id")
             if (session.statusUpdatedAtUtc != null) put("status_updated_at_utc", session.statusUpdatedAtUtc) else putNull("status_updated_at_utc")
             if (session.coachBrief != null) put("coach_brief", session.coachBrief) else putNull("coach_brief")
+            if (session.completionRatio != null) put("completion_ratio", session.completionRatio) else putNull("completion_ratio")
+            if (session.completionCredit != null) put("completion_credit", session.completionCredit) else putNull("completion_credit")
+            if (session.completionTruth != null) put("completion_truth", session.completionTruth.name) else putNull("completion_truth")
         }
         return db.insert("planned_sessions", null, cv)
     }
@@ -588,6 +648,12 @@ open class ProgramRepository(private val database: ToastLiftDatabase?) {
             else cursor.getLong(cursor.getColumnIndexOrThrow("actual_workout_id")),
             statusUpdatedAtUtc = cursor.getStringOrNull(cursor.getColumnIndexOrThrow("status_updated_at_utc")),
             coachBrief = cursor.getStringOrNull(cursor.getColumnIndexOrThrow("coach_brief")),
+            completionRatio = if (cursor.isNull(cursor.getColumnIndexOrThrow("completion_ratio"))) null
+            else cursor.getDouble(cursor.getColumnIndexOrThrow("completion_ratio")),
+            completionCredit = if (cursor.isNull(cursor.getColumnIndexOrThrow("completion_credit"))) null
+            else cursor.getDouble(cursor.getColumnIndexOrThrow("completion_credit")),
+            completionTruth = cursor.getStringOrNull(cursor.getColumnIndexOrThrow("completion_truth"))
+                ?.let(ProgramCompletionTruth::valueOf),
         )
     }
 

@@ -620,10 +620,12 @@ class UserRepository(private val database: ToastLiftDatabase) {
                 title,
                 origin_type,
                 location_mode_id,
+                focus_key,
                 started_at_utc,
                 completed_at_utc,
                 actual_duration_seconds,
-                ab_flags_snapshot_json
+                ab_flags_snapshot_json,
+                completion_receipt_snapshot_json
             FROM performed_workouts
             ORDER BY completed_at_utc DESC, performed_workout_id DESC
             """.trimIndent(),
@@ -638,10 +640,12 @@ class UserRepository(private val database: ToastLiftDatabase) {
                             .put("title", cursor.getString(1))
                             .put("origin_type", cursor.getString(2))
                             .put("location_mode_id", cursor.getLong(3))
-                            .put("started_at_utc", cursor.getString(4))
-                            .put("completed_at_utc", cursor.getString(5))
-                            .put("actual_duration_seconds", cursor.getInt(6))
-                            .putNullable("abFlags", exportCompletedWorkoutAbFlags(cursor.getStringOrNull(7)))
+                            .putNullable("focus_key", cursor.getStringOrNull(4))
+                            .put("started_at_utc", cursor.getString(5))
+                            .put("completed_at_utc", cursor.getString(6))
+                            .put("actual_duration_seconds", cursor.getInt(7))
+                            .putNullable("abFlags", exportCompletedWorkoutAbFlags(cursor.getStringOrNull(8)))
+                            .putNullable("completionReceipt", exportCompletionReceiptSnapshot(cursor.getStringOrNull(9)))
                             .put("exercises", exportPerformedExercises(db, workoutId)),
                     )
                 }
@@ -723,17 +727,36 @@ class UserRepository(private val database: ToastLiftDatabase) {
 
     private fun exportCompletedWorkoutAbFlags(payload: String?): JSONObject? {
         val abFlags = deserializeCompletedWorkoutAbFlags(payload) ?: return null
-        val completionFeedbackFlag = abFlags.completionFeedbackFlag ?: return null
-        return JSONObject().put(
-            "completionFeedbackFlag",
-            JSONObject()
-                .put("experimentKey", completionFeedbackFlag.experimentKey)
-                .put("flagName", completionFeedbackFlag.flagName)
-                .put("flagDescription", completionFeedbackFlag.flagDescription)
-                .put("variantKey", completionFeedbackFlag.variantKey)
-                .put("variantName", completionFeedbackFlag.variantName)
-                .put("enabledStatus", completionFeedbackFlag.enabledStatus),
-        )
+        return JSONObject().apply {
+            abFlags.completionFeedbackFlag?.let { completionFeedbackFlag ->
+                put(
+                    "completionFeedbackFlag",
+                    JSONObject()
+                        .put("experimentKey", completionFeedbackFlag.experimentKey)
+                        .put("flagName", completionFeedbackFlag.flagName)
+                        .put("flagDescription", completionFeedbackFlag.flagDescription)
+                        .put("variantKey", completionFeedbackFlag.variantKey)
+                        .put("variantName", completionFeedbackFlag.variantName)
+                        .put("enabledStatus", completionFeedbackFlag.enabledStatus),
+                )
+            }
+            abFlags.receiptExperienceFlag?.let { receiptExperienceFlag ->
+                put(
+                    "receiptExperienceFlag",
+                    JSONObject()
+                        .put("experimentKey", receiptExperienceFlag.experimentKey)
+                        .put("flagName", receiptExperienceFlag.flagName)
+                        .put("flagDescription", receiptExperienceFlag.flagDescription)
+                        .put("variantKey", receiptExperienceFlag.variantKey)
+                        .put("variantName", receiptExperienceFlag.variantName)
+                        .put("enabledStatus", receiptExperienceFlag.enabledStatus),
+                )
+            }
+        }.takeIf { it.length() > 0 }
+    }
+
+    private fun exportCompletionReceiptSnapshot(payload: String?): JSONObject? {
+        return payload?.let { runCatching { JSONObject(it) }.getOrNull() }
     }
 
     private fun exportSession(db: SQLiteDatabase, workoutTable: String, idColumn: String): JSONObject? {
