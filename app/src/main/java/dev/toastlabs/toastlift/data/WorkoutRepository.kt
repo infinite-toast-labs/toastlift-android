@@ -326,7 +326,7 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
     ): Long? {
         val db = database.open()
         val completedAt = Instant.now()
-        val durationSeconds = Duration.between(Instant.parse(session.startedAtUtc), completedAt).seconds.toInt().coerceAtLeast(60)
+        val durationSeconds = session.elapsedDurationSeconds(completedAt).coerceAtLeast(60)
         if (session.exercises.isEmpty()) return null
 
         val workoutId: Long
@@ -461,8 +461,9 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
                 """
                 INSERT INTO active_workouts (
                     active_workout_id, title, origin_type, location_mode_id, started_at_utc, focus_key,
-                    subtitle, estimated_minutes, session_format, selected_exercise_index
-                ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    subtitle, estimated_minutes, session_format, selected_exercise_index,
+                    is_paused, paused_at_utc, accumulated_paused_seconds
+                ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """.trimIndent(),
                 arrayOf(
                     session.title,
@@ -474,6 +475,9 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
                     session.estimatedMinutes,
                     session.sessionFormat,
                     selectedExerciseIndex,
+                    if (session.isPaused) 1 else 0,
+                    session.pausedAtUtc,
+                    session.accumulatedPausedSeconds,
                 ),
             )
             session.exercises.forEachIndexed { index, exercise ->
@@ -548,7 +552,10 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
                 subtitle,
                 estimated_minutes,
                 session_format,
-                selected_exercise_index
+                selected_exercise_index,
+                is_paused,
+                paused_at_utc,
+                accumulated_paused_seconds
             FROM active_workouts
             WHERE active_workout_id = 1
             """.trimIndent(),
@@ -565,6 +572,9 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
                 estimatedMinutes = if (cursor.isNull(6)) null else cursor.getInt(6),
                 sessionFormat = cursor.getStringOrNull(7),
                 exercises = emptyList(),
+                isPaused = cursor.getInt(9) == 1,
+                pausedAtUtc = cursor.getStringOrNull(10),
+                accumulatedPausedSeconds = cursor.getInt(11),
             ) to if (cursor.isNull(8)) null else cursor.getInt(8)
         }
         val exercises = db.rawQuery(
@@ -656,8 +666,9 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
                 """
                 INSERT INTO abandoned_workouts (
                     abandoned_workout_id, title, origin_type, location_mode_id, started_at_utc, focus_key,
-                    subtitle, estimated_minutes, session_format
-                ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?)
+                    subtitle, estimated_minutes, session_format, is_paused, paused_at_utc,
+                    accumulated_paused_seconds
+                ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """.trimIndent(),
                 arrayOf(
                     session.title,
@@ -668,6 +679,9 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
                     session.subtitle,
                     session.estimatedMinutes,
                     session.sessionFormat,
+                    if (session.isPaused) 1 else 0,
+                    session.pausedAtUtc,
+                    session.accumulatedPausedSeconds,
                 ),
             )
             session.exercises.forEachIndexed { index, exercise ->
@@ -740,7 +754,10 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
                 focus_key,
                 subtitle,
                 estimated_minutes,
-                session_format
+                session_format,
+                is_paused,
+                paused_at_utc,
+                accumulated_paused_seconds
             FROM abandoned_workouts
             WHERE abandoned_workout_id = 1
             """.trimIndent(),
@@ -756,6 +773,9 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
                 cursor.getString(5).orEmpty(),
                 if (cursor.isNull(6)) "" else cursor.getInt(6).toString(),
                 cursor.getStringOrNull(7).orEmpty(),
+                if (cursor.getInt(8) == 1) "1" else "0",
+                cursor.getStringOrNull(9).orEmpty(),
+                cursor.getInt(10).toString(),
             )
         }
         val exercises = db.rawQuery(
@@ -836,6 +856,9 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
             estimatedMinutes = header[6].toIntOrNull(),
             sessionFormat = header[7].ifBlank { null },
             exercises = exercises,
+            isPaused = header[8] == "1",
+            pausedAtUtc = header[9].ifBlank { null },
+            accumulatedPausedSeconds = header[10].toIntOrNull() ?: 0,
         )
     }
 

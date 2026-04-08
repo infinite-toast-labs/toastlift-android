@@ -73,6 +73,8 @@ import dev.toastlabs.toastlift.data.ProgramSetupDraft
 import dev.toastlabs.toastlift.data.ProgramStatus
 import dev.toastlabs.toastlift.data.ReadinessContext
 import dev.toastlabs.toastlift.data.RecommendationBias
+import dev.toastlabs.toastlift.data.pause
+import dev.toastlabs.toastlift.data.resume
 import dev.toastlabs.toastlift.data.SessionExercise
 import dev.toastlabs.toastlift.data.SessionFocus
 import dev.toastlabs.toastlift.data.SessionSet
@@ -132,6 +134,19 @@ enum class CustomExerciseDestination {
     GeneratedWorkout,
     TodayTemplate,
 }
+
+enum class ActiveSessionAddExerciseMode {
+    Choice,
+    Manual,
+    Generated,
+}
+
+internal data class ActiveSessionGeneratedExerciseState(
+    val exercise: WorkoutExercise? = null,
+    val isLoading: Boolean = false,
+    val errorMessage: String? = null,
+    val seenExerciseIds: Set<Long> = emptySet(),
+)
 
 private const val UPCOMING_PROGRAM_SESSIONS_LIMIT = 4
 internal const val PROFILE_SAVED_MESSAGE = "Profile saved."
@@ -325,6 +340,8 @@ internal data class AppUiState(
     val activeSession: ActiveSession? = null,
     val activeSessionExerciseIndex: Int? = null,
     val activeSessionAddExerciseVisible: Boolean = false,
+    val activeSessionAddExerciseMode: ActiveSessionAddExerciseMode = ActiveSessionAddExerciseMode.Choice,
+    val activeSessionGeneratedExercise: ActiveSessionGeneratedExerciseState = ActiveSessionGeneratedExerciseState(),
     val skippedExerciseFeedbackPrompt: SkippedExerciseFeedbackPrompt? = null,
     val customExerciseDraft: CustomExerciseDraft? = null,
     val customExerciseDestination: CustomExerciseDestination? = null,
@@ -372,6 +389,27 @@ internal fun workoutGenerationRequestContext(currentWorkout: WorkoutPlan?): Work
         previousExerciseIds = currentWorkout?.exercises?.map { it.exerciseId }?.toSet().orEmpty(),
         requestedFocus = currentWorkout?.focusKey,
     )
+}
+
+internal fun workoutGenerationRequestContext(session: ActiveSession?): WorkoutGenerationRequestContext {
+    return WorkoutGenerationRequestContext(
+        previousExerciseIds = session?.exercises?.map(SessionExercise::exerciseId)?.toSet().orEmpty(),
+        requestedFocus = session?.focusKey,
+    )
+}
+
+internal fun generatedActiveSessionExerciseExclusionIds(
+    session: ActiveSession?,
+    generatedState: ActiveSessionGeneratedExerciseState,
+): Set<Long> {
+    return session?.exercises?.map(SessionExercise::exerciseId)?.toSet().orEmpty() + generatedState.seenExerciseIds
+}
+
+internal fun generatedAdditionalSessionExercise(
+    workout: WorkoutPlan,
+    excludedExerciseIds: Set<Long>,
+): WorkoutExercise? {
+    return workout.exercises.firstOrNull { it.exerciseId !in excludedExerciseIds }
 }
 
 internal fun syncProgramSetupDraftWithProfileDuration(
@@ -521,6 +559,60 @@ internal fun reorderActiveSessionSets(
     return orderedSets.mapIndexed { index, set ->
         set.copy(setNumber = index + 1)
     }
+}
+
+internal fun logNextSessionSetInActiveSession(
+    session: ActiveSession,
+    exerciseIndex: Int,
+    loggedAt: Instant = Instant.now(),
+): ActiveSession {
+    val resumedSession = session.resume(loggedAt)
+    val updatedExercises = resumedSession.exercises.toMutableList()
+    val exercise = updatedExercises[exerciseIndex]
+    val updatedSets = exercise.sets.toMutableList()
+    val nextIndex = updatedSets.indexOfFirst { !it.completed }
+    if (nextIndex == -1) return resumedSession
+    val nextSet = updatedSets[nextIndex]
+    updatedSets[nextIndex] = nextSet.copy(
+        completed = true,
+        reps = nextSet.resolvedRepsForLogging(),
+        weight = nextSet.resolvedWeightForLogging(),
+    )
+    val reorderedSets = reorderActiveSessionSets(
+        sets = updatedSets,
+        prioritizedCompletedSetId = nextSet.id,
+    )
+    updatedExercises[exerciseIndex] = reconcileSessionExerciseCompletionState(
+        exercises = resumedSession.exercises,
+        exerciseIndex = exerciseIndex,
+        updatedExercise = exercise.copy(sets = reorderedSets),
+        promoteForLoggedSet = true,
+    )
+    return resumedSession.copy(exercises = updatedExercises)
+}
+
+internal fun logAllSessionSetsInActiveSession(
+    session: ActiveSession,
+    exerciseIndex: Int,
+    loggedAt: Instant = Instant.now(),
+): ActiveSession {
+    val resumedSession = session.resume(loggedAt)
+    val updatedExercises = resumedSession.exercises.toMutableList()
+    val exercise = updatedExercises[exerciseIndex]
+    val updatedSets = exercise.sets.map { set ->
+        set.copy(
+            completed = true,
+            reps = set.resolvedRepsForLogging(),
+            weight = set.resolvedWeightForLogging(),
+        )
+    }
+    updatedExercises[exerciseIndex] = reconcileSessionExerciseCompletionState(
+        exercises = resumedSession.exercises,
+        exerciseIndex = exerciseIndex,
+        updatedExercise = exercise.copy(sets = updatedSets),
+        promoteForLoggedSet = updatedSets.any(SessionSet::completed),
+    )
+    return resumedSession.copy(exercises = updatedExercises)
 }
 
 private fun sanitizeActiveSessionCompletionState(session: ActiveSession): ActiveSession {
@@ -2725,6 +2817,17 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
         persistActiveSessionState(selectedExerciseIndex = exerciseIndex)
     }
 
+    fun toggleSessionPause() {
+        val session = uiState.activeSession ?: return
+        val updatedSession = if (session.isPaused) {
+            session.resume()
+        } else {
+            session.pause()
+        }
+        uiState = uiState.copy(activeSession = updatedSession)
+        persistActiveSessionState(session = updatedSession)
+    }
+
     fun closeSessionExercise() {
         uiState = uiState.copy(activeSessionExerciseIndex = null)
         persistActiveSessionState(selectedExerciseIndex = null)
@@ -2903,50 +3006,14 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
 
     fun logNextSessionSet(exerciseIndex: Int) {
         val session = uiState.activeSession ?: return
-        val updatedExercises = session.exercises.toMutableList()
-        val exercise = updatedExercises[exerciseIndex]
-        val updatedSets = exercise.sets.toMutableList()
-        val nextIndex = updatedSets.indexOfFirst { !it.completed }
-        if (nextIndex == -1) return
-        val nextSet = updatedSets[nextIndex]
-        updatedSets[nextIndex] = nextSet.copy(
-            completed = true,
-            reps = nextSet.resolvedRepsForLogging(),
-            weight = nextSet.resolvedWeightForLogging(),
-        )
-        val reorderedSets = reorderActiveSessionSets(
-            sets = updatedSets,
-            prioritizedCompletedSetId = nextSet.id,
-        )
-        updatedExercises[exerciseIndex] = reconcileSessionExerciseCompletionState(
-            exercises = session.exercises,
-            exerciseIndex = exerciseIndex,
-            updatedExercise = exercise.copy(sets = reorderedSets),
-            promoteForLoggedSet = true,
-        )
-        val updatedSession = session.copy(exercises = updatedExercises)
+        val updatedSession = logNextSessionSetInActiveSession(session, exerciseIndex)
         uiState = uiState.copy(activeSession = updatedSession)
         persistActiveSessionState(session = updatedSession)
     }
 
     fun logAllSessionSets(exerciseIndex: Int) {
         val session = uiState.activeSession ?: return
-        val updatedExercises = session.exercises.toMutableList()
-        val exercise = updatedExercises[exerciseIndex]
-        val updatedSets = exercise.sets.map { set ->
-            set.copy(
-                completed = true,
-                reps = set.resolvedRepsForLogging(),
-                weight = set.resolvedWeightForLogging(),
-            )
-        }
-        updatedExercises[exerciseIndex] = reconcileSessionExerciseCompletionState(
-            exercises = session.exercises,
-            exerciseIndex = exerciseIndex,
-            updatedExercise = exercise.copy(sets = updatedSets),
-            promoteForLoggedSet = updatedSets.any(SessionSet::completed),
-        )
-        val updatedSession = session.copy(exercises = updatedExercises)
+        val updatedSession = logAllSessionSetsInActiveSession(session, exerciseIndex)
         uiState = uiState.copy(activeSession = updatedSession)
         persistActiveSessionState(session = updatedSession)
     }
@@ -3000,6 +3067,8 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
     fun openActiveSessionAddExercise() {
         uiState = uiState.copy(
             activeSessionAddExerciseVisible = true,
+            activeSessionAddExerciseMode = ActiveSessionAddExerciseMode.Choice,
+            activeSessionGeneratedExercise = ActiveSessionGeneratedExerciseState(),
             customExerciseDraft = null,
             customExerciseDestination = null,
             pendingAddExercisePickerSelection = null,
@@ -3015,6 +3084,8 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
         customExerciseNameLookupJob?.cancel()
         uiState = uiState.copy(
             activeSessionAddExerciseVisible = false,
+            activeSessionAddExerciseMode = ActiveSessionAddExerciseMode.Choice,
+            activeSessionGeneratedExercise = ActiveSessionGeneratedExerciseState(),
             customExerciseDraft = null,
             customExerciseDestination = null,
             pendingAddExercisePickerSelection = null,
@@ -3023,6 +3094,48 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
             libraryFilters = LibraryFilters(),
         )
         refreshLibrary()
+    }
+
+    fun openManualActiveSessionExercisePicker() {
+        uiState = uiState.copy(
+            activeSessionAddExerciseMode = ActiveSessionAddExerciseMode.Manual,
+            activeSessionGeneratedExercise = ActiveSessionGeneratedExerciseState(),
+            customExerciseDraft = null,
+            customExerciseDestination = null,
+            pendingAddExercisePickerSelection = null,
+            librarySearchVisible = false,
+            libraryQuery = "",
+            libraryFilters = LibraryFilters(),
+            message = null,
+        )
+        refreshLibrary()
+    }
+
+    fun openGeneratedActiveSessionExercisePicker() {
+        uiState = uiState.copy(
+            activeSessionAddExerciseMode = ActiveSessionAddExerciseMode.Generated,
+            activeSessionGeneratedExercise = ActiveSessionGeneratedExerciseState(isLoading = true),
+            customExerciseDraft = null,
+            customExerciseDestination = null,
+            pendingAddExercisePickerSelection = null,
+            message = null,
+        )
+        generateActiveSessionExerciseSuggestion()
+    }
+
+    fun pickAgainGeneratedActiveSessionExercise() {
+        val current = uiState.activeSessionGeneratedExercise
+        if (current.isLoading) return
+        uiState = uiState.copy(
+            activeSessionAddExerciseMode = ActiveSessionAddExerciseMode.Generated,
+            activeSessionGeneratedExercise = current.copy(
+                exercise = null,
+                isLoading = true,
+                errorMessage = null,
+            ),
+            message = null,
+        )
+        generateActiveSessionExerciseSuggestion()
     }
 
     private fun openCustomExerciseFlow(
@@ -3122,11 +3235,31 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
         appendExercisesToActiveSession(additions)
         uiState = uiState.copy(
             activeSessionAddExerciseVisible = false,
+            activeSessionAddExerciseMode = ActiveSessionAddExerciseMode.Choice,
+            activeSessionGeneratedExercise = ActiveSessionGeneratedExerciseState(),
             librarySearchVisible = false,
             libraryQuery = "",
             libraryFilters = LibraryFilters(),
             customExerciseDraft = null,
             message = "Added ${additions.size} exercise${if (additions.size == 1) "" else "s"} to the workout.",
+        )
+        refreshLibrary()
+    }
+
+    fun addGeneratedExerciseToActiveSession() {
+        val generatedExercise = uiState.activeSessionGeneratedExercise.exercise ?: return
+        appendWorkoutExercisesToActiveSession(listOf(generatedExercise))
+        uiState = uiState.copy(
+            activeSessionAddExerciseVisible = false,
+            activeSessionAddExerciseMode = ActiveSessionAddExerciseMode.Choice,
+            activeSessionGeneratedExercise = ActiveSessionGeneratedExerciseState(),
+            librarySearchVisible = false,
+            libraryQuery = "",
+            libraryFilters = LibraryFilters(),
+            customExerciseDraft = null,
+            customExerciseDestination = null,
+            pendingAddExercisePickerSelection = null,
+            message = "${generatedExercise.name} added to the workout.",
         )
         refreshLibrary()
     }
@@ -4903,6 +5036,82 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
+    private fun generateActiveSessionExerciseSuggestion() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val session = uiState.activeSession
+            if (session == null) {
+                uiState = uiState.copy(
+                    activeSessionGeneratedExercise = ActiveSessionGeneratedExerciseState(
+                        errorMessage = "Start a workout before asking for a generated exercise.",
+                    ),
+                )
+                return@launch
+            }
+            val profile = container.userRepository.loadProfile()
+            if (profile == null) {
+                uiState = uiState.copy(
+                    activeSessionGeneratedExercise = ActiveSessionGeneratedExerciseState(
+                        errorMessage = "Finish onboarding before generating an exercise.",
+                    ),
+                )
+                return@launch
+            }
+            val splitProgram = uiState.splitPrograms.firstOrNull { it.id == profile.splitProgramId }
+                ?: uiState.splitPrograms.firstOrNull()
+            if (splitProgram == null) {
+                uiState = uiState.copy(
+                    activeSessionGeneratedExercise = ActiveSessionGeneratedExerciseState(
+                        errorMessage = "Could not load your split program.",
+                    ),
+                )
+                return@launch
+            }
+            val requestContext = workoutGenerationRequestContext(session)
+            val excludedExerciseIds = generatedActiveSessionExerciseExclusionIds(
+                session = session,
+                generatedState = uiState.activeSessionGeneratedExercise,
+            )
+            val generatedWorkout = runCatching {
+                container.generatorRepository.generateWorkout(
+                    profile = profile.copy(activeLocationModeId = session.locationModeId),
+                    splitProgram = splitProgram,
+                    locationModes = uiState.locationModes,
+                    previousExerciseIds = excludedExerciseIds,
+                    variationSeed = System.currentTimeMillis(),
+                    requestedFocus = requestContext.requestedFocus,
+                )
+            }.getOrElse { error ->
+                uiState = uiState.copy(
+                    activeSessionGeneratedExercise = ActiveSessionGeneratedExerciseState(
+                        errorMessage = error.message ?: "Could not generate an exercise right now.",
+                    ),
+                )
+                return@launch
+            }
+            val suggestedExercise = generatedAdditionalSessionExercise(
+                workout = generatedWorkout,
+                excludedExerciseIds = excludedExerciseIds,
+            )
+            val currentGeneratedState = uiState.activeSessionGeneratedExercise
+            uiState = uiState.copy(
+                activeSessionGeneratedExercise = if (suggestedExercise != null) {
+                    currentGeneratedState.copy(
+                        exercise = suggestedExercise,
+                        isLoading = false,
+                        errorMessage = null,
+                        seenExerciseIds = currentGeneratedState.seenExerciseIds + suggestedExercise.exerciseId,
+                    )
+                } else {
+                    currentGeneratedState.copy(
+                        exercise = null,
+                        isLoading = false,
+                        errorMessage = "No matching exercise was generated for this workout.",
+                    )
+                },
+            )
+        }
+    }
+
     private fun appendExerciseToActiveSession(exercise: ExerciseSummary) {
         appendExercisesToActiveSession(listOf(exercise))
     }
@@ -4923,13 +5132,10 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
 
     private fun appendExercisesToActiveSession(exercises: List<ExerciseSummary>) {
         if (exercises.isEmpty()) return
-        val session = uiState.activeSession ?: return
         val goal = uiState.profile?.goal ?: uiState.onboardingDraft.goal
-        viewModelScope.launch(Dispatchers.IO) {
-            val profile = uiState.profile
-            val history = container.generatorRepository.loadHistoricalSetsForRecommendations()
-            val additions = exercises.map { exercise ->
-                val workoutExercise = exercise.toWorkoutExercise(
+        appendWorkoutExercisesToActiveSession(
+            exercises = exercises.map { exercise ->
+                exercise.toWorkoutExercise(
                     goal = goal,
                     rationale = if (exercise.id >= 9_000_000_000_000_000L) {
                         "Custom exercise created during the active workout."
@@ -4937,8 +5143,17 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
                         "Added manually from the exercise library."
                     },
                 )
-                buildSessionExercise(workoutExercise, profile, history)
-            }
+            },
+        )
+    }
+
+    private fun appendWorkoutExercisesToActiveSession(exercises: List<WorkoutExercise>) {
+        if (exercises.isEmpty()) return
+        val session = uiState.activeSession ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            val profile = uiState.profile
+            val history = container.generatorRepository.loadHistoricalSetsForRecommendations()
+            val additions = exercises.map { exercise -> buildSessionExercise(exercise, profile, history) }
             val updatedSession = ensureSessionFruitIcons(
                 session.copy(exercises = session.exercises + additions),
             )

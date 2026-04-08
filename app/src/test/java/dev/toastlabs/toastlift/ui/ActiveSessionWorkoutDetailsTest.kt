@@ -3,9 +3,13 @@ package dev.toastlabs.toastlift.ui
 import dev.toastlabs.toastlift.data.ActiveSession
 import dev.toastlabs.toastlift.data.SessionExercise
 import dev.toastlabs.toastlift.data.SessionSet
+import dev.toastlabs.toastlift.data.elapsedDurationSeconds
+import dev.toastlabs.toastlift.data.pause
+import dev.toastlabs.toastlift.data.resume
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
+import java.time.Instant
 
 class ActiveSessionWorkoutDetailsTest {
     @Test
@@ -105,6 +109,21 @@ class ActiveSessionWorkoutDetailsTest {
         )
 
         assertEquals("High reps", activeSessionIntensityLabel(session))
+    }
+
+    @Test
+    fun activeSessionElapsedDurationSeconds_freezesWhilePaused_andResumesAfterward() {
+        val started = Instant.parse("2026-03-23T10:00:00Z")
+        val paused = started.plusSeconds(300)
+        val resumed = started.plusSeconds(600)
+        val session = session(exercises = emptyList()).copy(startedAtUtc = started.toString())
+            .pause(paused)
+
+        assertEquals(300, session.elapsedDurationSeconds(started.plusSeconds(420)))
+
+        val resumedSession = session.resume(resumed)
+
+        assertEquals(420, resumedSession.elapsedDurationSeconds(started.plusSeconds(720)))
     }
 
     private fun session(

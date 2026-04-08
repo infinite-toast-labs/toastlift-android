@@ -10,7 +10,7 @@ import java.util.Locale
 class ToastLiftDatabase(private val context: Context) {
     private val databaseName = "toastlift.db"
     private val assetName = "functional_fitness_workout_generator.sqlite"
-    private val appVersion = 17
+    private val appVersion = 18
 
     @Volatile
     private var database: SQLiteDatabase? = null
@@ -543,6 +543,24 @@ class ToastLiftDatabase(private val context: Context) {
             column = "session_format",
             definition = "TEXT",
         )
+        ensureColumn(
+            db = db,
+            table = "abandoned_workouts",
+            column = "is_paused",
+            definition = "INTEGER NOT NULL DEFAULT 0",
+        )
+        ensureColumn(
+            db = db,
+            table = "abandoned_workouts",
+            column = "paused_at_utc",
+            definition = "TEXT",
+        )
+        ensureColumn(
+            db = db,
+            table = "abandoned_workouts",
+            column = "accumulated_paused_seconds",
+            definition = "INTEGER NOT NULL DEFAULT 0",
+        )
         db.execSQL(
             """
             CREATE TABLE IF NOT EXISTS abandoned_exercises (
@@ -624,7 +642,10 @@ class ToastLiftDatabase(private val context: Context) {
                 subtitle TEXT NOT NULL DEFAULT '',
                 estimated_minutes INTEGER,
                 session_format TEXT,
-                selected_exercise_index INTEGER
+                selected_exercise_index INTEGER,
+                is_paused INTEGER NOT NULL DEFAULT 0,
+                paused_at_utc TEXT,
+                accumulated_paused_seconds INTEGER NOT NULL DEFAULT 0
             )
             """.trimIndent(),
         )
@@ -645,6 +666,24 @@ class ToastLiftDatabase(private val context: Context) {
             table = "active_workouts",
             column = "session_format",
             definition = "TEXT",
+        )
+        ensureColumn(
+            db = db,
+            table = "active_workouts",
+            column = "is_paused",
+            definition = "INTEGER NOT NULL DEFAULT 0",
+        )
+        ensureColumn(
+            db = db,
+            table = "active_workouts",
+            column = "paused_at_utc",
+            definition = "TEXT",
+        )
+        ensureColumn(
+            db = db,
+            table = "active_workouts",
+            column = "accumulated_paused_seconds",
+            definition = "INTEGER NOT NULL DEFAULT 0",
         )
         db.execSQL(
             """

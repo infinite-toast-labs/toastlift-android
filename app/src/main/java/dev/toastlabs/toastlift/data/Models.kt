@@ -1,5 +1,7 @@
 package dev.toastlabs.toastlift.data
 
+import java.time.Duration
+import java.time.Instant
 import java.util.concurrent.atomic.AtomicLong
 
 private val sessionSetIdGenerator = AtomicLong(1L)
@@ -802,7 +804,45 @@ data class ActiveSession(
     val estimatedMinutes: Int? = null,
     val sessionFormat: String? = null,
     val exercises: List<SessionExercise>,
+    val isPaused: Boolean = false,
+    val pausedAtUtc: String? = null,
+    val accumulatedPausedSeconds: Int = 0,
 )
+
+fun ActiveSession.elapsedDurationSeconds(at: Instant = Instant.now()): Int {
+    val startedAt = runCatching { Instant.parse(startedAtUtc) }.getOrNull() ?: return 0
+    val rawElapsedSeconds = Duration.between(startedAt, at).seconds.coerceAtLeast(0)
+    val inFlightPauseSeconds = if (isPaused) {
+        pausedAtUtc?.let { pausedAt ->
+            runCatching { Duration.between(Instant.parse(pausedAt), at).seconds.coerceAtLeast(0) }.getOrDefault(0)
+        } ?: 0
+    } else {
+        0
+    }
+    return (rawElapsedSeconds - accumulatedPausedSeconds.toLong() - inFlightPauseSeconds)
+        .coerceAtLeast(0)
+        .toInt()
+}
+
+fun ActiveSession.pause(at: Instant = Instant.now()): ActiveSession {
+    if (isPaused) return this
+    return copy(
+        isPaused = true,
+        pausedAtUtc = at.toString(),
+    )
+}
+
+fun ActiveSession.resume(at: Instant = Instant.now()): ActiveSession {
+    if (!isPaused) return this
+    val additionalPausedSeconds = pausedAtUtc?.let { pausedAt ->
+        runCatching { Duration.between(Instant.parse(pausedAt), at).seconds.coerceAtLeast(0) }.getOrDefault(0)
+    } ?: 0
+    return copy(
+        isPaused = false,
+        pausedAtUtc = null,
+        accumulatedPausedSeconds = (accumulatedPausedSeconds.toLong() + additionalPausedSeconds).coerceAtLeast(0).toInt(),
+    )
+}
 
 data class PersistedActiveSessionState(
     val session: ActiveSession,

@@ -14,11 +14,13 @@ import dev.toastlabs.toastlift.data.WorkoutExerciseSetDraft
 import dev.toastlabs.toastlift.data.WorkoutPlan
 import dev.toastlabs.toastlift.data.ProgramSetupDraft
 import dev.toastlabs.toastlift.data.normalizeWorkoutDurationMinutes
+import dev.toastlabs.toastlift.data.pause
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.time.Instant
 import kotlin.random.Random
 
 class ToastLiftViewModelTest {
@@ -49,6 +51,53 @@ class ToastLiftViewModelTest {
 
         assertTrue(context.previousExerciseIds.isEmpty())
         assertEquals(null, context.requestedFocus)
+    }
+
+    @Test
+    fun generatedActiveSessionExerciseExclusionIds_includeSeenSuggestionsForRerolls() {
+        val session = ActiveSession(
+            title = "Gym Upper Day",
+            origin = "generated",
+            locationModeId = 2L,
+            startedAtUtc = "2026-03-20T10:00:00Z",
+            focusKey = "upper_body",
+            exercises = listOf(
+                sessionExercise(id = 101L, name = "Bench Press", completedSets = listOf(false, false, false)),
+                sessionExercise(id = 202L, name = "Cable Row", completedSets = listOf(false, false, false)),
+            ),
+        )
+
+        val excludedIds = generatedActiveSessionExerciseExclusionIds(
+            session = session,
+            generatedState = ActiveSessionGeneratedExerciseState(
+                exercise = exercise(303L, "Incline Dumbbell Press"),
+                seenExerciseIds = setOf(303L, 404L),
+            ),
+        )
+
+        assertEquals(setOf(101L, 202L, 303L, 404L), excludedIds)
+    }
+
+    @Test
+    fun generatedAdditionalSessionExercise_returnsNullWhenEveryCandidateWasAlreadySeen() {
+        val workout = WorkoutPlan(
+            title = "Upper Body",
+            subtitle = "Generated",
+            locationModeId = 1L,
+            estimatedMinutes = 45,
+            origin = "generated",
+            exercises = listOf(
+                exercise(303L, "Incline Dumbbell Press"),
+                exercise(404L, "Machine Chest Press"),
+            ),
+        )
+
+        val suggestion = generatedAdditionalSessionExercise(
+            workout = workout,
+            excludedExerciseIds = setOf(303L, 404L),
+        )
+
+        assertNull(suggestion)
     }
 
     @Test
@@ -420,6 +469,53 @@ class ToastLiftViewModelTest {
 
         assertEquals(listOf(11L, 33L, 22L), reordered.map(SessionSet::id))
         assertEquals(listOf(1, 2, 3), reordered.map(SessionSet::setNumber))
+    }
+
+    @Test
+    fun logNextSessionSetInActiveSession_autoResumesPausedWorkout() {
+        val session = ActiveSession(
+            title = "Gym Upper Day",
+            origin = "generated",
+            locationModeId = 2L,
+            startedAtUtc = "2026-03-20T10:00:00Z",
+            exercises = listOf(
+                sessionExercise(id = 101L, name = "Bench Press", completedSets = listOf(false, false, false)),
+            ),
+        ).pause(Instant.parse("2026-03-20T10:05:00Z"))
+
+        val updated = logNextSessionSetInActiveSession(
+            session = session,
+            exerciseIndex = 0,
+            loggedAt = Instant.parse("2026-03-20T10:06:30Z"),
+        )
+
+        assertFalse(updated.isPaused)
+        assertNull(updated.pausedAtUtc)
+        assertEquals(90, updated.accumulatedPausedSeconds)
+        assertTrue(updated.exercises[0].sets.first().completed)
+    }
+
+    @Test
+    fun logAllSessionSetsInActiveSession_autoResumesPausedWorkout() {
+        val session = ActiveSession(
+            title = "Gym Upper Day",
+            origin = "generated",
+            locationModeId = 2L,
+            startedAtUtc = "2026-03-20T10:00:00Z",
+            exercises = listOf(
+                sessionExercise(id = 101L, name = "Bench Press", completedSets = listOf(false, false, false)),
+            ),
+        ).pause(Instant.parse("2026-03-20T10:05:00Z"))
+
+        val updated = logAllSessionSetsInActiveSession(
+            session = session,
+            exerciseIndex = 0,
+            loggedAt = Instant.parse("2026-03-20T10:07:00Z"),
+        )
+
+        assertFalse(updated.isPaused)
+        assertEquals(120, updated.accumulatedPausedSeconds)
+        assertTrue(updated.exercises[0].sets.all(SessionSet::completed))
     }
 
     private fun exercise(id: Long, name: String): WorkoutExercise {

@@ -82,6 +82,8 @@ import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material.icons.rounded.LibraryBooks
 import androidx.compose.material.icons.rounded.LocalFireDepartment
 import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.Pause
+import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.QueryStats
 import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.Search
@@ -183,6 +185,7 @@ import dev.toastlabs.toastlift.data.ExerciseDetail
 import dev.toastlabs.toastlift.data.ExerciseHistoryDetail
 import dev.toastlabs.toastlift.data.AdherenceCurrencyTrend
 import dev.toastlabs.toastlift.data.AdherenceCurrencyTrendPoint
+import dev.toastlabs.toastlift.data.elapsedDurationSeconds
 import dev.toastlabs.toastlift.data.HistoryShareFormat
 import dev.toastlabs.toastlift.data.ExerciseSummary
 import dev.toastlabs.toastlift.data.ExerciseVideoLinks
@@ -253,7 +256,6 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.launch
-import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
 import java.time.YearMonth
@@ -797,11 +799,11 @@ fun ToastLiftApp(
                     customExerciseDraft = state.customExerciseDraft,
                     onOpenExercise = viewModel::openSessionExercise,
                     onShowExerciseDetail = viewModel::showExerciseDetail,
-                    onOpenExerciseHistory = viewModel::openExerciseHistory,
-                    onOpenExerciseVideos = viewModel::openExerciseVideos,
                     onCloseExercise = viewModel::closeSessionExercise,
                     onPickNextExercise = viewModel::pickNextSessionExercise,
                     onOpenAddExercise = viewModel::openActiveSessionAddExercise,
+                    onOpenManualAddExercise = viewModel::openManualActiveSessionExercisePicker,
+                    onOpenGeneratedAddExercise = viewModel::openGeneratedActiveSessionExercisePicker,
                     onCloseAddExercise = viewModel::closeActiveSessionAddExercise,
                     onToggleAddExerciseSearch = viewModel::toggleLibrarySearch,
                     onAddExerciseQueryChange = viewModel::updateLibraryQuery,
@@ -819,6 +821,8 @@ fun ToastLiftApp(
                     onCustomExerciseNameChange = viewModel::updateCustomExerciseName,
                     onGenerateCustomExercise = viewModel::generateCustomExerciseDetails,
                     onAddExercises = viewModel::addExercisesToActiveSession,
+                    onAddGeneratedExercise = viewModel::addGeneratedExerciseToActiveSession,
+                    onPickAgainGeneratedExercise = viewModel::pickAgainGeneratedActiveSessionExercise,
                     onUseExistingExercise = viewModel::useExistingExerciseFromCustomFlow,
                     onSaveCustomExercise = viewModel::saveCustomExercise,
                     onPendingSelectionConsumed = viewModel::clearPendingAddExercisePickerSelection,
@@ -829,6 +833,7 @@ fun ToastLiftApp(
                     onDeleteExercise = viewModel::removeSessionExercise,
                     onLogSet = viewModel::logNextSessionSet,
                     onLogAllSets = viewModel::logAllSessionSets,
+                    onTogglePauseSession = viewModel::toggleSessionPause,
                     onUpdateExerciseRir = viewModel::updateSessionExerciseRepsInReserve,
                     onFinishExercise = viewModel::finishSessionExercise,
                     onCompleteSession = viewModel::completeSession,
@@ -5559,6 +5564,253 @@ private fun SkippedExerciseFeedbackSheet(
 }
 
 @Composable
+private fun ActiveSessionAddExerciseModeScreen(
+    onDismiss: () -> Unit,
+    onPickManually: () -> Unit,
+    onPickForMe: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier
+            .padding(horizontal = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            IconButton(onClick = onDismiss) {
+                Icon(
+                    imageVector = Icons.Rounded.Close,
+                    contentDescription = "Close add exercise",
+                    tint = MaterialTheme.colorScheme.onBackground,
+                )
+            }
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text("Add Exercise", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                Text(
+                    "Choose a manual search or let the workout engine pick the next add-on.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        ActiveSessionAddExerciseModeCard(
+            title = "Pick Manually",
+            subtitle = "Use the existing library search, filters, favorites, and custom exercise flow.",
+            actionLabel = "Open Manual Picker",
+            accentKey = "manual add exercise",
+            onClick = onPickManually,
+        )
+        ActiveSessionAddExerciseModeCard(
+            title = "Pick for Me",
+            subtitle = "Generate one exercise from the same workout logic used to build this session, then confirm it or reroll.",
+            actionLabel = "Generate Exercise",
+            accentKey = "generated add exercise",
+            onClick = onPickForMe,
+        )
+    }
+}
+
+@Composable
+private fun ActiveSessionAddExerciseModeCard(
+    title: String,
+    subtitle: String,
+    actionLabel: String,
+    accentKey: String,
+    onClick: () -> Unit,
+) {
+    FeatureCard(
+        modifier = Modifier.clickable(onClick = onClick),
+        accentKey = accentKey,
+        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.98f),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Text(
+                subtitle,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Button(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
+                Text(actionLabel)
+            }
+        }
+    }
+}
+
+@Composable
+private fun GeneratedActiveSessionExerciseScreen(
+    state: AppUiState,
+    onDismiss: () -> Unit,
+    onShowDetail: (Long) -> Unit,
+    onAddExercise: () -> Unit,
+    onPickAgain: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val generatedState = state.activeSessionGeneratedExercise
+    val exercise = generatedState.exercise
+    val recommendationBias = exercise?.let { state.recommendationBiasByExerciseId[it.exerciseId] } ?: RecommendationBias.Neutral
+    Column(
+        modifier = modifier
+            .padding(horizontal = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            IconButton(onClick = onDismiss) {
+                Icon(
+                    imageVector = Icons.Rounded.Close,
+                    contentDescription = "Close generated exercise picker",
+                    tint = MaterialTheme.colorScheme.onBackground,
+                )
+            }
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text("Pick for Me", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                Text(
+                    "Review one generated exercise, reroll it, or add it to the workout.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        when {
+            generatedState.isLoading -> {
+                FeatureCard(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.98f)) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(24.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        CircularProgressIndicator()
+                        Text("Generating an exercise...", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                        Text(
+                            "This uses the current workout generation logic for your active session.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+            exercise != null -> {
+                GeneratedActiveSessionExerciseCard(
+                    exercise = exercise,
+                    recommendationBias = recommendationBias,
+                    onShowDetail = { onShowDetail(exercise.exerciseId) },
+                )
+            }
+            else -> {
+                FeatureCard(containerColor = emberAccent.glow.copy(alpha = 0.18f)) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Text("Couldn’t generate an exercise", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Text(
+                            generatedState.errorMessage ?: "Try again to get another generated exercise.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            OutlinedButton(
+                onClick = onPickAgain,
+                enabled = !generatedState.isLoading,
+                modifier = Modifier.weight(1f),
+            ) {
+                Text("Pick Again")
+            }
+            Button(
+                onClick = onAddExercise,
+                enabled = exercise != null && !generatedState.isLoading,
+                modifier = Modifier.weight(1f),
+            ) {
+                Text("Add Exercise")
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun GeneratedActiveSessionExerciseCard(
+    exercise: WorkoutExercise,
+    recommendationBias: RecommendationBias,
+    onShowDetail: () -> Unit,
+) {
+    FeatureCard(
+        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.98f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.14f)),
+        elevation = 10.dp,
+        accentKey = exercise.name,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                ExerciseDetailBadge(
+                    label = equipmentBadgeLabel(exercise.equipment),
+                    accent = accentForKey(exercise.equipment),
+                    onClick = onShowDetail,
+                )
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Text(exercise.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text(
+                        "${exercise.bodyRegion} • ${exercise.targetMuscleGroup} • ${exercise.equipment}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                RecommendationBiasIndicator(recommendationBias)
+            }
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                MiniTag("${exercise.sets} sets")
+                MiniTag("${exercise.repRange} reps")
+                MiniTag("${exercise.restSeconds}s rest")
+            }
+            Text(
+                exercise.rationale,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
 private fun AddExercisesFlowScreen(
     state: AppUiState,
     onDismiss: () -> Unit,
@@ -6128,6 +6380,8 @@ private fun RecommendationBiasFacetSection(
 private fun ActiveSessionAddExerciseScreen(
     state: AppUiState,
     onBack: () -> Unit,
+    onOpenManualPicker: () -> Unit,
+    onOpenGeneratedPicker: () -> Unit,
     onToggleSearch: () -> Unit,
     onQueryChange: (String) -> Unit,
     onToggleFavoritesOnly: () -> Unit,
@@ -6145,35 +6399,57 @@ private fun ActiveSessionAddExerciseScreen(
     onGenerateCustomExercise: () -> Unit,
     onUseExistingExercise: (ExerciseSummary) -> Unit,
     onSaveCustomExercise: () -> Unit,
+    onAddGeneratedExercise: () -> Unit,
+    onPickAgainGeneratedExercise: () -> Unit,
     onPendingSelectionConsumed: () -> Unit,
     onShowDetail: (Long) -> Unit,
 ) {
-    AddExercisesFlowScreen(
-        state = state,
-        onDismiss = onBack,
-        onConfirmAdd = onConfirmAdd,
-        onQueryChange = onQueryChange,
-        onToggleSearch = onToggleSearch,
-        onToggleFavoritesOnly = onToggleFavoritesOnly,
-        onToggleEquipmentFilter = onToggleEquipmentFilter,
-        onToggleTargetMuscleFilter = onToggleTargetMuscleFilter,
-        onTogglePrimeMoverFilter = onTogglePrimeMoverFilter,
-        onToggleRecommendationBiasFilter = onToggleRecommendationBiasFilter,
-        onToggleLoggedHistoryFilter = onToggleLoggedHistoryFilter,
-        onClearFilters = onClearFilters,
-        onShowDetail = onShowDetail,
-        onOpenCustomExercise = onAddCustomExercise,
-        onCloseCustomExercise = onCloseCustomExercise,
-        onCustomExerciseDraftChange = onCustomExerciseDraftChange,
-        onCustomExerciseNameChange = onCustomExerciseNameChange,
-        onGenerateCustomExercise = onGenerateCustomExercise,
-        onUseExistingExercise = onUseExistingExercise,
-        onSaveCustomExercise = onSaveCustomExercise,
-        onPendingSelectionConsumed = onPendingSelectionConsumed,
-        modifier = Modifier
-            .fillMaxSize()
-            .statusBarsPadding(),
-    )
+    when (state.activeSessionAddExerciseMode) {
+        ActiveSessionAddExerciseMode.Choice -> ActiveSessionAddExerciseModeScreen(
+            onDismiss = onBack,
+            onPickManually = onOpenManualPicker,
+            onPickForMe = onOpenGeneratedPicker,
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding(),
+        )
+        ActiveSessionAddExerciseMode.Manual -> AddExercisesFlowScreen(
+            state = state,
+            onDismiss = onBack,
+            onConfirmAdd = onConfirmAdd,
+            onQueryChange = onQueryChange,
+            onToggleSearch = onToggleSearch,
+            onToggleFavoritesOnly = onToggleFavoritesOnly,
+            onToggleEquipmentFilter = onToggleEquipmentFilter,
+            onToggleTargetMuscleFilter = onToggleTargetMuscleFilter,
+            onTogglePrimeMoverFilter = onTogglePrimeMoverFilter,
+            onToggleRecommendationBiasFilter = onToggleRecommendationBiasFilter,
+            onToggleLoggedHistoryFilter = onToggleLoggedHistoryFilter,
+            onClearFilters = onClearFilters,
+            onShowDetail = onShowDetail,
+            onOpenCustomExercise = onAddCustomExercise,
+            onCloseCustomExercise = onCloseCustomExercise,
+            onCustomExerciseDraftChange = onCustomExerciseDraftChange,
+            onCustomExerciseNameChange = onCustomExerciseNameChange,
+            onGenerateCustomExercise = onGenerateCustomExercise,
+            onUseExistingExercise = onUseExistingExercise,
+            onSaveCustomExercise = onSaveCustomExercise,
+            onPendingSelectionConsumed = onPendingSelectionConsumed,
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding(),
+        )
+        ActiveSessionAddExerciseMode.Generated -> GeneratedActiveSessionExerciseScreen(
+            state = state,
+            onDismiss = onBack,
+            onShowDetail = onShowDetail,
+            onAddExercise = onAddGeneratedExercise,
+            onPickAgain = onPickAgainGeneratedExercise,
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding(),
+        )
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -6186,11 +6462,11 @@ private fun ActiveSessionScreen(
     customExerciseDraft: CustomExerciseDraft?,
     onOpenExercise: (Int) -> Unit,
     onShowExerciseDetail: (Long) -> Unit,
-    onOpenExerciseHistory: (Long, String) -> Unit,
-    onOpenExerciseVideos: (Long, String) -> Unit,
     onCloseExercise: () -> Unit,
     onPickNextExercise: () -> Unit,
     onOpenAddExercise: () -> Unit,
+    onOpenManualAddExercise: () -> Unit,
+    onOpenGeneratedAddExercise: () -> Unit,
     onCloseAddExercise: () -> Unit,
     onToggleAddExerciseSearch: () -> Unit,
     onAddExerciseQueryChange: (String) -> Unit,
@@ -6208,6 +6484,8 @@ private fun ActiveSessionScreen(
     onCustomExerciseNameChange: (String) -> Unit,
     onGenerateCustomExercise: () -> Unit,
     onAddExercises: (List<ExerciseSummary>) -> Unit,
+    onAddGeneratedExercise: () -> Unit,
+    onPickAgainGeneratedExercise: () -> Unit,
     onUseExistingExercise: (ExerciseSummary) -> Unit,
     onSaveCustomExercise: () -> Unit,
     onPendingSelectionConsumed: () -> Unit,
@@ -6218,6 +6496,7 @@ private fun ActiveSessionScreen(
     onDeleteExercise: (Int) -> Unit,
     onLogSet: (Int) -> Unit,
     onLogAllSets: (Int) -> Unit,
+    onTogglePauseSession: () -> Unit,
     onUpdateExerciseRir: (Int, Int) -> Unit,
     onFinishExercise: (Int) -> Unit,
     onCompleteSession: () -> Unit,
@@ -6243,6 +6522,8 @@ private fun ActiveSessionScreen(
         ActiveSessionAddExerciseScreen(
             state = state,
             onBack = onCloseAddExercise,
+            onOpenManualPicker = onOpenManualAddExercise,
+            onOpenGeneratedPicker = onOpenGeneratedAddExercise,
             onToggleSearch = onToggleAddExerciseSearch,
             onQueryChange = onAddExerciseQueryChange,
             onToggleFavoritesOnly = onToggleAddExerciseFavoritesOnly,
@@ -6260,6 +6541,8 @@ private fun ActiveSessionScreen(
             onGenerateCustomExercise = onGenerateCustomExercise,
             onUseExistingExercise = onUseExistingExercise,
             onSaveCustomExercise = onSaveCustomExercise,
+            onAddGeneratedExercise = onAddGeneratedExercise,
+            onPickAgainGeneratedExercise = onPickAgainGeneratedExercise,
             onPendingSelectionConsumed = onPendingSelectionConsumed,
             onShowDetail = onShowAddExerciseDetail,
         )
@@ -6284,9 +6567,15 @@ private fun ActiveSessionScreen(
         return
     }
 
-    val elapsed by produceState(initialValue = formatElapsedTime(session.startedAtUtc), session.startedAtUtc) {
+    val elapsed by produceState(
+        formatElapsedTime(session),
+        session.startedAtUtc,
+        session.isPaused,
+        session.pausedAtUtc,
+        session.accumulatedPausedSeconds,
+    ) {
         while (true) {
-            value = formatElapsedTime(session.startedAtUtc)
+            value = formatElapsedTime(session)
             delay(1000)
         }
     }
@@ -6329,11 +6618,13 @@ private fun ActiveSessionScreen(
                     .statusBarsPadding()
                     .padding(top = ACTIVE_SESSION_HEADER_TOP_PADDING),
                 elapsed = elapsed,
+                isPaused = session.isPaused,
                 completedExercises = completedExercises,
                 totalExercises = session.exercises.size,
                 completedSets = completedSets,
                 totalSets = totalSets,
                 completionFraction = completionFraction,
+                onTogglePause = onTogglePauseSession,
                 onExitWorkout = { showDiscardDialog = true },
                 onOpenWorkoutDetails = { showWorkoutDetailsSheet = true },
             )
@@ -6353,8 +6644,6 @@ private fun ActiveSessionScreen(
                         recommendationBias = state.recommendationBiasByExerciseId[exercise.exerciseId] ?: RecommendationBias.Neutral,
                         onOpen = { onOpenExercise(exerciseIndex) },
                         onShowDetail = { onShowExerciseDetail(exercise.exerciseId) },
-                        onOpenExerciseHistory = { onOpenExerciseHistory(exercise.exerciseId, exercise.name) },
-                        onOpenExerciseVideos = { onOpenExerciseVideos(exercise.exerciseId, exercise.name) },
                         onDelete = { pendingExerciseDeletionIndex = exerciseIndex },
                     )
                 }
@@ -6412,6 +6701,7 @@ private fun ActiveSessionScreen(
             session = session,
             splitName = splitName,
             elapsed = elapsed,
+            isPaused = session.isPaused,
             onDismiss = { showWorkoutDetailsSheet = false },
         )
     }
@@ -6801,19 +7091,22 @@ private fun optionHint(label: String, options: List<String>, limit: Int = 6): St
 private fun SessionMomentumHeader(
     modifier: Modifier = Modifier,
     elapsed: String,
+    isPaused: Boolean,
     completedExercises: Int,
     totalExercises: Int,
     completedSets: Int,
     totalSets: Int,
     completionFraction: Float,
+    onTogglePause: () -> Unit,
     onExitWorkout: () -> Unit,
     onOpenWorkoutDetails: () -> Unit,
 ) {
     FeatureCard(
         modifier = modifier
             .semantics {
-                contentDescription = "Running workout timer"
+                contentDescription = "Workout timer"
                 role = Role.Button
+                stateDescription = if (isPaused) "Paused" else "Running"
             }
             .clickable(onClick = onOpenWorkoutDetails),
         containerColor = MaterialTheme.colorScheme.surface,
@@ -6835,13 +7128,31 @@ private fun SessionMomentumHeader(
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 18.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
-                Text(
-                    text = elapsed,
-                    style = MaterialTheme.typography.displaySmall,
-                    fontWeight = FontWeight.Black,
-                    color = MaterialTheme.colorScheme.onBackground,
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = elapsed,
+                        style = MaterialTheme.typography.displaySmall,
+                        fontWeight = FontWeight.Black,
+                        color = MaterialTheme.colorScheme.onBackground,
+                    )
+                    OutlinedButton(onClick = onTogglePause) {
+                        Icon(
+                            imageVector = if (isPaused) Icons.Rounded.PlayArrow else Icons.Rounded.Pause,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(if (isPaused) "Resume" else "Pause")
+                    }
+                }
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+                    if (isPaused) {
+                        MiniTag("Paused")
+                    }
                     MiniTag("$completedExercises/$totalExercises exercises")
                     MiniTag("$completedSets/$totalSets sets")
                 }
@@ -6861,6 +7172,7 @@ private fun ActiveWorkoutDetailsSheet(
     session: ActiveSession,
     splitName: String?,
     elapsed: String,
+    isPaused: Boolean,
     onDismiss: () -> Unit,
 ) {
     val expectedVolume = activeSessionExpectedLoadVolume(session)
@@ -6899,7 +7211,7 @@ private fun ActiveWorkoutDetailsSheet(
 
             StatRail(
                 items = listOf(
-                    Triple("Elapsed", elapsed, "live"),
+                    Triple("Elapsed", elapsed, if (isPaused) "paused" else "live"),
                     Triple("Plan", (session.estimatedMinutes ?: activeSessionFallbackEstimatedMinutes(session)).toString(), "target min"),
                     Triple("Exercises", session.exercises.size.toString(), "in session"),
                 ),
@@ -7052,13 +7364,13 @@ private fun SessionExerciseRow(
     recommendationBias: RecommendationBias,
     onOpen: () -> Unit,
     onShowDetail: () -> Unit,
-    onOpenExerciseHistory: () -> Unit,
-    onOpenExerciseVideos: () -> Unit,
     onDelete: () -> Unit,
 ) {
     val completedSets = exercise.sets.count { it.completed }
     val totalSets = exercise.sets.size
     val progressFraction = if (totalSets > 0) completedSets / totalSets.toFloat() else 0f
+    val actionWidth = 64.dp
+    val actionWidthPx = with(LocalDensity.current) { actionWidth.toPx() }
     val badgeLabel = sessionExerciseBadgeLabel(
         exercise = exercise,
         fruitIconsEnabled = fruitIconsEnabled,
@@ -7086,38 +7398,101 @@ private fun SessionExerciseRow(
         completedSets > 0 -> surgeAccent.start
         else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
-    FeatureCard(
-        modifier = Modifier.clickable(onClick = onOpen),
-        containerColor = if (progressFraction > 0f) MaterialTheme.colorScheme.surface.copy(alpha = 0.98f) else MaterialTheme.colorScheme.surface,
+    var horizontalOffset by remember(exercise.exerciseId) { mutableFloatStateOf(0f) }
+    val settledOffset by animateFloatAsState(
+        targetValue = horizontalOffset,
+        animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
+        label = "sessionExerciseSwipeOffset",
+    )
+    LaunchedEffect(exercise.exerciseId) {
+        horizontalOffset = 0f
+    }
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp)),
     ) {
-        Row(
-            modifier = Modifier.padding(12.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .padding(start = 12.dp),
+            contentAlignment = Alignment.CenterEnd,
         ) {
-            SessionExerciseProgressBadge(
-                label = badgeLabel,
-                progressFraction = progressFraction,
-                accent = accentForKey(badgeAccentKey),
-                onClick = onShowDetail,
-            )
-            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(exercise.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                Text(
-                    summaryLine,
-                    color = summaryColor,
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = if (completedSets > 0) FontWeight.SemiBold else FontWeight.Medium,
-                )
+            Surface(
+                onClick = {
+                    horizontalOffset = 0f
+                    onDelete()
+                },
+                modifier = Modifier
+                    .width(actionWidth)
+                    .fillMaxSize(),
+                color = MaterialTheme.colorScheme.error,
+                contentColor = MaterialTheme.colorScheme.onError,
+                shape = RoundedCornerShape(topEnd = 18.dp, bottomEnd = 18.dp),
+            ) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Delete,
+                        contentDescription = "Delete exercise",
+                    )
+                }
             }
-            ExerciseHistoryOverflow(
-                recommendationBias = recommendationBias,
-                onShowDetail = onShowDetail,
-                onRemove = onDelete,
-                removeLabel = "Delete exercise",
-                onOpenExerciseHistory = onOpenExerciseHistory,
-                onOpenExerciseVideos = onOpenExerciseVideos,
-            )
+        }
+        FeatureCard(
+            modifier = Modifier
+                .fillMaxWidth()
+                .offset { IntOffset(settledOffset.roundToInt(), 0) }
+                .draggable(
+                    orientation = Orientation.Horizontal,
+                    state = rememberDraggableState { delta ->
+                        horizontalOffset = (horizontalOffset + delta).coerceIn(-actionWidthPx, 0f)
+                    },
+                    onDragStopped = {
+                        horizontalOffset = if (horizontalOffset <= -actionWidthPx * 0.45f) {
+                            -actionWidthPx
+                        } else {
+                            0f
+                        }
+                    },
+                )
+                .clickable {
+                    if (horizontalOffset < 0f) {
+                        horizontalOffset = 0f
+                    } else {
+                        onOpen()
+                    }
+                },
+            containerColor = if (progressFraction > 0f) {
+                MaterialTheme.colorScheme.surface.copy(alpha = 0.98f)
+            } else {
+                MaterialTheme.colorScheme.surface
+            },
+        ) {
+            Row(
+                modifier = Modifier.padding(12.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                SessionExerciseProgressBadge(
+                    label = badgeLabel,
+                    progressFraction = progressFraction,
+                    accent = accentForKey(badgeAccentKey),
+                    onClick = onShowDetail,
+                )
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(exercise.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text(
+                        summaryLine,
+                        color = summaryColor,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = if (completedSets > 0) FontWeight.SemiBold else FontWeight.Medium,
+                    )
+                }
+                RecommendationBiasIndicator(recommendationBias)
+            }
         }
     }
 }
@@ -7828,10 +8203,8 @@ private fun PersistentLabelOutlinedTextField(
     )
 }
 
-private fun formatElapsedTime(startedAtUtc: String): String {
-    val elapsed = runCatching {
-        Duration.between(Instant.parse(startedAtUtc), Instant.now()).seconds
-    }.getOrDefault(0L).coerceAtLeast(0L)
+private fun formatElapsedTime(session: ActiveSession): String {
+    val elapsed = session.elapsedDurationSeconds().toLong()
     val hours = elapsed / 3600
     val minutes = (elapsed % 3600) / 60
     val seconds = elapsed % 60
