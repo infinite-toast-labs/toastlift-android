@@ -58,6 +58,8 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -77,6 +79,8 @@ import androidx.compose.material.icons.rounded.FilterList
 import androidx.compose.material.icons.rounded.FitnessCenter
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.History
+import androidx.compose.material.icons.rounded.KeyboardArrowLeft
+import androidx.compose.material.icons.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material.icons.rounded.LibraryBooks
@@ -3008,6 +3012,16 @@ private fun HistoryScreen(
         HistoryStreakScreen(data = dashboard, onBack = { destination = "dashboard" })
         return
     }
+    if (destination == "calendar") {
+        HistoryCalendarDetailScreen(
+            history = history,
+            onBack = { destination = "dashboard" },
+            onOpenWorkout = onOpenWorkout,
+            onShareWorkout = onShareWorkout,
+            onDeleteWorkout = onDeleteWorkout,
+        )
+        return
+    }
     if (destination == "weekly-muscles" && weeklyMuscleTargets != null) {
         WeeklyMuscleTargetsDetailScreen(
             summary = weeklyMuscleTargets,
@@ -3035,6 +3049,7 @@ private fun HistoryScreen(
                 onOpenWorkouts = { destination = "workouts" },
                 onOpenMilestones = { destination = "milestones" },
                 onOpenStreak = { destination = "streak" },
+                onOpenCalendar = { destination = "calendar" },
             )
         }
         item {
@@ -3206,7 +3221,7 @@ private data class HistoryDashboardData(
     val strengthScore: StrengthScoreSummary?,
 )
 
-private data class HistoryCalendarDay(
+internal data class HistoryCalendarDay(
     val date: LocalDate,
     val workoutCount: Int,
 )
@@ -3222,6 +3237,31 @@ private data class MilestoneProgress(
     val current: Int,
     val target: Int,
     val unit: String,
+)
+
+private enum class HistoryCalendarMode(val label: String) {
+    Week("Week"),
+    Month("Month"),
+}
+
+internal data class HistoryCalendarWeekPage(
+    val weekStart: LocalDate,
+    val days: List<HistoryCalendarDay>,
+    val workouts: List<HistorySummary>,
+    val totalVolume: Double,
+)
+
+internal data class HistoryCalendarMonthCell(
+    val date: LocalDate,
+    val workoutCount: Int,
+    val isInMonth: Boolean,
+)
+
+internal data class HistoryCalendarMonthPage(
+    val month: YearMonth,
+    val weeks: List<List<HistoryCalendarMonthCell>>,
+    val workouts: List<HistorySummary>,
+    val totalVolume: Double,
 )
 
 private data class RewardVisualSpec(
@@ -3324,6 +3364,7 @@ private fun HistoryOverviewHeader(
     onOpenWorkouts: () -> Unit,
     onOpenMilestones: () -> Unit,
     onOpenStreak: () -> Unit,
+    onOpenCalendar: () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         FeatureCard(containerColor = MaterialTheme.colorScheme.surface) {
@@ -3343,16 +3384,23 @@ private fun HistoryOverviewHeader(
             StrengthScoreCard(summary = score)
         }
         FeatureCard(
+            modifier = Modifier.clickable(onClick = onOpenCalendar),
             containerColor = MaterialTheme.colorScheme.surface,
             accentKey = "calendar",
         ) {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    Text("Calendar", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black)
-                    Text(
-                        LocalDate.now().format(DateTimeFormatter.ofPattern("MMM")),
-                        color = MaterialTheme.colorScheme.primary,
-                        fontWeight = FontWeight.SemiBold,
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text("Calendar", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black)
+                        Text(
+                            "Tap to browse weekly and monthly history",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    MiniTag(
+                        text = LocalDate.now().format(DateTimeFormatter.ofPattern("MMM")),
+                        accent = MaterialTheme.colorScheme.primaryContainer,
                     )
                 }
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -3374,6 +3422,385 @@ private fun HistoryOverviewHeader(
                             )
                         }
                     }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun HistoryCalendarDetailScreen(
+    history: List<HistorySummary>,
+    onBack: () -> Unit,
+    onOpenWorkout: (Long) -> Unit,
+    onShareWorkout: (Long, HistoryShareFormat) -> Unit,
+    onDeleteWorkout: (Long) -> Unit,
+) {
+    var selectedModeName by rememberSaveable { mutableStateOf(HistoryCalendarMode.Week.name) }
+    val mode = HistoryCalendarMode.valueOf(selectedModeName)
+    val weekPages = remember(history) { buildHistoryCalendarWeekPages(history) }
+    val monthPages = remember(history) { buildHistoryCalendarMonthPages(history) }
+    val weekPagerState = rememberPagerState(
+        initialPage = weekPages.lastIndex.coerceAtLeast(0),
+        pageCount = { weekPages.size.coerceAtLeast(1) },
+    )
+    val monthPagerState = rememberPagerState(
+        initialPage = monthPages.lastIndex.coerceAtLeast(0),
+        pageCount = { monthPages.size.coerceAtLeast(1) },
+    )
+    val coroutineScope = rememberCoroutineScope()
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp)
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        HistoryDetailHeader(title = "Calendar", onBack = onBack)
+
+        FeatureCard(
+            containerColor = MaterialTheme.colorScheme.surface,
+            accentKey = "history calendar detail",
+        ) {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Text("Browse completed training blocks", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black)
+                Text(
+                    "Swipe horizontally to move between periods, or use the arrows to jump one page at a time.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                ChoiceChipRow(
+                    values = HistoryCalendarMode.entries.map(HistoryCalendarMode::label),
+                    selected = mode.label,
+                    onSelect = { label ->
+                        selectedModeName = (HistoryCalendarMode.entries.firstOrNull { it.label == label }
+                            ?: HistoryCalendarMode.Week).name
+                    },
+                )
+                if (mode == HistoryCalendarMode.Week) {
+                    val selectedPage = weekPages.getOrElse(weekPagerState.currentPage) { weekPages.last() }
+                    HistoryCalendarPagerHeader(
+                        title = formatHistoryCalendarWeekTitle(selectedPage.weekStart),
+                        detail = historyCalendarPeriodDetail(
+                            workoutCount = selectedPage.workouts.size,
+                            activeDayCount = selectedPage.days.count { it.workoutCount > 0 },
+                            periodLabel = "7-day view",
+                        ),
+                        canMoveBackward = weekPagerState.currentPage > 0,
+                        canMoveForward = weekPagerState.currentPage < weekPages.lastIndex,
+                        onMoveBackward = {
+                            coroutineScope.launch {
+                                weekPagerState.animateScrollToPage(weekPagerState.currentPage - 1)
+                            }
+                        },
+                        onMoveForward = {
+                            coroutineScope.launch {
+                                weekPagerState.animateScrollToPage(weekPagerState.currentPage + 1)
+                            }
+                        },
+                    )
+                    HorizontalPager(
+                        state = weekPagerState,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(196.dp),
+                    ) { page ->
+                        HistoryWeekPagerPage(page = weekPages[page])
+                    }
+                    StatRail(
+                        items = listOf(
+                            Triple("Workouts", selectedPage.workouts.size.toString(), "in this week"),
+                            Triple("Active days", selectedPage.days.count { it.workoutCount > 0 }.toString(), "with logged training"),
+                            Triple("Volume", formatVolume(selectedPage.totalVolume), "completed"),
+                        ),
+                    )
+                    HistoryCalendarWorkoutsCard(
+                        title = "Week Workouts",
+                        subtitle = "Completed sessions from ${formatHistoryCalendarWeekTitle(selectedPage.weekStart)}",
+                        workouts = selectedPage.workouts,
+                        onOpenWorkout = onOpenWorkout,
+                        onShareWorkout = onShareWorkout,
+                        onDeleteWorkout = onDeleteWorkout,
+                    )
+                } else {
+                    val selectedPage = monthPages.getOrElse(monthPagerState.currentPage) { monthPages.last() }
+                    HistoryCalendarPagerHeader(
+                        title = formatHistoryCalendarMonthTitle(selectedPage.month),
+                        detail = historyCalendarPeriodDetail(
+                            workoutCount = selectedPage.workouts.size,
+                            activeDayCount = selectedPage.weeks.flatten().count { it.workoutCount > 0 && it.isInMonth },
+                            periodLabel = "month view",
+                        ),
+                        canMoveBackward = monthPagerState.currentPage > 0,
+                        canMoveForward = monthPagerState.currentPage < monthPages.lastIndex,
+                        onMoveBackward = {
+                            coroutineScope.launch {
+                                monthPagerState.animateScrollToPage(monthPagerState.currentPage - 1)
+                            }
+                        },
+                        onMoveForward = {
+                            coroutineScope.launch {
+                                monthPagerState.animateScrollToPage(monthPagerState.currentPage + 1)
+                            }
+                        },
+                    )
+                    HorizontalPager(
+                        state = monthPagerState,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(360.dp),
+                    ) { page ->
+                        HistoryMonthPagerPage(page = monthPages[page])
+                    }
+                    StatRail(
+                        items = listOf(
+                            Triple("Workouts", selectedPage.workouts.size.toString(), "in this month"),
+                            Triple("Active days", selectedPage.weeks.flatten().count { it.workoutCount > 0 && it.isInMonth }.toString(), "with logged training"),
+                            Triple("Volume", formatVolume(selectedPage.totalVolume), "completed"),
+                        ),
+                    )
+                    HistoryCalendarWorkoutsCard(
+                        title = "Month Workouts",
+                        subtitle = "Completed sessions from ${formatHistoryCalendarMonthTitle(selectedPage.month)}",
+                        workouts = selectedPage.workouts,
+                        onOpenWorkout = onOpenWorkout,
+                        onShareWorkout = onShareWorkout,
+                        onDeleteWorkout = onDeleteWorkout,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun HistoryCalendarPagerHeader(
+    title: String,
+    detail: String,
+    canMoveBackward: Boolean,
+    canMoveForward: Boolean,
+    onMoveBackward: () -> Unit,
+    onMoveForward: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Text(
+                detail,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onMoveBackward, enabled = canMoveBackward) {
+                Icon(
+                    imageVector = Icons.Rounded.KeyboardArrowLeft,
+                    contentDescription = "Previous period",
+                )
+            }
+            IconButton(onClick = onMoveForward, enabled = canMoveForward) {
+                Icon(
+                    imageVector = Icons.Rounded.KeyboardArrowRight,
+                    contentDescription = "Next period",
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun HistoryWeekPagerPage(page: HistoryCalendarWeekPage) {
+    val today = LocalDate.now()
+    Column(
+        modifier = Modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            page.days.forEach { day ->
+                Text(
+                    text = day.date.format(DateTimeFormatter.ofPattern("EE")).take(2),
+                    modifier = Modifier.weight(1f),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            page.days.forEach { day ->
+                HistoryWeekDayCell(
+                    modifier = Modifier.weight(1f),
+                    day = day,
+                    isToday = day.date == today,
+                )
+            }
+        }
+        if (page.workouts.isEmpty()) {
+            Text(
+                "No workouts logged in this week.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        } else {
+            Text(
+                "${page.workouts.size} completed workout${if (page.workouts.size == 1) "" else "s"} in this week.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun HistoryWeekDayCell(
+    modifier: Modifier,
+    day: HistoryCalendarDay,
+    isToday: Boolean,
+) {
+    val hasWorkout = day.workoutCount > 0
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(12.dp),
+        color = if (hasWorkout) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.72f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.62f),
+        border = if (isToday) BorderStroke(1.dp, MaterialTheme.colorScheme.primary) else null,
+    ) {
+        Column(
+            modifier = Modifier.padding(vertical = 12.dp, horizontal = 6.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Text(day.date.dayOfMonth.toString(), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text(
+                if (hasWorkout) "${day.workoutCount}x" else "Rest",
+                style = MaterialTheme.typography.labelMedium,
+                color = if (hasWorkout) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
+    }
+}
+
+@Composable
+private fun HistoryMonthPagerPage(page: HistoryCalendarMonthPage) {
+    Column(
+        modifier = Modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            listOf("Su", "Mo", "Tu", "We", "Th", "Fr", "Sa").forEach { label ->
+                Text(
+                    text = label,
+                    modifier = Modifier.weight(1f),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+        }
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            page.weeks.forEach { week ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    week.forEach { cell ->
+                        HistoryMonthDayCell(
+                            modifier = Modifier.weight(1f),
+                            cell = cell,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun HistoryMonthDayCell(
+    modifier: Modifier,
+    cell: HistoryCalendarMonthCell,
+) {
+    val isToday = cell.date == LocalDate.now()
+    val hasWorkout = cell.workoutCount > 0
+    Surface(
+        modifier = modifier.height(48.dp),
+        shape = RoundedCornerShape(10.dp),
+        color = when {
+            !cell.isInMonth -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.28f)
+            hasWorkout -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.72f)
+            else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.58f)
+        },
+        border = if (isToday) BorderStroke(1.dp, MaterialTheme.colorScheme.primary) else null,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 4.dp, vertical = 6.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text(
+                cell.date.dayOfMonth.toString(),
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.Bold,
+                color = if (cell.isInMonth) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                if (hasWorkout) cell.workoutCount.toString() else "",
+                style = MaterialTheme.typography.labelSmall,
+                color = if (hasWorkout) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
+    }
+}
+
+@Composable
+private fun HistoryCalendarWorkoutsCard(
+    title: String,
+    subtitle: String,
+    workouts: List<HistorySummary>,
+    onOpenWorkout: (Long) -> Unit,
+    onShareWorkout: (Long, HistoryShareFormat) -> Unit,
+    onDeleteWorkout: (Long) -> Unit,
+) {
+    FeatureCard(
+        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f),
+        accentKey = "$title $subtitle",
+    ) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                Text(
+                    subtitle,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            if (workouts.isEmpty()) {
+                Text(
+                    "No completed workouts in this period yet.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                workouts.forEach { workout ->
+                    HistoryEntryCard(
+                        entry = workout,
+                        onOpen = { onOpenWorkout(workout.id) },
+                        onShare = { onShareWorkout(workout.id, HistoryShareFormat.FormattedText) },
+                        onDelete = { onDeleteWorkout(workout.id) },
+                    )
                 }
             }
         }
@@ -4522,6 +4949,119 @@ private fun buildHistoryDashboardData(
         ),
         strengthScore = strengthScore,
     )
+}
+
+private data class HistoryCalendarWorkoutSnapshot(
+    val summary: HistorySummary,
+    val date: LocalDate,
+)
+
+internal fun historyCompletedLocalDate(
+    summary: HistorySummary,
+    zoneId: ZoneId = ZoneId.systemDefault(),
+): LocalDate? {
+    return runCatching {
+        Instant.parse(summary.completedAtUtc).atZone(zoneId).toLocalDate()
+    }.getOrNull()
+}
+
+internal fun buildHistoryCalendarWeekPages(
+    history: List<HistorySummary>,
+    zoneId: ZoneId = ZoneId.systemDefault(),
+    today: LocalDate = LocalDate.now(zoneId),
+): List<HistoryCalendarWeekPage> {
+    val workouts = history.mapNotNull { summary ->
+        historyCompletedLocalDate(summary, zoneId)?.let { date ->
+            HistoryCalendarWorkoutSnapshot(summary = summary, date = date)
+        }
+    }
+    val currentWeekStart = today.with(TemporalAdjusters.previousOrSame(java.time.DayOfWeek.SUNDAY))
+    val workoutsByWeek = workouts.groupBy { it.date.with(TemporalAdjusters.previousOrSame(java.time.DayOfWeek.SUNDAY)) }
+    val firstWeekStart = workoutsByWeek.keys.minOrNull() ?: currentWeekStart
+    val lastWeekStart = maxOf(workoutsByWeek.keys.maxOrNull() ?: currentWeekStart, currentWeekStart)
+    val pages = mutableListOf<HistoryCalendarWeekPage>()
+    var cursor = firstWeekStart
+    while (cursor <= lastWeekStart) {
+        val weekWorkouts = workoutsByWeek[cursor].orEmpty().sortedByDescending { it.summary.completedAtUtc }
+        val workoutCountsByDate = weekWorkouts.groupingBy(HistoryCalendarWorkoutSnapshot::date).eachCount()
+        pages += HistoryCalendarWeekPage(
+            weekStart = cursor,
+            days = (0L..6L).map { offset ->
+                val date = cursor.plusDays(offset)
+                HistoryCalendarDay(date = date, workoutCount = workoutCountsByDate[date] ?: 0)
+            },
+            workouts = weekWorkouts.map(HistoryCalendarWorkoutSnapshot::summary),
+            totalVolume = weekWorkouts.sumOf { it.summary.totalVolume },
+        )
+        cursor = cursor.plusWeeks(1)
+    }
+    return pages
+}
+
+internal fun buildHistoryCalendarMonthPages(
+    history: List<HistorySummary>,
+    zoneId: ZoneId = ZoneId.systemDefault(),
+    today: LocalDate = LocalDate.now(zoneId),
+): List<HistoryCalendarMonthPage> {
+    val workouts = history.mapNotNull { summary ->
+        historyCompletedLocalDate(summary, zoneId)?.let { date ->
+            HistoryCalendarWorkoutSnapshot(summary = summary, date = date)
+        }
+    }
+    val currentMonth = YearMonth.from(today)
+    val workoutsByMonth = workouts.groupBy { YearMonth.from(it.date) }
+    val firstMonth = workoutsByMonth.keys.minOrNull() ?: currentMonth
+    val lastMonth = maxOf(workoutsByMonth.keys.maxOrNull() ?: currentMonth, currentMonth)
+    val pages = mutableListOf<HistoryCalendarMonthPage>()
+    var cursor = firstMonth
+    while (cursor <= lastMonth) {
+        val monthWorkouts = workoutsByMonth[cursor].orEmpty().sortedByDescending { it.summary.completedAtUtc }
+        val workoutCountsByDate = monthWorkouts.groupingBy(HistoryCalendarWorkoutSnapshot::date).eachCount()
+        val monthStart = cursor.atDay(1)
+        val gridStart = monthStart.with(TemporalAdjusters.previousOrSame(java.time.DayOfWeek.SUNDAY))
+        val gridEnd = cursor.atEndOfMonth().with(TemporalAdjusters.nextOrSame(java.time.DayOfWeek.SATURDAY))
+        val cells = mutableListOf<HistoryCalendarMonthCell>()
+        var dayCursor = gridStart
+        while (!dayCursor.isAfter(gridEnd)) {
+            cells += HistoryCalendarMonthCell(
+                date = dayCursor,
+                workoutCount = workoutCountsByDate[dayCursor] ?: 0,
+                isInMonth = YearMonth.from(dayCursor) == cursor,
+            )
+            dayCursor = dayCursor.plusDays(1)
+        }
+        pages += HistoryCalendarMonthPage(
+            month = cursor,
+            weeks = cells.chunked(7),
+            workouts = monthWorkouts.map(HistoryCalendarWorkoutSnapshot::summary),
+            totalVolume = monthWorkouts.sumOf { it.summary.totalVolume },
+        )
+        cursor = cursor.plusMonths(1)
+    }
+    return pages
+}
+
+private fun formatHistoryCalendarWeekTitle(weekStart: LocalDate): String {
+    val weekEnd = weekStart.plusDays(6)
+    val sameMonth = weekStart.month == weekEnd.month && weekStart.year == weekEnd.year
+    return if (sameMonth) {
+        "${weekStart.format(DateTimeFormatter.ofPattern("MMM d"))}-${weekEnd.dayOfMonth}"
+    } else {
+        "${weekStart.format(DateTimeFormatter.ofPattern("MMM d"))} - ${weekEnd.format(DateTimeFormatter.ofPattern("MMM d"))}"
+    }
+}
+
+private fun formatHistoryCalendarMonthTitle(month: YearMonth): String =
+    month.format(DateTimeFormatter.ofPattern("MMMM yyyy"))
+
+private fun historyCalendarPeriodDetail(
+    workoutCount: Int,
+    activeDayCount: Int,
+    periodLabel: String,
+): String {
+    val workoutLabel = "$workoutCount workout${if (workoutCount == 1) "" else "s"}"
+    val dayLabel = "$activeDayCount active day${if (activeDayCount == 1) "" else "s"}"
+    return "$workoutLabel • $dayLabel • $periodLabel"
 }
 
 private fun calculateCurrentStreak(
@@ -6505,7 +7045,16 @@ private fun ActiveSessionScreen(
     var showDiscardDialog by remember { mutableStateOf(false) }
     var showFinishConfirmDialog by remember { mutableStateOf(false) }
     var showWorkoutDetailsSheet by remember { mutableStateOf(false) }
+    var showEquipmentFilterSheet by rememberSaveable(session.startedAtUtc) { mutableStateOf(false) }
     var pendingExerciseDeletionIndex by remember { mutableStateOf<Int?>(null) }
+    var selectedEquipmentFilter by rememberSaveable(session.startedAtUtc) { mutableStateOf<String?>(null) }
+    val equipmentOptions = remember(session.exercises) { activeSessionEquipmentOptions(session) }
+    LaunchedEffect(session, selectedEquipmentFilter) {
+        selectedEquipmentFilter = resolveActiveSessionEquipmentFilter(
+            session = session,
+            equipmentFilter = selectedEquipmentFilter,
+        )
+    }
     if (customExerciseDraft != null && !activeSessionAddExerciseVisible) {
         CustomExerciseEditorScreen(
             draft = customExerciseDraft,
@@ -6583,7 +7132,7 @@ private fun ActiveSessionScreen(
     val totalSets = session.exercises.sumOf { it.sets.size }
     val completedSets = session.exercises.sumOf { exercise -> exercise.sets.count(SessionSet::completed) }
     val completionFraction = if (totalSets == 0) 0f else completedSets / totalSets.toFloat()
-    val orderedExercises = orderedSessionExercises(session)
+    val orderedExercises = orderedSessionExercises(session, selectedEquipmentFilter)
     val shouldShowPickNextExercise = state.profile?.devPickNextExerciseEnabled == true
     val shouldShowFruitWorkoutBadges = state.profile?.devFruitExerciseIconsEnabled == true
     val untouchedExerciseCount = session.exercises.count { exercise -> exercise.sets.none(SessionSet::completed) }
@@ -6627,11 +7176,23 @@ private fun ActiveSessionScreen(
                 onTogglePause = onTogglePauseSession,
                 onExitWorkout = { showDiscardDialog = true },
                 onOpenWorkoutDetails = { showWorkoutDetailsSheet = true },
+                equipmentFilterLabel = selectedEquipmentFilter,
+                onOpenEquipmentFilter = { showEquipmentFilterSheet = true },
             )
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
+                val activeEquipmentFilter = selectedEquipmentFilter
+                if (activeEquipmentFilter != null) {
+                    item {
+                        ActiveSessionEquipmentFilterBanner(
+                            equipment = activeEquipmentFilter,
+                            matchingExerciseCount = orderedExercises.size,
+                            onClear = { selectedEquipmentFilter = null },
+                        )
+                    }
+                }
                 items(
                     items = orderedExercises,
                     key = { orderedExercise -> "${orderedExercise.index}:${orderedExercise.value.exerciseId}" },
@@ -6706,6 +7267,22 @@ private fun ActiveSessionScreen(
         )
     }
 
+    if (showEquipmentFilterSheet) {
+        ActiveSessionEquipmentFilterSheet(
+            selectedEquipment = selectedEquipmentFilter,
+            equipmentOptions = equipmentOptions,
+            onDismiss = { showEquipmentFilterSheet = false },
+            onSelectEquipment = { equipment ->
+                selectedEquipmentFilter = if (selectedEquipmentFilter.equals(equipment, ignoreCase = true)) {
+                    null
+                } else {
+                    equipment
+                }
+            },
+            onClear = { selectedEquipmentFilter = null },
+        )
+    }
+
     pendingExerciseDeletionIndex?.let { exerciseIndex ->
         session.exercises.getOrNull(exerciseIndex)?.let { exercise ->
             val exerciseCompletedSets = exercise.sets.count { it.completed }
@@ -6724,6 +7301,35 @@ private fun ActiveSessionScreen(
                     onDeleteExercise(exerciseIndex)
                 },
             )
+        }
+    }
+}
+
+@Composable
+private fun ActiveSessionEquipmentFilterBanner(
+    equipment: String,
+    matchingExerciseCount: Int,
+    onClear: () -> Unit,
+) {
+    FeatureCard(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f)) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text("Showing $equipment only", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                Text(
+                    "$matchingExerciseCount exercise${if (matchingExerciseCount == 1) "" else "s"} match this equipment.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            TextButton(onClick = onClear) {
+                Text("Show all")
+            }
         }
     }
 }
@@ -7100,6 +7706,8 @@ private fun SessionMomentumHeader(
     onTogglePause: () -> Unit,
     onExitWorkout: () -> Unit,
     onOpenWorkoutDetails: () -> Unit,
+    equipmentFilterLabel: String?,
+    onOpenEquipmentFilter: () -> Unit,
 ) {
     FeatureCard(
         modifier = modifier
@@ -7112,55 +7720,126 @@ private fun SessionMomentumHeader(
         containerColor = MaterialTheme.colorScheme.surface,
         accentKey = "workout progress momentum",
     ) {
-        Box(
+        Column(
             modifier = Modifier
-                .fillMaxWidth(),
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 18.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            IconButton(
-                onClick = onExitWorkout,
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(top = 6.dp, end = 6.dp),
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(imageVector = Icons.Rounded.Close, contentDescription = "Exit workout")
-            }
-            Column(
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 18.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp),
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        text = elapsed,
-                        style = MaterialTheme.typography.displaySmall,
-                        fontWeight = FontWeight.Black,
-                        color = MaterialTheme.colorScheme.onBackground,
+                IconButton(onClick = onOpenEquipmentFilter) {
+                    Icon(
+                        imageVector = Icons.Rounded.FilterList,
+                        contentDescription = if (equipmentFilterLabel == null) {
+                            "Filter exercises by equipment"
+                        } else {
+                            "Filter exercises by equipment, currently $equipmentFilterLabel"
+                        },
+                        tint = if (equipmentFilterLabel == null) {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        } else {
+                            MaterialTheme.colorScheme.primary
+                        },
                     )
-                    OutlinedButton(onClick = onTogglePause) {
-                        Icon(
-                            imageVector = if (isPaused) Icons.Rounded.PlayArrow else Icons.Rounded.Pause,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp),
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(if (isPaused) "Resume" else "Pause")
-                    }
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-                    if (isPaused) {
-                        MiniTag("Paused")
-                    }
-                    MiniTag("$completedExercises/$totalExercises exercises")
-                    MiniTag("$completedSets/$totalSets sets")
+                IconButton(onClick = onExitWorkout) {
+                    Icon(imageVector = Icons.Rounded.Close, contentDescription = "Exit workout")
                 }
-                ProgressPill(
-                    current = completedSets.coerceAtMost(totalSets),
-                    target = totalSets.coerceAtLeast(1),
-                    label = if (completionFraction >= 0.66f) "Momentum" else "Workout flow",
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = elapsed,
+                    style = MaterialTheme.typography.displaySmall,
+                    fontWeight = FontWeight.Black,
+                    color = MaterialTheme.colorScheme.onBackground,
                 )
+                OutlinedButton(onClick = onTogglePause) {
+                    Icon(
+                        imageVector = if (isPaused) Icons.Rounded.PlayArrow else Icons.Rounded.Pause,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(if (isPaused) "Resume" else "Pause")
+                }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+                if (isPaused) {
+                    MiniTag("Paused")
+                }
+                MiniTag("$completedExercises/$totalExercises exercises")
+                MiniTag("$completedSets/$totalSets sets")
+            }
+            ProgressPill(
+                current = completedSets.coerceAtMost(totalSets),
+                target = totalSets.coerceAtLeast(1),
+                label = if (completionFraction >= 0.66f) "Momentum" else "Workout flow",
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@Composable
+private fun ActiveSessionEquipmentFilterSheet(
+    selectedEquipment: String?,
+    equipmentOptions: List<String>,
+    onDismiss: () -> Unit,
+    onSelectEquipment: (String) -> Unit,
+    onClear: () -> Unit,
+) {
+    ToastLiftModalBottomSheet(onDismissRequest = onDismiss) {
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            item {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Text("Equipment filter", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                    Text(
+                        "Only equipment already used in this workout is shown here.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    if (selectedEquipment != null) {
+                        TextButton(
+                            onClick = onClear,
+                            modifier = Modifier.align(Alignment.Start),
+                        ) {
+                            Text("Show all exercises")
+                        }
+                    }
+                }
+            }
+            item {
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    equipmentOptions.forEach { equipment ->
+                        ToastLiftFilterChip(
+                            selected = selectedEquipment.equals(equipment, ignoreCase = true),
+                            onClick = { onSelectEquipment(equipment) },
+                            label = { Text(equipment) },
+                        )
+                    }
+                }
+            }
+            item {
+                Spacer(modifier = Modifier.height(24.dp))
             }
         }
     }

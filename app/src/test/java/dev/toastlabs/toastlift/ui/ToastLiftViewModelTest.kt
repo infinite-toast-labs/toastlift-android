@@ -190,6 +190,62 @@ class ToastLiftViewModelTest {
     }
 
     @Test
+    fun activeSessionEquipmentOptions_returnsDistinctInWorkoutOrder() {
+        val session = ActiveSession(
+            title = "Gym Upper Day",
+            origin = "generated",
+            locationModeId = 2L,
+            startedAtUtc = "2026-03-20T10:00:00Z",
+            exercises = listOf(
+                sessionExercise(id = 101L, name = "Bench Press", completedSets = listOf(false), equipment = "Barbell"),
+                sessionExercise(id = 202L, name = "Cable Row", completedSets = listOf(false), equipment = "Cable"),
+                sessionExercise(id = 303L, name = "Incline Press", completedSets = listOf(false), equipment = "Barbell"),
+            ),
+        )
+
+        assertEquals(listOf("Barbell", "Cable"), activeSessionEquipmentOptions(session))
+    }
+
+    @Test
+    fun resolveActiveSessionEquipmentFilter_clearsUnknownEquipment() {
+        val session = ActiveSession(
+            title = "Gym Upper Day",
+            origin = "generated",
+            locationModeId = 2L,
+            startedAtUtc = "2026-03-20T10:00:00Z",
+            exercises = listOf(
+                sessionExercise(id = 101L, name = "Bench Press", completedSets = listOf(false), equipment = "Barbell"),
+                sessionExercise(id = 202L, name = "Cable Row", completedSets = listOf(false), equipment = "Cable"),
+            ),
+        )
+
+        assertEquals("Cable", resolveActiveSessionEquipmentFilter(session, "cable"))
+        assertNull(resolveActiveSessionEquipmentFilter(session, "Dumbbell"))
+    }
+
+    @Test
+    fun orderedSessionExercises_withEquipmentFilter_keepsMatchingCompletedAndIncompleteExercises() {
+        val session = ActiveSession(
+            title = "Gym Upper Day",
+            origin = "generated",
+            locationModeId = 2L,
+            startedAtUtc = "2026-03-20T10:00:00Z",
+            exercises = listOf(
+                sessionExercise(id = 101L, name = "Bench Press", equipment = "Barbell", completedSets = listOf(true, true, true), activitySequence = 1, completionSequence = 1),
+                sessionExercise(id = 202L, name = "Cable Row", equipment = "Cable", completedSets = listOf(true, false, false), activitySequence = 2),
+                sessionExercise(id = 303L, name = "Incline Press", equipment = "Barbell", completedSets = listOf(false, false, false)),
+            ),
+        )
+
+        val orderedNames = orderedSessionExercises(
+            session = session,
+            equipmentFilter = "barbell",
+        ).map { it.value.name }
+
+        assertEquals(listOf("Bench Press", "Incline Press"), orderedNames)
+    }
+
+    @Test
     fun reconcileSessionExerciseCompletionState_assignsSequenceOnlyWhenExerciseBecomesComplete() {
         val exercises = listOf(
             sessionExercise(id = 101L, name = "Bench Press", completedSets = listOf(true, true, true), activitySequence = 1, completionSequence = 1),
@@ -539,13 +595,14 @@ class ToastLiftViewModelTest {
         activitySequence: Int? = null,
         completionSequence: Int? = null,
         targetMuscleGroup: String = "Chest",
+        equipment: String = "Cable",
     ): SessionExercise {
         return SessionExercise(
             exerciseId = id,
             name = name,
             bodyRegion = "Upper Body",
             targetMuscleGroup = targetMuscleGroup,
-            equipment = "Cable",
+            equipment = equipment,
             restSeconds = 90,
             activitySequence = activitySequence,
             completionSequence = completionSequence,

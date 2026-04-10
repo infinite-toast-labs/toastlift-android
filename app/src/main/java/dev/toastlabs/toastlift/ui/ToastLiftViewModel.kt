@@ -464,6 +464,32 @@ internal fun orderedSessionExercises(session: ActiveSession): List<IndexedValue<
         )
 }
 
+internal fun activeSessionEquipmentOptions(session: ActiveSession): List<String> {
+    return equipmentSelectionOptions(session.exercises.map(SessionExercise::equipment))
+}
+
+internal fun resolveActiveSessionEquipmentFilter(
+    session: ActiveSession,
+    equipmentFilter: String?,
+): String? {
+    val normalizedFilter = equipmentFilter?.trim()?.takeIf(String::isNotEmpty) ?: return null
+    return activeSessionEquipmentOptions(session)
+        .firstOrNull { option -> option.equals(normalizedFilter, ignoreCase = true) }
+}
+
+internal fun orderedSessionExercises(
+    session: ActiveSession,
+    equipmentFilter: String?,
+): List<IndexedValue<SessionExercise>> {
+    val resolvedFilter = resolveActiveSessionEquipmentFilter(
+        session = session,
+        equipmentFilter = equipmentFilter,
+    )
+    return orderedSessionExercises(session).filter { indexedExercise ->
+        resolvedFilter == null || indexedExercise.value.equipment.equals(resolvedFilter, ignoreCase = true)
+    }
+}
+
 private fun nextSessionExerciseActivitySequence(exercises: List<SessionExercise>): Int {
     return (exercises.mapNotNull(SessionExercise::activitySequence).maxOrNull() ?: 0) + 1
 }
