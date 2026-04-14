@@ -7131,6 +7131,7 @@ private fun ActiveSessionScreen(
     val completedExercises = session.exercises.count { exercise -> exercise.sets.isNotEmpty() && exercise.sets.all(SessionSet::completed) }
     val totalSets = session.exercises.sumOf { it.sets.size }
     val completedSets = session.exercises.sumOf { exercise -> exercise.sets.count(SessionSet::completed) }
+    val completedVolume = computeSessionVolume(session)
     val completionFraction = if (totalSets == 0) 0f else completedSets / totalSets.toFloat()
     val orderedExercises = orderedSessionExercises(session, selectedEquipmentFilter)
     val shouldShowPickNextExercise = state.profile?.devPickNextExerciseEnabled == true
@@ -7172,6 +7173,7 @@ private fun ActiveSessionScreen(
                 totalExercises = session.exercises.size,
                 completedSets = completedSets,
                 totalSets = totalSets,
+                completedVolume = completedVolume,
                 completionFraction = completionFraction,
                 onTogglePause = onTogglePauseSession,
                 onExitWorkout = { showDiscardDialog = true },
@@ -7702,6 +7704,7 @@ private fun SessionMomentumHeader(
     totalExercises: Int,
     completedSets: Int,
     totalSets: Int,
+    completedVolume: Double,
     completionFraction: Float,
     onTogglePause: () -> Unit,
     onExitWorkout: () -> Unit,
@@ -7777,6 +7780,7 @@ private fun SessionMomentumHeader(
                 }
                 MiniTag("$completedExercises/$totalExercises exercises")
                 MiniTag("$completedSets/$totalSets sets")
+                MiniTag("Volume ${formatVolume(completedVolume)}")
             }
             ProgressPill(
                 current = completedSets.coerceAtMost(totalSets),
