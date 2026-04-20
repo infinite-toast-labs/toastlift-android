@@ -139,6 +139,17 @@ class CompletionReceiptSupportTest {
     }
 
     @Test
+    fun completionStats_ignoreCompletedSetsWithZeroLoggedReps() {
+        val workout = session(exerciseName = "Push-Up", reps = "0", weight = "")
+
+        assertEquals(0, computeCompletedSetCount(workout))
+        assertEquals(0, computeCompletedExerciseCount(workout))
+        assertEquals(0, computeCompletedRepCount(workout))
+        assertEquals(0.0, computeSessionVolume(workout), 0.0001)
+        assertNull(topSetForSession(workout))
+    }
+
+    @Test
     fun completionReceiptTokenDelta_reportsAppliedSessionReward() {
         val beforeTrend = buildAdherenceCurrencyTrend(
             signals = listOf(

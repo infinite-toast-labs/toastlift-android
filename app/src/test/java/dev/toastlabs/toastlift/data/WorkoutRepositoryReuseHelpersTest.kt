@@ -25,7 +25,8 @@ class WorkoutRepositoryReuseHelpersTest {
         val repRange = historyReuseRepRange(
             listOf(
                 WorkoutExerciseSetDraft(setNumber = 1, targetReps = "", reps = 8),
-                WorkoutExerciseSetDraft(setNumber = 2, targetReps = "", reps = 10),
+                WorkoutExerciseSetDraft(setNumber = 2, targetReps = "", reps = 0),
+                WorkoutExerciseSetDraft(setNumber = 3, targetReps = "", reps = 10),
             ),
         )
 
@@ -37,7 +38,8 @@ class WorkoutRepositoryReuseHelpersTest {
         val weight = historyReuseSuggestedWeight(
             listOf(
                 WorkoutExerciseSetDraft(setNumber = 1, targetReps = "8-10", recommendedWeight = 95.0),
-                WorkoutExerciseSetDraft(setNumber = 2, targetReps = "8-10", weight = 105.0),
+                WorkoutExerciseSetDraft(setNumber = 2, targetReps = "8-10", reps = 0, weight = 405.0),
+                WorkoutExerciseSetDraft(setNumber = 3, targetReps = "8-10", reps = 8, weight = 105.0),
             ),
         )
 

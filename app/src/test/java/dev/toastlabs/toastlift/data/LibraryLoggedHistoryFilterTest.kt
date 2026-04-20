@@ -5,7 +5,7 @@ import org.junit.Test
 
 class LibraryLoggedHistoryFilterTest {
     @Test
-    fun loggedHistoryFilterClause_targetsCompletedPerformedSets() {
+    fun loggedHistoryFilterClause_targetsCompletedSetsWithLoggedReps() {
         assertEquals(
             """
             EXISTS (
@@ -14,6 +14,7 @@ class LibraryLoggedHistoryFilterTest {
                 INNER JOIN performed_sets ps ON ps.performed_exercise_id = pe.performed_exercise_id
                 WHERE pe.exercise_id = e.exercise_id
                   AND ps.is_completed = 1
+                  AND COALESCE(ps.actual_reps, 0) > 0
             )
             """.trimIndent(),
             loggedHistoryFilterClause(),
@@ -30,6 +31,7 @@ class LibraryLoggedHistoryFilterTest {
                 INNER JOIN performed_sets ps ON ps.performed_exercise_id = pe.performed_exercise_id
                 WHERE pe.exercise_id = exercise_summary.exercise_id
                   AND ps.is_completed = 1
+                  AND COALESCE(ps.actual_reps, 0) > 0
             )
             """.trimIndent(),
             loggedHistoryFilterClause("exercise_summary.exercise_id"),

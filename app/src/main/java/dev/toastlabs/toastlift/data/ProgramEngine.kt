@@ -513,7 +513,7 @@ class ProgramEngine(
     ): SuccessCriteria {
         // Find top exercises from history and set targets at 110% of current best
         val topExercises = history
-            .filter { it.completed && it.weight != null && it.weight > 0.0 }
+            .filter { it.hasLoggedRepSignal() && it.weight != null && it.weight > 0.0 }
             .groupBy { it.exerciseId }
             .mapValues { (_, sets) -> sets.maxOf { it.weight ?: 0.0 } }
             .entries
@@ -833,7 +833,7 @@ class ProgramEngine(
 
         // Check if recent RPE is consistently high
         val recentSets = history
-            .filter { it.lastSetRpe != null }
+            .filter { it.hasLoggedRepSignal() && it.lastSetRpe != null }
             .take(20)
 
         if (recentSets.isEmpty()) return 1.0
@@ -889,7 +889,7 @@ class ProgramEngine(
     private fun lookupSfrFromHistory(exerciseId: Long, history: List<HistoricalExerciseSet>): Double? {
         // SFR scores require 3+ sessions; return null if insufficient data
         val sessions = history
-            .filter { it.exerciseId == exerciseId && it.completed }
+            .filter { it.exerciseId == exerciseId && it.hasLoggedRepSignal() }
             .groupBy { it.completedAtUtc }
         if (sessions.size < 3) return null
         return null // Will be populated by user feedback over time

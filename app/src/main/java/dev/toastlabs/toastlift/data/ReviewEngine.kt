@@ -37,6 +37,7 @@ class ReviewEngine(private val programRepository: ProgramRepository) {
         performedWorkoutIds: List<Long>,
         history: List<HistoricalExerciseSet>,
     ): CheckpointResult {
+        val signalHistory = history.filter { it.hasLoggedRepSignal() }
         val allSessions = programRepository.loadSessionsForProgram(program.id)
         val skippedCount = programRepository.countSessionsByStatus(program.id, SessionStatus.SKIPPED)
         val completedCount = completedSessions.size
@@ -52,10 +53,10 @@ class ReviewEngine(private val programRepository: ProgramRepository) {
         }
 
         // 2. RPE fatigue analysis
-        val rpeFatigueTrigger = checkRelativeRpeFatigue(history, allSessions)
+        val rpeFatigueTrigger = checkRelativeRpeFatigue(signalHistory, allSessions)
 
         // 3. Progress vs success criteria
-        val progressStatus = assessProgress(program.successCriteria, history)
+        val progressStatus = assessProgress(program.successCriteria, signalHistory)
 
         // 4. Check for stalled lifts across checkpoints
         val previousCheckpoints = programRepository.loadAllCheckpoints(program.id)
@@ -83,7 +84,7 @@ class ReviewEngine(private val programRepository: ProgramRepository) {
         val pivotRequired = confidence < program.adaptationPolicy.confidenceFloorForAutonomousChanges
 
         // 7. Exercise evolution suggestions
-        val evolutionSuggestions = checkExerciseEvolution(program, history)
+        val evolutionSuggestions = checkExerciseEvolution(program, signalHistory)
 
         // 8. Build summary
         val summaryText = buildSummaryText(
@@ -129,7 +130,7 @@ class ReviewEngine(private val programRepository: ProgramRepository) {
         var flatCount = 0
         for ((exerciseId, target) in successCriteria.targetLifts) {
             val bestWeight = history
-                .filter { it.exerciseId == exerciseId && it.completed && it.weight != null }
+                .filter { it.exerciseId == exerciseId && it.hasLoggedRepSignal() && it.weight != null }
                 .maxOfOrNull { it.weight ?: 0.0 }
                 ?: continue
 
@@ -152,7 +153,7 @@ class ReviewEngine(private val programRepository: ProgramRepository) {
     ): Boolean {
         // Check if RPE for the same load is 1.5+ higher than earlier in the block
         val exerciseSessions = history
-            .filter { it.completed && it.lastSetRpe != null && it.weight != null }
+            .filter { it.hasLoggedRepSignal() && it.lastSetRpe != null && it.weight != null }
             .groupBy { it.exerciseId }
 
         var triggerCount = 0
@@ -189,7 +190,7 @@ class ReviewEngine(private val programRepository: ProgramRepository) {
 
             // Check if last 2 sessions had RPE <= 6.5 at top load
             val recentSets = history
-                .filter { it.exerciseId == slot.exerciseId && it.completed && it.lastSetRpe != null }
+                .filter { it.exerciseId == slot.exerciseId && it.hasLoggedRepSignal() && it.lastSetRpe != null }
                 .groupBy { it.completedAtUtc }
                 .entries
                 .sortedByDescending { it.key }

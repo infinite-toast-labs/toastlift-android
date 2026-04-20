@@ -68,6 +68,32 @@ class ExercisePrescriptionEngineTest {
     }
 
     @Test
+    fun prescribe_ignoresDirectHistorySetsWithoutLoggedReps() {
+        val exercise = workoutExercise(exerciseId = 1L, equipment = "Barbell", repRange = "6-8", suggestedWeight = null)
+        val detail = detail(exerciseId = 1L, equipment = "Barbell", targetMuscle = "Chest", classification = "Compound")
+
+        val prescription = engine.prescribe(
+            ExercisePrescriptionRequest(
+                workoutExercise = exercise,
+                exerciseDetail = detail,
+                profile = profile(goal = "Strength"),
+                history = listOf(
+                    historySet(
+                        exerciseId = 1L,
+                        exerciseName = "Barbell Bench Press",
+                        targetMuscle = "Chest",
+                        weight = 315.0,
+                        actualReps = 0,
+                    ),
+                ),
+            ),
+        )
+
+        assertEquals(RecommendationSource.COLD_START_HEURISTIC, prescription.source)
+        assertEquals(6, prescription.recommendedRepCount)
+    }
+
+    @Test
     fun prescribe_usesColdStartForZeroHistoryLoadedExercise() {
         val exercise = workoutExercise(exerciseId = 20L, equipment = "Machine", repRange = "10-15")
         val detail = detail(exerciseId = 20L, equipment = "Machine", targetMuscle = "Back", classification = "Compound")

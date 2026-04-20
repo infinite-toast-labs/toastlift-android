@@ -29,6 +29,7 @@ import dev.toastlabs.toastlift.data.SessionOutcomeTier
 import dev.toastlabs.toastlift.data.SessionSet
 import dev.toastlabs.toastlift.data.SkippedExerciseFeedbackPrompt
 import dev.toastlabs.toastlift.data.WeeklyPromiseSnapshot
+import dev.toastlabs.toastlift.data.hasLoggedRepSignal
 import java.time.Duration
 import java.time.Instant
 import java.time.ZoneId
@@ -64,7 +65,7 @@ internal data class ReceiptTopSet(
 )
 
 internal fun computeCompletedSetCount(session: ActiveSession): Int {
-    return session.exercises.sumOf { exercise -> exercise.sets.count(SessionSet::completed) }
+    return session.exercises.sumOf { exercise -> exercise.sets.count { it.hasLoggedRepSignal() } }
 }
 
 internal fun computePlannedSetCount(session: ActiveSession): Int {
@@ -72,16 +73,16 @@ internal fun computePlannedSetCount(session: ActiveSession): Int {
 }
 
 internal fun computeCompletedExerciseCount(session: ActiveSession): Int {
-    return session.exercises.count { exercise -> exercise.sets.any(SessionSet::completed) }
+    return session.exercises.count { exercise -> exercise.sets.any { it.hasLoggedRepSignal() } }
 }
 
 internal fun computeCompletedRepCount(session: ActiveSession): Int {
     return session.exercises.sumOf { exercise ->
         exercise.sets.sumOf { set ->
-            if (!set.completed) {
+            if (!set.hasLoggedRepSignal()) {
                 0
             } else {
-                set.reps.toIntOrNull() ?: 0
+                set.reps.toInt()
             }
         }
     }
@@ -90,7 +91,7 @@ internal fun computeCompletedRepCount(session: ActiveSession): Int {
 internal fun computeSessionVolume(session: ActiveSession): Double {
     return session.exercises.sumOf { exercise ->
         exercise.sets.sumOf { set ->
-            if (!set.completed) {
+            if (!set.hasLoggedRepSignal()) {
                 0.0
             } else {
                 val reps = set.reps.toIntOrNull()
@@ -517,7 +518,7 @@ internal fun topSetForSession(session: ActiveSession): ReceiptTopSet? {
     return session.exercises
         .flatMap { exercise ->
             exercise.sets.mapNotNull { set ->
-                if (!set.completed) return@mapNotNull null
+                if (!set.hasLoggedRepSignal()) return@mapNotNull null
                 val weight = set.weight.toDoubleOrNull() ?: return@mapNotNull null
                 val reps = set.reps.toIntOrNull() ?: return@mapNotNull null
                 ReceiptTopSet(

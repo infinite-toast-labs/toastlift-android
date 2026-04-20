@@ -16,11 +16,12 @@ class ExercisePrescriptionEngine {
     fun prescribe(request: ExercisePrescriptionRequest): ExercisePrescription {
         val repRange = parseRepRange(request.workoutExercise.repRange)
         val plannedSetCount = request.plannedSetCount ?: request.workoutExercise.sets
+        val loggedHistory = request.history.filter { it.hasLoggedRepSignal() }
         val directHistory = request.history
-            .filter { it.exerciseId == request.workoutExercise.exerciseId && it.completed }
+            .filter { it.exerciseId == request.workoutExercise.exerciseId && it.hasLoggedRepSignal() }
             .sortedByDescending { it.completedAtUtc }
-        val similarityAnchors = request.history
-            .filter { it.exerciseId != request.workoutExercise.exerciseId && it.completed && it.weight != null }
+        val similarityAnchors = loggedHistory
+            .filter { it.exerciseId != request.workoutExercise.exerciseId && it.weight != null }
             .map { it to similarityScore(request.exerciseDetail, request.workoutExercise, it) }
             .filter { it.second > 0.0 }
             .sortedByDescending { it.second }
@@ -150,7 +151,7 @@ class ExercisePrescriptionEngine {
         val weightedAverage = topAnchors.sumOf { (set, score) -> (set.weight ?: 0.0) * score } /
             topAnchors.sumOf { it.second }
         val bestKnownForEquipment = request.history
-            .filter { it.completed && it.weight != null && it.exerciseId != request.workoutExercise.exerciseId }
+            .filter { it.hasLoggedRepSignal() && it.weight != null && it.exerciseId != request.workoutExercise.exerciseId }
             .filter { normalize(it.equipmentClass()) == normalize(request.workoutExercise.equipment) }
             .maxOfOrNull { it.weight ?: 0.0 }
         val conservativeEstimate = weightedAverage * 0.82

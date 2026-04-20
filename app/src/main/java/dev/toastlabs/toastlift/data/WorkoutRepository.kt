@@ -19,6 +19,9 @@ internal data class ExerciseHistoryRow(
     val isCompleted: Boolean,
 )
 
+private fun ExerciseHistoryRow.hasLoggedRepSignal(): Boolean =
+    isCompleted && (reps ?: 0) > 0
+
 internal data class WeeklyMuscleTargetWorkoutRow(
     val completedAtUtc: String,
     val exerciseId: Long,
@@ -31,7 +34,8 @@ internal fun buildExerciseHistoryDetail(
     rows: List<ExerciseHistoryRow>,
     prOnly: Boolean,
 ): ExerciseHistoryDetail {
-    if (rows.isEmpty()) {
+    val loggedRows = rows.filter { it.hasLoggedRepSignal() }
+    if (loggedRows.isEmpty()) {
         return ExerciseHistoryDetail(
             exerciseId = exerciseId,
             exerciseName = fallbackName,
@@ -46,11 +50,10 @@ internal fun buildExerciseHistoryDetail(
     var maxWeight = Double.NEGATIVE_INFINITY
     var maxVolume = Double.NEGATIVE_INFINITY
 
-    val allEntries = rows
+    val allEntries = loggedRows
         .groupBy { it.completedAtUtc to it.workoutTitle }
         .map { (header, sets) ->
             val workingSets = sets
-                .filter { it.isCompleted }
                 .sortedBy { it.setNumber }
                 .map { row ->
                     val reps = row.reps
@@ -110,7 +113,7 @@ internal fun historyReuseRepRange(startingSets: List<WorkoutExerciseSetDraft>): 
     val explicitTarget = startingSets.firstOrNull { it.targetReps.isNotBlank() }?.targetReps?.trim()
     if (!explicitTarget.isNullOrBlank()) return explicitTarget
 
-    val performedReps = startingSets.mapNotNull(WorkoutExerciseSetDraft::reps)
+    val performedReps = startingSets.mapNotNull { it.reps?.takeIf { reps -> reps > 0 } }
     if (performedReps.isNotEmpty()) {
         val min = performedReps.minOrNull() ?: performedReps.first()
         val max = performedReps.maxOrNull() ?: performedReps.first()
@@ -128,7 +131,7 @@ internal fun historyReuseRepRange(startingSets: List<WorkoutExerciseSetDraft>): 
 }
 
 internal fun historyReuseSuggestedWeight(startingSets: List<WorkoutExerciseSetDraft>): Double? {
-    return startingSets.lastOrNull { it.weight != null }?.weight
+    return startingSets.lastOrNull { (it.reps ?: 0) > 0 && it.weight != null }?.weight
         ?: startingSets.lastOrNull { it.recommendedWeight != null }?.recommendedWeight
 }
 
@@ -878,11 +881,11 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
                 pw.actual_duration_seconds,
                 COALESCE(SUM(
                     CASE
-                        WHEN ps.is_completed = 1 THEN COALESCE(ps.actual_reps, 0) * COALESCE(ps.weight_value, 0)
+                        WHEN ${loggedRepSignalClause()} THEN ps.actual_reps * COALESCE(ps.weight_value, 0)
                         ELSE 0
                     END
                 ), 0),
-                COUNT(DISTINCT pe.performed_exercise_id),
+                COUNT(DISTINCT CASE WHEN ${loggedRepSignalClause()} THEN pe.performed_exercise_id END) AS logged_exercise_count,
                 pw.focus_key,
                 pw.completion_receipt_snapshot_json
             FROM performed_workouts pw
@@ -896,6 +899,7 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
                 pw.actual_duration_seconds,
                 pw.focus_key,
                 pw.completion_receipt_snapshot_json
+            HAVING logged_exercise_count > 0
             ORDER BY completed_at_utc DESC
             LIMIT 20
             """.trimIndent(),
@@ -934,7 +938,7 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
             SELECT
                 pw.completed_at_utc,
                 pe.exercise_id,
-                COALESCE(SUM(CASE WHEN ps.is_completed = 1 THEN 1 ELSE 0 END), 0) AS completed_set_count
+                COALESCE(SUM(CASE WHEN ${loggedRepSignalClause()} THEN 1 ELSE 0 END), 0) AS completed_set_count
             FROM performed_workouts pw
             INNER JOIN performed_exercises pe ON pe.performed_workout_id = pw.performed_workout_id
             INNER JOIN performed_sets ps ON ps.performed_exercise_id = pe.performed_exercise_id
@@ -973,7 +977,7 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
             """
             SELECT
                 pw.performed_workout_id,
-                COALESCE(SUM(CASE WHEN ps.is_completed = 1 THEN 1 ELSE 0 END), 0) AS completed_set_count
+                COALESCE(SUM(CASE WHEN ${loggedRepSignalClause()} THEN 1 ELSE 0 END), 0) AS completed_set_count
             FROM performed_workouts pw
             LEFT JOIN performed_exercises pe ON pe.performed_workout_id = pw.performed_workout_id
             LEFT JOIN performed_sets ps ON ps.performed_exercise_id = pe.performed_exercise_id
@@ -1020,7 +1024,7 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
                 pw.performed_workout_id,
                 pw.completed_at_utc,
                 COALESCE(MAX(psn.planned_sets), COUNT(ps.performed_set_id)) AS planned_set_count,
-                COALESCE(SUM(CASE WHEN ps.is_completed = 1 THEN 1 ELSE 0 END), 0) AS completed_set_count
+                COALESCE(SUM(CASE WHEN ${loggedRepSignalClause()} THEN 1 ELSE 0 END), 0) AS completed_set_count
             FROM performed_workouts pw
             LEFT JOIN planned_sessions psn
                 ON psn.actual_workout_id = pw.performed_workout_id
@@ -1058,12 +1062,13 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
             SELECT
                 pw.performed_workout_id,
                 pe.exercise_id,
-                COALESCE(SUM(CASE WHEN ps.is_completed = 1 THEN 1 ELSE 0 END), 0) AS completed_set_count
+                COALESCE(SUM(CASE WHEN ${loggedRepSignalClause()} THEN 1 ELSE 0 END), 0) AS completed_set_count
             FROM performed_workouts pw
             INNER JOIN performed_exercises pe ON pe.performed_workout_id = pw.performed_workout_id
             LEFT JOIN performed_sets ps ON ps.performed_exercise_id = pe.performed_exercise_id
             WHERE pw.performed_workout_id IN ($placeholders)
             GROUP BY pw.performed_workout_id, pe.exercise_id
+            HAVING completed_set_count > 0
             """.trimIndent(),
             distinctIds.map(Long::toString).toTypedArray(),
         ).use { cursor ->
@@ -1087,7 +1092,7 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
             title = session.title,
             startedAtUtc = session.startedAtUtc,
             exerciseCount = session.exercises.size,
-            completedSetCount = session.exercises.sumOf { exercise -> exercise.sets.count { it.completed } },
+            completedSetCount = session.exercises.sumOf { exercise -> exercise.sets.count { it.hasLoggedRepSignal() } },
         )
     }
 
@@ -1097,6 +1102,12 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
             """
             SELECT pe.exercise_name, COUNT(*) AS appearances
             FROM performed_exercises pe
+            WHERE EXISTS (
+                SELECT 1
+                FROM performed_sets ps
+                WHERE ps.performed_exercise_id = pe.performed_exercise_id
+                  AND ${loggedRepSignalClause()}
+            )
             GROUP BY pe.exercise_id, pe.exercise_name
             ORDER BY appearances DESC, pe.exercise_name ASC
             LIMIT 1
@@ -1114,6 +1125,12 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
             SELECT COALESCE(e.primary_equipment, 'Bodyweight') AS equipment_name, COUNT(*) AS appearances
             FROM performed_exercises pe
             INNER JOIN exercises e ON e.exercise_id = pe.exercise_id
+            WHERE EXISTS (
+                SELECT 1
+                FROM performed_sets ps
+                WHERE ps.performed_exercise_id = pe.performed_exercise_id
+                  AND ${loggedRepSignalClause()}
+            )
             GROUP BY equipment_name
             ORDER BY appearances DESC, equipment_name ASC
             LIMIT 1
@@ -1136,11 +1153,11 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
                 pw.actual_duration_seconds,
                 COALESCE(SUM(
                     CASE
-                        WHEN ps.is_completed = 1 THEN COALESCE(ps.actual_reps, 0) * COALESCE(ps.weight_value, 0)
+                        WHEN ${loggedRepSignalClause()} THEN ps.actual_reps * COALESCE(ps.weight_value, 0)
                         ELSE 0
                     END
                 ), 0),
-                COUNT(DISTINCT pe.performed_exercise_id),
+                COUNT(DISTINCT CASE WHEN ${loggedRepSignalClause()} THEN pe.performed_exercise_id END),
                 pw.ab_flags_snapshot_json,
                 pw.completion_receipt_snapshot_json
             FROM performed_workouts pw
@@ -1180,23 +1197,24 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
             SELECT
                 pe.exercise_id,
                 pe.exercise_name,
-                COALESCE(MIN(ps.target_reps), ''),
-                COALESCE(SUM(CASE WHEN ps.is_completed = 1 THEN 1 ELSE 0 END), 0),
-                COUNT(ps.performed_set_id),
+                COALESCE(MIN(CASE WHEN ${loggedRepSignalClause()} THEN ps.target_reps END), ''),
+                COALESCE(SUM(CASE WHEN ${loggedRepSignalClause()} THEN 1 ELSE 0 END), 0) AS logged_set_count,
+                COALESCE(SUM(CASE WHEN ${loggedRepSignalClause()} THEN 1 ELSE 0 END), 0),
                 COALESCE(SUM(
                     CASE
-                        WHEN ps.is_completed = 1 THEN COALESCE(ps.actual_reps, 0) * COALESCE(ps.weight_value, 0)
+                        WHEN ${loggedRepSignalClause()} THEN ps.actual_reps * COALESCE(ps.weight_value, 0)
                         ELSE 0
                     END
                 ), 0),
-                COALESCE(MAX(ps.weight_value), 0),
-                COALESCE(MAX(ps.actual_reps), 0),
+                COALESCE(MAX(CASE WHEN ${loggedRepSignalClause()} THEN ps.weight_value END), 0),
+                COALESCE(MAX(CASE WHEN ${loggedRepSignalClause()} THEN ps.actual_reps END), 0),
                 pe.last_set_reps_in_reserve,
                 pe.last_set_rpe
             FROM performed_exercises pe
             LEFT JOIN performed_sets ps ON ps.performed_exercise_id = pe.performed_exercise_id
             WHERE pe.performed_workout_id = ?
             GROUP BY pe.performed_exercise_id, pe.exercise_id, pe.exercise_name, pe.last_set_reps_in_reserve, pe.last_set_rpe
+            HAVING logged_set_count > 0
             ORDER BY pe.sort_order
             """.trimIndent(),
             arrayOf(workoutId.toString()),
@@ -1269,7 +1287,7 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
                 pw.focus_key,
                 pw.completed_at_utc,
                 pw.actual_duration_seconds,
-                COALESCE(SUM(CASE WHEN ps.is_completed = 1 THEN 1 ELSE 0 END), 0) AS completed_set_count
+                COALESCE(SUM(CASE WHEN ${loggedRepSignalClause()} THEN 1 ELSE 0 END), 0) AS completed_set_count
             FROM performed_workouts pw
             LEFT JOIN performed_exercises pe ON pe.performed_workout_id = pw.performed_workout_id
             LEFT JOIN performed_sets ps ON ps.performed_exercise_id = pe.performed_exercise_id
@@ -1281,6 +1299,7 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
                 pw.focus_key,
                 pw.completed_at_utc,
                 pw.actual_duration_seconds
+            HAVING completed_set_count > 0
             ORDER BY pw.completed_at_utc DESC
             LIMIT ?
             """.trimIndent(),
@@ -1319,11 +1338,11 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
                 pw.actual_duration_seconds,
                 COALESCE(SUM(
                     CASE
-                        WHEN ps.is_completed = 1 THEN COALESCE(ps.actual_reps, 0) * COALESCE(ps.weight_value, 0)
+                        WHEN ${loggedRepSignalClause()} THEN ps.actual_reps * COALESCE(ps.weight_value, 0)
                         ELSE 0
                     END
                 ), 0),
-                COUNT(DISTINCT pe.performed_exercise_id),
+                COUNT(DISTINCT CASE WHEN ${loggedRepSignalClause()} THEN pe.performed_exercise_id END),
                 pw.ab_flags_snapshot_json
             FROM performed_workouts pw
             LEFT JOIN performed_exercises pe ON pe.performed_workout_id = pw.performed_workout_id
@@ -1363,23 +1382,24 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
                 pe.performed_exercise_id,
                 pe.exercise_id,
                 pe.exercise_name,
-                COALESCE(MIN(ps.target_reps), ''),
-                COALESCE(SUM(CASE WHEN ps.is_completed = 1 THEN 1 ELSE 0 END), 0),
-                COUNT(ps.performed_set_id),
+                COALESCE(MIN(CASE WHEN ${loggedRepSignalClause()} THEN ps.target_reps END), ''),
+                COALESCE(SUM(CASE WHEN ${loggedRepSignalClause()} THEN 1 ELSE 0 END), 0) AS logged_set_count,
+                COALESCE(SUM(CASE WHEN ${loggedRepSignalClause()} THEN 1 ELSE 0 END), 0),
                 COALESCE(SUM(
                     CASE
-                        WHEN ps.is_completed = 1 THEN COALESCE(ps.actual_reps, 0) * COALESCE(ps.weight_value, 0)
+                        WHEN ${loggedRepSignalClause()} THEN ps.actual_reps * COALESCE(ps.weight_value, 0)
                         ELSE 0
                     END
                 ), 0),
-                COALESCE(MAX(ps.weight_value), 0),
-                COALESCE(MAX(ps.actual_reps), 0),
+                COALESCE(MAX(CASE WHEN ${loggedRepSignalClause()} THEN ps.weight_value END), 0),
+                COALESCE(MAX(CASE WHEN ${loggedRepSignalClause()} THEN ps.actual_reps END), 0),
                 pe.last_set_reps_in_reserve,
                 pe.last_set_rpe
             FROM performed_exercises pe
             LEFT JOIN performed_sets ps ON ps.performed_exercise_id = pe.performed_exercise_id
             WHERE pe.performed_workout_id = ?
             GROUP BY pe.performed_exercise_id, pe.exercise_id, pe.exercise_name, pe.last_set_reps_in_reserve, pe.last_set_rpe
+            HAVING logged_set_count > 0
             ORDER BY pe.sort_order
             """.trimIndent(),
             arrayOf(workoutId.toString()),
@@ -1435,6 +1455,7 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
         fun flushCurrentExercise() {
             val performedExerciseId = currentPerformedExerciseId ?: return
             val startingSets = currentSets.toList()
+            if (startingSets.isEmpty()) return
             val repRange = historyReuseRepRange(startingSets)
             exercises += WorkoutExercise(
                 exerciseId = currentExerciseId,
@@ -1470,8 +1491,9 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
                 ps.recommendation_confidence
             FROM performed_exercises pe
             LEFT JOIN exercises e ON e.exercise_id = pe.exercise_id
-            LEFT JOIN performed_sets ps ON ps.performed_exercise_id = pe.performed_exercise_id
+            INNER JOIN performed_sets ps ON ps.performed_exercise_id = pe.performed_exercise_id
             WHERE pe.performed_workout_id = ?
+              AND ${loggedRepSignalClause()}
             ORDER BY pe.sort_order, ps.set_number
             """.trimIndent(),
             arrayOf(workoutId.toString()),
@@ -1532,6 +1554,7 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
                 recommendation_confidence
             FROM performed_sets
             WHERE performed_exercise_id = ?
+              AND ${loggedRepSignalClause("performed_sets")}
             ORDER BY set_number, performed_set_id
             """.trimIndent(),
             arrayOf(performedExerciseId.toString()),
@@ -1570,8 +1593,14 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
         return db.rawQuery(
             """
             SELECT exercise_name
-            FROM performed_exercises
-            WHERE performed_workout_id = ?
+            FROM performed_exercises pe
+            WHERE pe.performed_workout_id = ?
+              AND EXISTS (
+                  SELECT 1
+                  FROM performed_sets ps
+                  WHERE ps.performed_exercise_id = pe.performed_exercise_id
+                    AND ${loggedRepSignalClause()}
+              )
             ORDER BY sort_order
             """.trimIndent(),
             arrayOf(workoutId.toString()),
@@ -1587,8 +1616,14 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
         return db.rawQuery(
             """
             SELECT exercise_id
-            FROM performed_exercises
-            WHERE performed_workout_id = ?
+            FROM performed_exercises pe
+            WHERE pe.performed_workout_id = ?
+              AND EXISTS (
+                  SELECT 1
+                  FROM performed_sets ps
+                  WHERE ps.performed_exercise_id = pe.performed_exercise_id
+                    AND ${loggedRepSignalClause()}
+              )
             ORDER BY sort_order
             """.trimIndent(),
             arrayOf(workoutId.toString()),
@@ -2015,6 +2050,7 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
             FROM performed_workouts pw
             INNER JOIN performed_exercises pe ON pe.performed_workout_id = pw.performed_workout_id
             INNER JOIN performed_sets ps ON ps.performed_exercise_id = pe.performed_exercise_id
+            WHERE ${loggedRepSignalClause()}
             ORDER BY pw.completed_at_utc ASC, pe.sort_order ASC, ps.set_number ASC
             """.trimIndent(),
             null,
@@ -2055,6 +2091,7 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
             INNER JOIN performed_exercises pe ON pe.performed_workout_id = pw.performed_workout_id
             INNER JOIN performed_sets ps ON ps.performed_exercise_id = pe.performed_exercise_id
             WHERE pe.exercise_id = ?
+              AND ${loggedRepSignalClause()}
             ORDER BY pw.completed_at_utc ASC, pe.sort_order ASC, ps.set_number ASC
             """.trimIndent(),
             arrayOf(exerciseId.toString()),

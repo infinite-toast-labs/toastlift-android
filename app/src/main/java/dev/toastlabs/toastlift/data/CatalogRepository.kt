@@ -845,13 +845,14 @@ internal fun recommendationBiasFacetOptions(
 internal fun loggedHistoryFilterClause(
     exerciseIdColumn: String = "e.exercise_id",
 ): String {
-    return """
-        EXISTS (
-            SELECT 1
-            FROM performed_exercises pe
-            INNER JOIN performed_sets ps ON ps.performed_exercise_id = pe.performed_exercise_id
-            WHERE pe.exercise_id = $exerciseIdColumn
-              AND ps.is_completed = 1
-        )
-    """.trimIndent()
+    return listOf(
+        "EXISTS (",
+        "    SELECT 1",
+        "    FROM performed_exercises pe",
+        "    INNER JOIN performed_sets ps ON ps.performed_exercise_id = pe.performed_exercise_id",
+        "    WHERE pe.exercise_id = $exerciseIdColumn",
+        "      AND ps.is_completed = 1",
+        "      AND COALESCE(ps.actual_reps, 0) > 0",
+        ")",
+    ).joinToString("\n")
 }

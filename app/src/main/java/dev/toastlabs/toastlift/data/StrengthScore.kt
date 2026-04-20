@@ -88,7 +88,7 @@ internal fun applyStrengthScores(
 }
 
 private fun calculateSessionStrengthScore(rows: List<StrengthScoreSetRow>): Int {
-    val completedRows = rows.filter { it.isCompleted }
+    val completedRows = rows.filter { it.isCompleted && (it.reps ?: 0) > 0 }
     if (completedRows.isEmpty()) return 0
 
     val bestEstimatedMaxByExercise = completedRows

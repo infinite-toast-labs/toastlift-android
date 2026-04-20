@@ -565,8 +565,9 @@ class WorkoutGenerationFacade(
         history: List<HistoricalExerciseSet>,
         nowUtc: Instant,
     ): String {
+        val loggedHistory = history.filter { it.hasLoggedRepSignal() }
         val muscleIndex = buildMuscleIndex(
-            history = history,
+            history = loggedHistory,
             profile = profile,
             focus = "full_body",
             nowUtc = nowUtc,
@@ -593,6 +594,7 @@ class WorkoutGenerationFacade(
     }
 
     fun generate(request: WorkoutGenerationRequest): GeneratedWorkoutResult {
+        val signalRequest = request.copy(history = request.history.filter { it.hasLoggedRepSignal() })
         val targetDurationMinutes = request.programContext?.timeBudgetMinutes ?: request.profile.durationMinutes
         val desiredExerciseCount = targetExerciseCount(targetDurationMinutes)
         val gymEquipmentBiasPlan = buildGymEquipmentBiasPlan(
@@ -602,19 +604,19 @@ class WorkoutGenerationFacade(
         )
         val focusTargets = config.focusTargets[request.focus].orEmpty()
         val muscleIndex = buildMuscleIndex(
-            history = request.history,
+            history = signalRequest.history,
             profile = request.profile,
             focus = request.focus,
             nowUtc = request.nowUtc,
         )
-        val movementBalance = buildMovementBalance(request.history)
+        val movementBalance = buildMovementBalance(signalRequest.history)
         val filteredCandidates = request.candidates
             .distinctBy { it.id }
             .mapNotNull { candidate -> applyConstraints(candidate, request.availableEquipment, request.restrictions, request.preferences[candidate.id]) }
 
         val selected = if (request.programContext != null && request.programContext.forcedExerciseIds.isNotEmpty()) {
             selectExercisesWithForced(
-                request = request,
+                request = signalRequest,
                 focusTargets = focusTargets,
                 candidates = filteredCandidates,
                 muscleIndex = muscleIndex,
@@ -624,7 +626,7 @@ class WorkoutGenerationFacade(
             )
         } else {
             selectExercises(
-                request = request,
+                request = signalRequest,
                 focusTargets = focusTargets,
                 candidates = filteredCandidates,
                 muscleIndex = muscleIndex,
@@ -635,14 +637,14 @@ class WorkoutGenerationFacade(
 
         val prescribed = selected.map { evaluation ->
             prescribeExercise(
-                request = request,
+                request = signalRequest,
                 evaluation = evaluation,
                 muscleState = evaluation.targetMuscleState,
             )
         }
 
         val timeFit = fitToTimeBudget(
-            request = request,
+            request = signalRequest,
             prescribed = prescribed,
             gymEquipmentBiasPlan = gymEquipmentBiasPlan,
         )
@@ -695,7 +697,7 @@ class WorkoutGenerationFacade(
         nowUtc: Instant,
     ): Map<String, MuscleState> {
         val muscles = linkedMapOf<String, MutableMuscleAccumulator>()
-        history.forEach { set ->
+        history.filter { it.hasLoggedRepSignal() }.forEach { set ->
             val stimulus = computeSetStimulus(set)
             if (stimulus <= 0.0) return@forEach
             val contributions = listOfNotNull(
@@ -757,7 +759,7 @@ class WorkoutGenerationFacade(
         var unilateralExposure = 0.0
         var totalLateralityExposure = 0.0
 
-        history.forEach { set ->
+        history.filter { it.hasLoggedRepSignal() }.forEach { set ->
             val stimulus = computeSetStimulus(set)
             if (stimulus <= 0.0) return@forEach
             set.movementPatterns
@@ -1347,7 +1349,7 @@ class WorkoutGenerationFacade(
         nowUtc: Instant,
     ): ExercisePerformance {
         val sessions = history
-            .filter { it.exerciseId == exerciseId && it.completed }
+            .filter { it.exerciseId == exerciseId && it.hasLoggedRepSignal() }
             .groupBy { it.completedAtUtc }
             .toList()
             .sortedByDescending { it.first }
@@ -1608,7 +1610,7 @@ class WorkoutGenerationFacade(
     ): Double {
         var penalty = if (exerciseId in previousExerciseIds) 75.0 else 0.0
         val latestAt = history
-            .filter { it.exerciseId == exerciseId }
+            .filter { it.exerciseId == exerciseId && it.hasLoggedRepSignal() }
             .maxOfOrNull { it.completedAtUtc }
         if (latestAt != null) {
             val daysAgo = Duration.between(latestAt, nowUtc).toDays()
@@ -1623,12 +1625,12 @@ class WorkoutGenerationFacade(
     }
 
     private fun computeSetStimulus(set: HistoricalExerciseSet): Double {
-        val reps = set.actualReps ?: parseRepRange(set.targetReps)?.let { (it.first + it.last) / 2 }
-        val repWeight = reps?.let { repStimulusWeight(it) } ?: 0.8
+        if (!set.hasLoggedRepSignal()) return 0.0
+        val reps = set.actualReps ?: return 0.0
+        val repWeight = repStimulusWeight(reps)
         val effortWeight = resolveEffortWeight(set.lastSetRir)
-        val completionWeight = if (set.completed) 1.0 else 0.35
         val compoundBonus = if (normalizeValue(set.classification).contains("compound")) config.compoundStimulusBonus else 1.0
-        return repWeight * effortWeight * completionWeight * compoundBonus
+        return repWeight * effortWeight * compoundBonus
     }
 
     private fun resolveEffortWeight(rir: Int?): Double {
@@ -1738,13 +1740,14 @@ class WorkoutGenerationFacade(
 
     private fun trendSlope(sessions: List<Pair<Instant, List<HistoricalExerciseSet>>>): Double {
         val scores = sessions.map { (_, sets) ->
-            val e1rm = sets.mapNotNull { set ->
+            val loggedSets = sets.filter { it.hasLoggedRepSignal() }
+            val e1rm = loggedSets.mapNotNull { set ->
                 val reps = set.actualReps ?: return@mapNotNull null
                 val weight = set.weight ?: return@mapNotNull null
                 if (reps <= 0 || weight <= 0.0) return@mapNotNull null
                 weight * (1.0 + reps / 30.0)
             }.averageOrNull()
-            e1rm ?: sets.mapNotNull { it.actualReps?.toDouble() }.averageOrNull() ?: 0.0
+            e1rm ?: loggedSets.mapNotNull { it.actualReps?.toDouble() }.averageOrNull() ?: 0.0
         }
         if (scores.size < 2) return 0.0
         val recent = scores.take(min(3, scores.size)).average()

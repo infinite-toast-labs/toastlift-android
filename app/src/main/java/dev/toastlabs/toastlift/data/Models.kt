@@ -779,6 +779,9 @@ data class SessionSet(
     fun resolvedWeightForLogging(): String = weight
 }
 
+internal fun SessionSet.hasLoggedRepSignal(): Boolean =
+    completed && (reps.toIntOrNull() ?: 0) > 0
+
 data class SessionExercise(
     val exerciseId: Long,
     val name: String,

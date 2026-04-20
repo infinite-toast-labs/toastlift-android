@@ -12,6 +12,7 @@ class StrengthScoreTest {
             listOf(
                 row(workoutId = 1L, workoutTitle = "Session 1", completedAtUtc = "2026-03-01T12:00:00Z", exerciseId = 10L, reps = 5, weight = 100.0),
                 row(workoutId = 1L, workoutTitle = "Session 1", completedAtUtc = "2026-03-01T12:00:00Z", exerciseId = 10L, reps = 5, weight = 100.0),
+                row(workoutId = 1L, workoutTitle = "Session 1", completedAtUtc = "2026-03-01T12:00:00Z", exerciseId = 10L, reps = 0, weight = 1000.0),
                 row(workoutId = 1L, workoutTitle = "Session 1", completedAtUtc = "2026-03-01T12:00:00Z", exerciseId = 20L, reps = 8, weight = 60.0),
                 row(workoutId = 2L, workoutTitle = "Session 2", completedAtUtc = "2026-03-03T12:00:00Z", exerciseId = 10L, reps = 5, weight = 110.0),
                 row(workoutId = 2L, workoutTitle = "Session 2", completedAtUtc = "2026-03-03T12:00:00Z", exerciseId = 20L, reps = 8, weight = 62.0),

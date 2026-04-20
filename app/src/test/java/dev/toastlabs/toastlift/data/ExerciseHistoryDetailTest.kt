@@ -31,7 +31,7 @@ class ExerciseHistoryDetailTest {
     }
 
     @Test
-    fun buildExerciseHistoryDetail_returnsEmptyPrViewWhenNoCompletedSetsContainPrs() {
+    fun buildExerciseHistoryDetail_dropsRowsWithoutLoggedRepsBeforeBuildingHistory() {
         val rows = listOf(
             row(
                 completedAtUtc = "2026-03-01T12:00:00Z",
@@ -40,6 +40,13 @@ class ExerciseHistoryDetailTest {
                 reps = 5,
                 weight = 100.0,
                 isCompleted = false,
+            ),
+            row(
+                completedAtUtc = "2026-03-03T12:00:00Z",
+                workoutTitle = "Zero Rep Session",
+                setNumber = 1,
+                reps = 0,
+                weight = 405.0,
             ),
         )
 
@@ -51,9 +58,28 @@ class ExerciseHistoryDetailTest {
         )
 
         assertTrue(detail.isPrOnlyFilterEnabled)
-        assertEquals(1, detail.totalEntries)
+        assertEquals(0, detail.totalEntries)
         assertEquals(0, detail.prEntryCount)
         assertTrue(detail.entries.isEmpty())
+    }
+
+    @Test
+    fun buildExerciseHistoryDetail_keepsExerciseInstanceWhenOneRepIsLogged() {
+        val rows = listOf(
+            row(completedAtUtc = "2026-03-01T12:00:00Z", workoutTitle = "Day 1", setNumber = 1, reps = 0, weight = 315.0),
+            row(completedAtUtc = "2026-03-01T12:00:00Z", workoutTitle = "Day 1", setNumber = 2, reps = 1, weight = 315.0),
+        )
+
+        val detail = buildExerciseHistoryDetail(
+            exerciseId = 7L,
+            fallbackName = "Deadlift",
+            rows = rows,
+            prOnly = false,
+        )
+
+        assertEquals(1, detail.totalEntries)
+        assertEquals(1, detail.entries.single().workingSets.size)
+        assertEquals(1, detail.entries.single().workingSets.single().reps)
     }
 
     @Test

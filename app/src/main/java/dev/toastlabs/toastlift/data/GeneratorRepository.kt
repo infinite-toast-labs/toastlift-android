@@ -358,6 +358,7 @@ class GeneratorRepository(
             INNER JOIN performed_exercises pe ON pe.performed_workout_id = pw.performed_workout_id
             INNER JOIN performed_sets ps ON ps.performed_exercise_id = pe.performed_exercise_id
             LEFT JOIN exercises e ON e.exercise_id = pe.exercise_id
+            WHERE ${loggedRepSignalClause()}
             ORDER BY pw.completed_at_utc DESC, pe.sort_order ASC, ps.set_number ASC
             """.trimIndent(),
             null,
