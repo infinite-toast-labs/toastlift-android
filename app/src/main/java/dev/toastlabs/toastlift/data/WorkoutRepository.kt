@@ -878,6 +878,7 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
                 pw.title,
                 pw.origin_type,
                 pw.completed_at_utc,
+                pw.started_at_utc,
                 pw.actual_duration_seconds,
                 COALESCE(SUM(
                     CASE
@@ -896,11 +897,12 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
                 pw.title,
                 pw.origin_type,
                 pw.completed_at_utc,
+                pw.started_at_utc,
                 pw.actual_duration_seconds,
                 pw.focus_key,
                 pw.completion_receipt_snapshot_json
             HAVING logged_exercise_count > 0
-            ORDER BY completed_at_utc DESC
+            ORDER BY pw.started_at_utc DESC
             LIMIT 20
             """.trimIndent(),
             null,
@@ -914,12 +916,13 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
                             title = cursor.getString(1),
                             origin = cursor.getString(2),
                             completedAtUtc = cursor.getString(3),
-                            durationSeconds = cursor.getInt(4),
-                            totalVolume = cursor.getDouble(5),
-                            exerciseCount = cursor.getInt(6),
+                            startedAtUtc = cursor.getString(4),
+                            durationSeconds = cursor.getInt(5),
+                            totalVolume = cursor.getDouble(6),
+                            exerciseCount = cursor.getInt(7),
                             exerciseNames = loadExerciseNamesForWorkout(workoutId),
-                            focusKey = cursor.getStringOrNull(7),
-                            completionReceipt = deserializeCompletionReceiptSnapshot(cursor.getStringOrNull(8)),
+                            focusKey = cursor.getStringOrNull(8),
+                            completionReceipt = deserializeCompletionReceiptSnapshot(cursor.getStringOrNull(9)),
                         ),
                     )
                 }
@@ -1150,6 +1153,7 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
                 pw.origin_type,
                 pw.focus_key,
                 pw.completed_at_utc,
+                pw.started_at_utc,
                 pw.actual_duration_seconds,
                 COALESCE(SUM(
                     CASE
@@ -1170,6 +1174,7 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
                 pw.origin_type,
                 pw.focus_key,
                 pw.completed_at_utc,
+                pw.started_at_utc,
                 pw.actual_duration_seconds,
                 pw.ab_flags_snapshot_json,
                 pw.completion_receipt_snapshot_json
@@ -1183,12 +1188,13 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
                 origin = cursor.getString(1),
                 focusKey = cursor.getStringOrNull(2),
                 completedAtUtc = cursor.getString(3),
-                durationSeconds = cursor.getInt(4),
-                totalVolume = cursor.getDouble(5),
-                exerciseCount = cursor.getInt(6),
+                startedAtUtc = cursor.getString(4),
+                durationSeconds = cursor.getInt(5),
+                totalVolume = cursor.getDouble(6),
+                exerciseCount = cursor.getInt(7),
                 exercises = emptyList(),
-                abFlags = deserializeCompletedWorkoutAbFlags(cursor.getStringOrNull(7)),
-                completionReceipt = deserializeCompletionReceiptSnapshot(cursor.getStringOrNull(8)),
+                abFlags = deserializeCompletedWorkoutAbFlags(cursor.getStringOrNull(8)),
+                completionReceipt = deserializeCompletionReceiptSnapshot(cursor.getStringOrNull(9)),
             )
         }
 

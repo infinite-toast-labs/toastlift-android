@@ -68,8 +68,39 @@ class HistoryCalendarPresentationTest {
     }
 
     @Test
-    fun formatHistoryEntryTime_usesHourMinuteAmPmOnly() {
-        val morning = historySummary(id = 1L, completedAtUtc = "2026-04-03T06:00:00Z")
+    fun historyCalendarAndSections_useWorkoutStartDayForOvernightSessions() {
+        val overnight = historySummary(
+            id = 1L,
+            startedAtUtc = "2026-03-31T23:00:00Z",
+            completedAtUtc = "2026-04-01T01:00:00Z",
+        )
+
+        val sections = buildHistoryDateSections(listOf(overnight), zoneId = ZoneId.of("UTC"))
+        val weekPages = buildHistoryCalendarWeekPages(
+            history = listOf(overnight),
+            zoneId = ZoneId.of("UTC"),
+            today = LocalDate.of(2026, 4, 1),
+        )
+        val monthPages = buildHistoryCalendarMonthPages(
+            history = listOf(overnight),
+            zoneId = ZoneId.of("UTC"),
+            today = LocalDate.of(2026, 4, 1),
+        )
+
+        assertEquals(listOf("Tuesday, Mar 31"), sections.map(HistoryDateSection::label))
+        assertEquals(1, weekPages.first().days.first { it.date == LocalDate.of(2026, 3, 31) }.workoutCount)
+        assertEquals(0, weekPages.first().days.first { it.date == LocalDate.of(2026, 4, 1) }.workoutCount)
+        assertEquals(listOf(1L), monthPages.first().workouts.map(HistorySummary::id))
+        assertEquals(emptyList<Long>(), monthPages.last().workouts.map(HistorySummary::id))
+    }
+
+    @Test
+    fun formatHistoryEntryTime_usesStartedHourMinuteAmPmOnly() {
+        val morning = historySummary(
+            id = 1L,
+            startedAtUtc = "2026-04-03T06:00:00Z",
+            completedAtUtc = "2026-04-03T08:30:00Z",
+        )
         val evening = historySummary(id = 2L, completedAtUtc = "2026-04-03T19:05:00Z")
 
         assertEquals("6:00 AM", formatHistoryEntryTime(morning, ZoneId.of("UTC")))
@@ -79,11 +110,13 @@ class HistoryCalendarPresentationTest {
     private fun historySummary(
         id: Long,
         completedAtUtc: String,
+        startedAtUtc: String = completedAtUtc,
         totalVolume: Double = 1000.0,
     ) = HistorySummary(
         id = id,
         title = "Workout $id",
         completedAtUtc = completedAtUtc,
+        startedAtUtc = startedAtUtc,
         durationSeconds = 1800,
         totalVolume = totalVolume,
         exerciseCount = 4,

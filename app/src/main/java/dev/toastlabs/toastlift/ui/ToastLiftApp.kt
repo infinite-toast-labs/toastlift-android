@@ -4903,7 +4903,7 @@ private fun buildHistoryDashboardData(
     topEquipment: String?,
     strengthScore: StrengthScoreSummary?,
 ): HistoryDashboardData {
-    val workoutDates = history.mapNotNull { runCatching { Instant.parse(it.completedAtUtc).atZone(ZoneId.systemDefault()).toLocalDate() }.getOrNull() }
+    val workoutDates = history.mapNotNull { historyStartedLocalDate(it) }
     val workoutCountsByDate = workoutDates.groupingBy { it }.eachCount()
     val currentWeekStart = LocalDate.now().with(TemporalAdjusters.previousOrSame(java.time.DayOfWeek.SUNDAY))
     val currentWeekDays = (0L..6L).map { offset ->
@@ -4932,7 +4932,7 @@ private fun buildHistoryDashboardData(
     val monthlyVolume = (-5L..0L).map { offset ->
         val month = YearMonth.now().plusMonths(offset)
         month to history.filter {
-            runCatching { YearMonth.from(Instant.parse(it.completedAtUtc).atZone(ZoneId.systemDefault())) }.getOrNull() == month
+            historyStartedLocalDate(it)?.let(YearMonth::from) == month
         }.sumOf { it.totalVolume }
     }
     val totalWorkouts = history.size
@@ -4974,11 +4974,13 @@ internal data class HistoryDateSection(
         get() = date?.toString() ?: label
 }
 
-internal fun historyCompletedLocalDate(
+internal fun historyStartedLocalDate(
     summary: HistorySummary,
     zoneId: ZoneId = ZoneId.systemDefault(),
 ): LocalDate? {
     return runCatching {
+        Instant.parse(summary.startedAtUtc).atZone(zoneId).toLocalDate()
+    }.getOrNull() ?: runCatching {
         Instant.parse(summary.completedAtUtc).atZone(zoneId).toLocalDate()
     }.getOrNull()
 }
@@ -4989,7 +4991,7 @@ internal fun buildHistoryDateSections(
 ): List<HistoryDateSection> {
     val buckets = linkedMapOf<LocalDate?, MutableList<HistorySummary>>()
     history.forEach { entry ->
-        val date = historyCompletedLocalDate(entry, zoneId)
+        val date = historyStartedLocalDate(entry, zoneId)
         buckets.getOrPut(date) { mutableListOf() } += entry
     }
     return buckets.map { (date, entries) ->
@@ -5010,12 +5012,17 @@ internal fun formatHistoryEntryTime(
     zoneId: ZoneId = ZoneId.systemDefault(),
 ): String {
     return runCatching {
-        Instant.parse(entry.completedAtUtc)
+        Instant.parse(entry.startedAtUtc)
             .atZone(zoneId)
             .format(DateTimeFormatter.ofPattern("h:mm a", Locale.US))
     }.getOrElse {
-        entry.completedAtUtc.replace("T", " ").removeSuffix("Z")
+        entry.startedAtUtc.ifBlank { entry.completedAtUtc }.replace("T", " ").removeSuffix("Z")
     }
+}
+
+private fun historyStartedInstant(summary: HistorySummary): Instant? {
+    return runCatching { Instant.parse(summary.startedAtUtc) }.getOrNull()
+        ?: runCatching { Instant.parse(summary.completedAtUtc) }.getOrNull()
 }
 
 internal fun buildHistoryCalendarWeekPages(
@@ -5024,7 +5031,7 @@ internal fun buildHistoryCalendarWeekPages(
     today: LocalDate = LocalDate.now(zoneId),
 ): List<HistoryCalendarWeekPage> {
     val workouts = history.mapNotNull { summary ->
-        historyCompletedLocalDate(summary, zoneId)?.let { date ->
+        historyStartedLocalDate(summary, zoneId)?.let { date ->
             HistoryCalendarWorkoutSnapshot(summary = summary, date = date)
         }
     }
@@ -5035,7 +5042,7 @@ internal fun buildHistoryCalendarWeekPages(
     val pages = mutableListOf<HistoryCalendarWeekPage>()
     var cursor = firstWeekStart
     while (cursor <= lastWeekStart) {
-        val weekWorkouts = workoutsByWeek[cursor].orEmpty().sortedByDescending { it.summary.completedAtUtc }
+        val weekWorkouts = workoutsByWeek[cursor].orEmpty().sortedByDescending { historyStartedInstant(it.summary) }
         val workoutCountsByDate = weekWorkouts.groupingBy(HistoryCalendarWorkoutSnapshot::date).eachCount()
         pages += HistoryCalendarWeekPage(
             weekStart = cursor,
@@ -5057,7 +5064,7 @@ internal fun buildHistoryCalendarMonthPages(
     today: LocalDate = LocalDate.now(zoneId),
 ): List<HistoryCalendarMonthPage> {
     val workouts = history.mapNotNull { summary ->
-        historyCompletedLocalDate(summary, zoneId)?.let { date ->
+        historyStartedLocalDate(summary, zoneId)?.let { date ->
             HistoryCalendarWorkoutSnapshot(summary = summary, date = date)
         }
     }
@@ -5068,7 +5075,7 @@ internal fun buildHistoryCalendarMonthPages(
     val pages = mutableListOf<HistoryCalendarMonthPage>()
     var cursor = firstMonth
     while (cursor <= lastMonth) {
-        val monthWorkouts = workoutsByMonth[cursor].orEmpty().sortedByDescending { it.summary.completedAtUtc }
+        val monthWorkouts = workoutsByMonth[cursor].orEmpty().sortedByDescending { historyStartedInstant(it.summary) }
         val workoutCountsByDate = monthWorkouts.groupingBy(HistoryCalendarWorkoutSnapshot::date).eachCount()
         val monthStart = cursor.atDay(1)
         val gridStart = monthStart.with(TemporalAdjusters.previousOrSame(java.time.DayOfWeek.SUNDAY))
@@ -7210,11 +7217,12 @@ private fun ActiveSessionScreen(
             delay(1000)
         }
     }
-    val completedExercises = session.exercises.count { exercise -> exercise.sets.isNotEmpty() && exercise.sets.all(SessionSet::completed) }
-    val totalSets = session.exercises.sumOf { it.sets.size }
-    val completedSets = session.exercises.sumOf { exercise -> exercise.sets.count(SessionSet::completed) }
-    val completedVolume = computeSessionVolume(session)
-    val completionFraction = if (totalSets == 0) 0f else completedSets / totalSets.toFloat()
+    val progressMetrics = activeWorkoutProgressMetrics(session)
+    val completionFraction = if (progressMetrics.totalSets == 0) {
+        0f
+    } else {
+        progressMetrics.completedSets / progressMetrics.totalSets.toFloat()
+    }
     val orderedExercises = orderedSessionExercises(session, selectedEquipmentFilter)
     val shouldShowPickNextExercise = state.profile?.devPickNextExerciseEnabled == true
     val shouldShowFruitWorkoutBadges = state.profile?.devFruitExerciseIconsEnabled == true
@@ -7251,11 +7259,7 @@ private fun ActiveSessionScreen(
                     .padding(top = ACTIVE_SESSION_HEADER_TOP_PADDING),
                 elapsed = elapsed,
                 isPaused = session.isPaused,
-                completedExercises = completedExercises,
-                totalExercises = session.exercises.size,
-                completedSets = completedSets,
-                totalSets = totalSets,
-                completedVolume = completedVolume,
+                progressMetrics = progressMetrics,
                 completionFraction = completionFraction,
                 onTogglePause = onTogglePauseSession,
                 onExitWorkout = { showDiscardDialog = true },
@@ -7310,7 +7314,7 @@ private fun ActiveSessionScreen(
     }
 
     if (showFinishConfirmDialog) {
-        val skippedSets = totalSets - completedSets
+        val skippedSets = progressMetrics.totalSets - progressMetrics.completedSets
         val finishMessage = if (skippedSets > 0) {
             "You have $skippedSets incomplete set${if (skippedSets == 1) "" else "s"}. Are you sure you want to finish?"
         } else {
@@ -7347,6 +7351,7 @@ private fun ActiveSessionScreen(
             splitName = splitName,
             elapsed = elapsed,
             isPaused = session.isPaused,
+            progressMetrics = progressMetrics,
             onDismiss = { showWorkoutDetailsSheet = false },
         )
     }
@@ -7782,11 +7787,7 @@ private fun SessionMomentumHeader(
     modifier: Modifier = Modifier,
     elapsed: String,
     isPaused: Boolean,
-    completedExercises: Int,
-    totalExercises: Int,
-    completedSets: Int,
-    totalSets: Int,
-    completedVolume: Double,
+    progressMetrics: ActiveWorkoutProgressMetrics,
     completionFraction: Float,
     onTogglePause: () -> Unit,
     onExitWorkout: () -> Unit,
@@ -7860,13 +7861,15 @@ private fun SessionMomentumHeader(
                 if (isPaused) {
                     MiniTag("Paused")
                 }
-                MiniTag("$completedExercises/$totalExercises exercises")
-                MiniTag("$completedSets/$totalSets sets")
-                MiniTag("Volume ${formatVolume(completedVolume)}")
+                MiniTag(progressMetrics.exerciseProgressLabel)
+                MiniTag(progressMetrics.setProgressLabel)
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+                MiniTag(progressMetrics.volumeLabel)
             }
             ProgressPill(
-                current = completedSets.coerceAtMost(totalSets),
-                target = totalSets.coerceAtLeast(1),
+                current = progressMetrics.completedSets.coerceAtMost(progressMetrics.totalSets),
+                target = progressMetrics.totalSets.coerceAtLeast(1),
                 label = if (completionFraction >= 0.66f) "Momentum" else "Workout flow",
             )
         }
@@ -7938,6 +7941,7 @@ private fun ActiveWorkoutDetailsSheet(
     splitName: String?,
     elapsed: String,
     isPaused: Boolean,
+    progressMetrics: ActiveWorkoutProgressMetrics,
     onDismiss: () -> Unit,
 ) {
     val expectedVolume = activeSessionExpectedLoadVolume(session)
@@ -7972,6 +7976,11 @@ private fun ActiveWorkoutDetailsSheet(
             Text(session.title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
             if (session.subtitle.isNotBlank()) {
                 Text(session.subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                MiniTag(progressMetrics.exerciseProgressLabel)
+                MiniTag(progressMetrics.setProgressLabel)
+                MiniTag(progressMetrics.volumeLabel)
             }
 
             StatRail(
@@ -8038,6 +8047,30 @@ private fun ActiveWorkoutDetailsSheet(
             Spacer(modifier = Modifier.height(24.dp))
         }
     }
+}
+
+internal data class ActiveWorkoutProgressMetrics(
+    val completedExercises: Int,
+    val totalExercises: Int,
+    val completedSets: Int,
+    val totalSets: Int,
+    val completedVolume: Double,
+) {
+    val exerciseProgressLabel: String = "$completedExercises/$totalExercises exercises"
+    val setProgressLabel: String = "$completedSets/$totalSets sets"
+    val volumeLabel: String = "Volume ${formatVolume(completedVolume)}"
+}
+
+internal fun activeWorkoutProgressMetrics(session: ActiveSession): ActiveWorkoutProgressMetrics {
+    return ActiveWorkoutProgressMetrics(
+        completedExercises = session.exercises.count { exercise ->
+            exercise.sets.isNotEmpty() && exercise.sets.all(SessionSet::completed)
+        },
+        totalExercises = session.exercises.size,
+        completedSets = session.exercises.sumOf { exercise -> exercise.sets.count(SessionSet::completed) },
+        totalSets = session.exercises.sumOf { exercise -> exercise.sets.size },
+        completedVolume = computeSessionVolume(session),
+    )
 }
 
 @Composable
@@ -9701,7 +9734,7 @@ private fun HistoryDetailSheet(
         ) {
             Text(detail.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
             Text(
-                "${detail.completedAtUtc.replace("T", " ").removeSuffix("Z")} • ${detail.origin.replaceFirstChar { it.uppercase() }}",
+                "${detail.startedAtUtc.replace("T", " ").removeSuffix("Z")} • ${detail.origin.replaceFirstChar { it.uppercase() }}",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             StatRail(

@@ -13,6 +13,39 @@ import java.time.Instant
 
 class ActiveSessionWorkoutDetailsTest {
     @Test
+    fun activeWorkoutProgressMetrics_reportsCompletedExerciseSetsAndVolumeLabels() {
+        val session = session(
+            exercises = listOf(
+                exercise(
+                    "Bench Press",
+                    sets = listOf(
+                        SessionSet(setNumber = 1, targetReps = "5", reps = "5", weight = "185", completed = true),
+                        SessionSet(setNumber = 2, targetReps = "5", reps = "5", weight = "185", completed = true),
+                    ),
+                ),
+                exercise(
+                    "Cable Row",
+                    sets = listOf(
+                        SessionSet(setNumber = 1, targetReps = "10", reps = "10", weight = "120", completed = true),
+                        SessionSet(setNumber = 2, targetReps = "10"),
+                    ),
+                ),
+            ),
+        )
+
+        val metrics = activeWorkoutProgressMetrics(session)
+
+        assertEquals(1, metrics.completedExercises)
+        assertEquals(2, metrics.totalExercises)
+        assertEquals(3, metrics.completedSets)
+        assertEquals(4, metrics.totalSets)
+        assertEquals(3050.0, metrics.completedVolume, 0.001)
+        assertEquals("1/2 exercises", metrics.exerciseProgressLabel)
+        assertEquals("3/4 sets", metrics.setProgressLabel)
+        assertEquals("Volume 3.1k lb", metrics.volumeLabel)
+    }
+
+    @Test
     fun activeSessionExpectedRepSummary_sumsRepRangesAcrossPlannedSets() {
         val session = session(
             exercises = listOf(
