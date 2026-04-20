@@ -51,6 +51,31 @@ class HistoryCalendarPresentationTest {
         assertEquals(listOf(3L, 2L), aprilPage.workouts.map(HistorySummary::id))
     }
 
+    @Test
+    fun buildHistoryDateSections_groupsWorkoutsByLocalDayWithMessageThreadLabels() {
+        val sections = buildHistoryDateSections(
+            history = listOf(
+                historySummary(id = 1L, completedAtUtc = "2026-04-03T06:00:00Z"),
+                historySummary(id = 2L, completedAtUtc = "2026-04-03T19:00:00Z"),
+                historySummary(id = 3L, completedAtUtc = "2026-04-04T05:00:00Z"),
+            ),
+            zoneId = ZoneId.of("UTC"),
+        )
+
+        assertEquals(listOf("Friday, Apr 3", "Saturday, Apr 4"), sections.map(HistoryDateSection::label))
+        assertEquals(listOf(1L, 2L), sections.first().entries.map(HistorySummary::id))
+        assertEquals(listOf(3L), sections.last().entries.map(HistorySummary::id))
+    }
+
+    @Test
+    fun formatHistoryEntryTime_usesHourMinuteAmPmOnly() {
+        val morning = historySummary(id = 1L, completedAtUtc = "2026-04-03T06:00:00Z")
+        val evening = historySummary(id = 2L, completedAtUtc = "2026-04-03T19:05:00Z")
+
+        assertEquals("6:00 AM", formatHistoryEntryTime(morning, ZoneId.of("UTC")))
+        assertEquals("7:05 PM", formatHistoryEntryTime(evening, ZoneId.of("UTC")))
+    }
+
     private fun historySummary(
         id: Long,
         completedAtUtc: String,

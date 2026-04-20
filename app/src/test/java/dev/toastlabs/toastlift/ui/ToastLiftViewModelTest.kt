@@ -331,6 +331,32 @@ class ToastLiftViewModelTest {
     }
 
     @Test
+    fun pickNextSessionExerciseIndex_withEquipmentFilter_onlyChoosesMatchingUntouchedExercises() {
+        val session = ActiveSession(
+            title = "Gym Upper Day",
+            origin = "generated",
+            locationModeId = 2L,
+            startedAtUtc = "2026-03-20T10:00:00Z",
+            exercises = listOf(
+                sessionExercise(id = 101L, name = "Bench Press", equipment = "Barbell", completedSets = listOf(false, false, false)),
+                sessionExercise(id = 202L, name = "Machine Chest Press", equipment = "Machine", completedSets = listOf(false, false, false)),
+                sessionExercise(id = 303L, name = "Machine Row", equipment = "Machine", completedSets = listOf(true, false, false)),
+                sessionExercise(id = 404L, name = "Cable Row", equipment = "Cable", completedSets = listOf(false, false, false)),
+            ),
+        )
+
+        repeat(20) {
+            val pickedIndex = pickNextSessionExerciseIndex(
+                session = session,
+                equipmentFilter = "machine",
+                random = Random(it),
+            )
+
+            assertEquals(1, pickedIndex)
+        }
+    }
+
+    @Test
     fun pickNextSessionExerciseIndex_returnsNullWhenEveryExerciseHasStarted() {
         val session = ActiveSession(
             title = "Gym Upper Day",
@@ -344,6 +370,28 @@ class ToastLiftViewModelTest {
         )
 
         assertNull(pickNextSessionExerciseIndex(session, Random(0)))
+    }
+
+    @Test
+    fun pickNextSessionExerciseIndex_withEquipmentFilter_returnsNullWithoutMatchingUntouchedExercises() {
+        val session = ActiveSession(
+            title = "Gym Upper Day",
+            origin = "generated",
+            locationModeId = 2L,
+            startedAtUtc = "2026-03-20T10:00:00Z",
+            exercises = listOf(
+                sessionExercise(id = 101L, name = "Bench Press", equipment = "Barbell", completedSets = listOf(false, false, false)),
+                sessionExercise(id = 202L, name = "Machine Chest Press", equipment = "Machine", completedSets = listOf(true, false, false)),
+            ),
+        )
+
+        assertNull(
+            pickNextSessionExerciseIndex(
+                session = session,
+                equipmentFilter = "Machine",
+                random = Random(0),
+            ),
+        )
     }
 
     @Test
@@ -373,6 +421,35 @@ class ToastLiftViewModelTest {
         )
 
         assertEquals(1, pickedIndex)
+    }
+
+    @Test
+    fun pickNextSessionExerciseIndex_appliesEquipmentFilterBeforeSmartTargetScoring() {
+        val session = ActiveSession(
+            title = "Pull Day",
+            origin = "generated",
+            locationModeId = 2L,
+            startedAtUtc = "2026-03-20T10:00:00Z",
+            exercises = listOf(
+                sessionExercise(id = 101L, name = "Machine Chest Press", equipment = "Machine", completedSets = listOf(false, false, false), targetMuscleGroup = "Chest"),
+                sessionExercise(id = 202L, name = "Lat Pulldown", equipment = "Cable", completedSets = listOf(false, false, false), targetMuscleGroup = "Back"),
+            ),
+        )
+
+        val pickedIndex = pickNextSessionExerciseIndex(
+            session = session,
+            smartTargetMuscle = "Latissimus Dorsi",
+            exerciseDetailsById = mapOf(
+                202L to exerciseDetail(
+                    exercise = session.exercises[1],
+                    primeMover = "Latissimus Dorsi",
+                ),
+            ),
+            equipmentFilter = "Machine",
+            random = Random(0),
+        )
+
+        assertEquals(0, pickedIndex)
     }
 
     @Test

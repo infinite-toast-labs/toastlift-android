@@ -266,6 +266,7 @@ import java.time.YearMonth
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.temporal.TemporalAdjusters
+import java.util.Locale
 
 private val MainTab.icon
     get() = when (this) {
@@ -3146,13 +3147,18 @@ private fun HistoryScreen(
                 }
             }
         } else {
-            items(history, key = { it.id }) { entry ->
-                HistoryEntryCard(
-                    entry = entry,
-                    onOpen = { onOpenWorkout(entry.id) },
-                    onShare = { shareTarget = entry },
-                    onDelete = { deleteTarget = entry },
-                )
+            buildHistoryDateSections(history).forEach { section ->
+                item(key = "history-date-${section.dateKey}") {
+                    HistoryDateSeparator(section.label)
+                }
+                items(section.entries, key = { it.id }) { entry ->
+                    HistoryEntryCard(
+                        entry = entry,
+                        onOpen = { onOpenWorkout(entry.id) },
+                        onShare = { shareTarget = entry },
+                        onDelete = { deleteTarget = entry },
+                    )
+                }
             }
         }
     }
@@ -3794,13 +3800,16 @@ private fun HistoryCalendarWorkoutsCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             } else {
-                workouts.forEach { workout ->
-                    HistoryEntryCard(
-                        entry = workout,
-                        onOpen = { onOpenWorkout(workout.id) },
-                        onShare = { onShareWorkout(workout.id, HistoryShareFormat.FormattedText) },
-                        onDelete = { onDeleteWorkout(workout.id) },
-                    )
+                buildHistoryDateSections(workouts).forEach { section ->
+                    HistoryDateSeparator(section.label)
+                    section.entries.forEach { workout ->
+                        HistoryEntryCard(
+                            entry = workout,
+                            onOpen = { onOpenWorkout(workout.id) },
+                            onShare = { onShareWorkout(workout.id, HistoryShareFormat.FormattedText) },
+                            onDelete = { onDeleteWorkout(workout.id) },
+                        )
+                    }
                 }
             }
         }
@@ -4956,6 +4965,15 @@ private data class HistoryCalendarWorkoutSnapshot(
     val date: LocalDate,
 )
 
+internal data class HistoryDateSection(
+    val date: LocalDate?,
+    val label: String,
+    val entries: List<HistorySummary>,
+) {
+    val dateKey: String
+        get() = date?.toString() ?: label
+}
+
 internal fun historyCompletedLocalDate(
     summary: HistorySummary,
     zoneId: ZoneId = ZoneId.systemDefault(),
@@ -4963,6 +4981,41 @@ internal fun historyCompletedLocalDate(
     return runCatching {
         Instant.parse(summary.completedAtUtc).atZone(zoneId).toLocalDate()
     }.getOrNull()
+}
+
+internal fun buildHistoryDateSections(
+    history: List<HistorySummary>,
+    zoneId: ZoneId = ZoneId.systemDefault(),
+): List<HistoryDateSection> {
+    val buckets = linkedMapOf<LocalDate?, MutableList<HistorySummary>>()
+    history.forEach { entry ->
+        val date = historyCompletedLocalDate(entry, zoneId)
+        buckets.getOrPut(date) { mutableListOf() } += entry
+    }
+    return buckets.map { (date, entries) ->
+        HistoryDateSection(
+            date = date,
+            label = date?.let(::formatHistoryDateSeparator) ?: "Undated",
+            entries = entries,
+        )
+    }
+}
+
+internal fun formatHistoryDateSeparator(date: LocalDate): String {
+    return date.format(DateTimeFormatter.ofPattern("EEEE, MMM d", Locale.US))
+}
+
+internal fun formatHistoryEntryTime(
+    entry: HistorySummary,
+    zoneId: ZoneId = ZoneId.systemDefault(),
+): String {
+    return runCatching {
+        Instant.parse(entry.completedAtUtc)
+            .atZone(zoneId)
+            .format(DateTimeFormatter.ofPattern("h:mm a", Locale.US))
+    }.getOrElse {
+        entry.completedAtUtc.replace("T", " ").removeSuffix("Z")
+    }
 }
 
 internal fun buildHistoryCalendarWeekPages(
@@ -5094,6 +5147,17 @@ private fun nextMilestone(current: Int, thresholds: List<Int>): Int =
     thresholds.firstOrNull { current < it } ?: thresholds.last()
 
 @Composable
+private fun HistoryDateSeparator(label: String) {
+    Text(
+        text = label,
+        modifier = Modifier.padding(top = 6.dp, start = 4.dp, end = 4.dp),
+        style = MaterialTheme.typography.titleSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        fontWeight = FontWeight.SemiBold,
+    )
+}
+
+@Composable
 private fun HistoryEntryCard(
     entry: HistorySummary,
     onOpen: () -> Unit,
@@ -5114,7 +5178,7 @@ private fun HistoryEntryCard(
                 Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(entry.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                     Text(
-                        entry.completedAtUtc.replace("T", " ").removeSuffix("Z"),
+                        formatHistoryEntryTime(entry),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -7003,7 +7067,7 @@ private fun ActiveSessionScreen(
     onOpenExercise: (Int) -> Unit,
     onShowExerciseDetail: (Long) -> Unit,
     onCloseExercise: () -> Unit,
-    onPickNextExercise: () -> Unit,
+    onPickNextExercise: (String?) -> Unit,
     onOpenAddExercise: () -> Unit,
     onOpenManualAddExercise: () -> Unit,
     onOpenGeneratedAddExercise: () -> Unit,
@@ -7136,7 +7200,7 @@ private fun ActiveSessionScreen(
     val orderedExercises = orderedSessionExercises(session, selectedEquipmentFilter)
     val shouldShowPickNextExercise = state.profile?.devPickNextExerciseEnabled == true
     val shouldShowFruitWorkoutBadges = state.profile?.devFruitExerciseIconsEnabled == true
-    val untouchedExerciseCount = session.exercises.count { exercise -> exercise.sets.none(SessionSet::completed) }
+    val untouchedExerciseCount = orderedExercises.count { (_, exercise) -> exercise.sets.none(SessionSet::completed) }
     val splitName = state.profile?.let { profile ->
         state.splitPrograms.firstOrNull { it.id == profile.splitProgramId }?.name
     }
@@ -7218,7 +7282,7 @@ private fun ActiveSessionScreen(
                         PickNextExerciseCallToAction(
                             untouchedExerciseCount = untouchedExerciseCount,
                             smartTargetMuscle = state.profile?.smartPickerTargetMuscle,
-                            onPickNextExercise = onPickNextExercise,
+                            onPickNextExercise = { onPickNextExercise(selectedEquipmentFilter) },
                         )
                     }
                 }

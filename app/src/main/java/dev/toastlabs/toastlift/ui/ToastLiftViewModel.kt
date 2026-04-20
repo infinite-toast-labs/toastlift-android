@@ -501,12 +501,14 @@ private fun nextSessionExerciseCompletionSequence(exercises: List<SessionExercis
 internal fun pickNextSessionExerciseIndex(
     session: ActiveSession,
     random: Random = Random.Default,
+    equipmentFilter: String? = null,
 ): Int? {
     return pickNextSessionExerciseIndex(
         session = session,
         smartTargetMuscle = null,
         exerciseDetailsById = emptyMap(),
         random = random,
+        equipmentFilter = equipmentFilter,
     )
 }
 
@@ -515,10 +517,18 @@ internal fun pickNextSessionExerciseIndex(
     smartTargetMuscle: String?,
     exerciseDetailsById: Map<Long, ExerciseDetail>,
     random: Random = Random.Default,
+    equipmentFilter: String? = null,
 ): Int? {
+    val resolvedEquipmentFilter = resolveActiveSessionEquipmentFilter(
+        session = session,
+        equipmentFilter = equipmentFilter,
+    )
     val unstartedExercises = session.exercises
         .withIndex()
         .filter { (_, exercise) -> exercise.isNotStartedInActiveWorkout() }
+        .filter { (_, exercise) ->
+            resolvedEquipmentFilter == null || exercise.equipment.equals(resolvedEquipmentFilter, ignoreCase = true)
+        }
     if (unstartedExercises.isEmpty()) return null
     val normalizedTarget = normalizeMuscleToken(smartTargetMuscle)
     if (normalizedTarget.isBlank()) return unstartedExercises.random(random).index
@@ -2859,20 +2869,34 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
         persistActiveSessionState(selectedExerciseIndex = null)
     }
 
-    fun pickNextSessionExercise() {
+    fun pickNextSessionExercise(equipmentFilter: String? = null) {
         val session = uiState.activeSession ?: return
         val smartTargetMuscle = uiState.profile?.smartPickerTargetMuscle
+        val resolvedEquipmentFilter = resolveActiveSessionEquipmentFilter(
+            session = session,
+            equipmentFilter = equipmentFilter,
+        )
         viewModelScope.launch(Dispatchers.IO) {
             val untouchedExerciseIds = session.exercises
                 .filter(SessionExercise::isNotStartedInActiveWorkout)
+                .filter { exercise ->
+                    resolvedEquipmentFilter == null || exercise.equipment.equals(resolvedEquipmentFilter, ignoreCase = true)
+                }
                 .map(SessionExercise::exerciseId)
             val exerciseDetailsById = loadExerciseDetailsById(untouchedExerciseIds)
             val pickedExerciseIndex = pickNextSessionExerciseIndex(
                 session = session,
                 smartTargetMuscle = smartTargetMuscle,
                 exerciseDetailsById = exerciseDetailsById,
+                equipmentFilter = resolvedEquipmentFilter,
             ) ?: run {
-                uiState = uiState.copy(message = "No untouched exercises left. Pick an exercise already in progress.")
+                uiState = uiState.copy(
+                    message = if (resolvedEquipmentFilter == null) {
+                        "No untouched exercises left. Pick an exercise already in progress."
+                    } else {
+                        "No untouched $resolvedEquipmentFilter exercises left. Clear the equipment filter or pick an exercise already in progress."
+                    },
+                )
                 return@launch
             }
             val pickedExercise = session.exercises[pickedExerciseIndex]
