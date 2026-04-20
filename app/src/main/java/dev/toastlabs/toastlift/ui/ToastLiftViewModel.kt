@@ -519,10 +519,13 @@ internal fun pickNextSessionExerciseIndex(
     random: Random = Random.Default,
     equipmentFilter: String? = null,
 ): Int? {
-    val resolvedEquipmentFilter = resolveActiveSessionEquipmentFilter(
-        session = session,
-        equipmentFilter = equipmentFilter,
-    )
+    val normalizedEquipmentFilter = equipmentFilter?.trim()?.takeIf(String::isNotEmpty)
+    val resolvedEquipmentFilter = normalizedEquipmentFilter?.let { filter ->
+        resolveActiveSessionEquipmentFilter(
+            session = session,
+            equipmentFilter = filter,
+        ) ?: filter
+    }
     val unstartedExercises = session.exercises
         .withIndex()
         .filter { (_, exercise) -> exercise.isNotStartedInActiveWorkout() }
@@ -3022,16 +3025,62 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
         persistActiveSessionState(session = updatedSession)
     }
 
-    fun removeSessionExercise(exerciseIndex: Int) {
+    fun removeSessionExercise(
+        exerciseIndex: Int,
+        pickNextAfterRemoval: Boolean = false,
+        equipmentFilter: String? = null,
+    ) {
         val session = uiState.activeSession ?: return
         val removedExercise = session.exercises.getOrNull(exerciseIndex) ?: return
         val updatedExercises = session.exercises.filterIndexed { index, _ -> index != exerciseIndex }
+        val updatedSession = session.copy(exercises = updatedExercises)
+        if (pickNextAfterRemoval) {
+            val smartTargetMuscle = uiState.profile?.smartPickerTargetMuscle
+            val resolvedEquipmentFilter = resolveActiveSessionEquipmentFilter(
+                session = session,
+                equipmentFilter = equipmentFilter,
+            ) ?: equipmentFilter?.trim()?.takeIf(String::isNotEmpty)
+            viewModelScope.launch(Dispatchers.IO) {
+                val untouchedExerciseIds = updatedSession.exercises
+                    .filter(SessionExercise::isNotStartedInActiveWorkout)
+                    .filter { exercise ->
+                        resolvedEquipmentFilter == null || exercise.equipment.equals(resolvedEquipmentFilter, ignoreCase = true)
+                    }
+                    .map(SessionExercise::exerciseId)
+                val exerciseDetailsById = loadExerciseDetailsById(untouchedExerciseIds)
+                val pickedExerciseIndex = pickNextSessionExerciseIndex(
+                    session = updatedSession,
+                    smartTargetMuscle = smartTargetMuscle,
+                    exerciseDetailsById = exerciseDetailsById,
+                    equipmentFilter = resolvedEquipmentFilter,
+                )
+                val pickedExercise = pickedExerciseIndex?.let(updatedSession.exercises::getOrNull)
+                uiState = uiState.copy(
+                    activeSession = updatedSession,
+                    activeSessionExerciseIndex = pickedExerciseIndex,
+                    message = when {
+                        pickedExercise != null -> "${removedExercise.name} deleted. Next up: ${pickedExercise.name}."
+                        updatedExercises.isEmpty() -> "${removedExercise.name} deleted. Add another exercise or abandon the workout."
+                        else -> "${removedExercise.name} deleted from this workout."
+                    },
+                )
+                persistActiveSessionState(session = updatedSession, selectedExerciseIndex = pickedExerciseIndex)
+                if (session.origin == "generated") {
+                    container.workoutRepository.recordActiveSessionFeedbackSignal(
+                        session = session,
+                        exercise = removedExercise,
+                        signalType = WorkoutFeedbackSignalType.ACTIVE_SESSION_REMOVE,
+                    )
+                    refreshRecommendationBiasState(removedExercise.exerciseId)
+                }
+            }
+            return
+        }
         val updatedSelection = activeSessionSelectionAfterExerciseRemoval(
             selectedExerciseIndex = uiState.activeSessionExerciseIndex,
             removedExerciseIndex = exerciseIndex,
             remainingExerciseCount = updatedExercises.size,
         )
-        val updatedSession = session.copy(exercises = updatedExercises)
         uiState = uiState.copy(
             activeSession = updatedSession,
             activeSessionExerciseIndex = updatedSelection,

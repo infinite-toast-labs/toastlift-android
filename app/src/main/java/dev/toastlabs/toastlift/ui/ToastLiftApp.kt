@@ -6585,6 +6585,21 @@ private fun BuilderAddExercisesScreen(
                         }
                     },
                 )
+                IconButton(onClick = { showFilterScreen = true }) {
+                    Icon(
+                        imageVector = Icons.Rounded.FilterList,
+                        contentDescription = if (state.libraryFilters.activeCount() == 0) {
+                            "Open filters"
+                        } else {
+                            "Open filters, ${state.libraryFilters.activeCount()} active"
+                        },
+                        tint = if (state.libraryFilters.activeCount() == 0) {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        } else {
+                            MaterialTheme.colorScheme.primary
+                        },
+                    )
+                }
             } else {
                 OutlinedButton(onClick = { showFilterScreen = true }) {
                     Icon(
@@ -7097,7 +7112,7 @@ private fun ActiveSessionScreen(
     onToggleComplete: (Int, Int) -> Unit,
     onAddSet: (Int) -> Unit,
     onDeleteSet: (Int, Int) -> Unit,
-    onDeleteExercise: (Int) -> Unit,
+    onDeleteExercise: (Int, Boolean, String?) -> Unit,
     onLogSet: (Int) -> Unit,
     onLogAllSets: (Int) -> Unit,
     onTogglePauseSession: () -> Unit,
@@ -7172,6 +7187,9 @@ private fun ActiveSessionScreen(
             onToggleComplete = onToggleComplete,
             onAddSet = onAddSet,
             onDeleteSet = onDeleteSet,
+            onDeleteExercise = { exerciseIndexToDelete ->
+                onDeleteExercise(exerciseIndexToDelete, true, selectedEquipmentFilter)
+            },
             onLogSet = onLogSet,
             onLogAllSets = onLogAllSets,
             onUpdateExerciseRir = onUpdateExerciseRir,
@@ -7364,7 +7382,7 @@ private fun ActiveSessionScreen(
                 onDismiss = { pendingExerciseDeletionIndex = null },
                 onConfirm = {
                     pendingExerciseDeletionIndex = null
-                    onDeleteExercise(exerciseIndex)
+                    onDeleteExercise(exerciseIndex, false, null)
                 },
             )
         }
@@ -8396,16 +8414,20 @@ private fun SessionExerciseDetailScreen(
     onToggleComplete: (Int, Int) -> Unit,
     onAddSet: (Int) -> Unit,
     onDeleteSet: (Int, Int) -> Unit,
+    onDeleteExercise: (Int) -> Unit,
     onLogSet: (Int) -> Unit,
     onLogAllSets: (Int) -> Unit,
     onUpdateExerciseRir: (Int, Int) -> Unit,
     onFinishExercise: (Int) -> Unit,
 ) {
     val allSetsCompleted = exercise.sets.isNotEmpty() && exercise.sets.all { it.completed }
+    val completedSets = exercise.sets.count { it.completed }
     val currentSetNumbers = exercise.sets.associate { it.id to it.setNumber }
     val currentSetNumberSnapshot = exercise.sets.map { it.id to it.setNumber }
     var animatedSetNumbers by remember(exercise.exerciseId) { mutableStateOf(currentSetNumbers) }
     var committedSetNumbers by remember(exercise.exerciseId) { mutableStateOf(currentSetNumbers) }
+    var showMenu by remember { mutableStateOf(false) }
+    var showDeleteConfirm by remember { mutableStateOf(false) }
     LaunchedEffect(exercise.exerciseId, currentSetNumberSnapshot) {
         val sameSetIds = committedSetNumbers.keys == currentSetNumbers.keys
         val numbersChanged = committedSetNumbers != currentSetNumbers
@@ -8472,19 +8494,41 @@ private fun SessionExerciseDetailScreen(
                 ) {
                     Icon(imageVector = Icons.Rounded.Close, contentDescription = "Back to workout")
                 }
-                OutlinedButton(
-                    onClick = onShowExerciseDetail,
+                Row(
                     modifier = Modifier
                         .align(Alignment.TopEnd)
                         .padding(horizontal = 16.dp, vertical = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Info,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp),
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Details")
+                    OutlinedButton(onClick = onShowExerciseDetail) {
+                        Icon(
+                            imageVector = Icons.Rounded.Info,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Details")
+                    }
+                    Box {
+                        IconButton(onClick = { showMenu = true }) {
+                            Text(
+                                "⋮",
+                                modifier = Modifier.semantics { contentDescription = "Exercise actions" },
+                                style = MaterialTheme.typography.titleLarge,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                        }
+                        DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
+                            DropdownMenuItem(
+                                text = { Text("Delete exercise") },
+                                onClick = {
+                                    showMenu = false
+                                    showDeleteConfirm = true
+                                },
+                            )
+                        }
+                    }
                 }
                 Column(
                     modifier = Modifier
@@ -8548,6 +8592,23 @@ private fun SessionExerciseDetailScreen(
                 }
             }
         }
+    }
+    if (showDeleteConfirm) {
+        val deleteMessage = if (completedSets > 0) {
+            "This removes ${exercise.name} and its $completedSets logged set${if (completedSets == 1) "" else "s"} from the workout."
+        } else {
+            "This removes ${exercise.name} from the workout."
+        }
+        ConfirmActionDialog(
+            title = "Delete exercise?",
+            message = deleteMessage,
+            confirmLabel = "Delete",
+            onDismiss = { showDeleteConfirm = false },
+            onConfirm = {
+                showDeleteConfirm = false
+                onDeleteExercise(exerciseIndex)
+            },
+        )
     }
 }
 
@@ -9373,7 +9434,7 @@ private fun ExerciseDetailSheet(
                     Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         Text("Learned preference", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                         Text(
-                            "Read-only score from workout feedback signals. Adding an exercise pushes it up, removing it pushes it down.",
+                            "Read-only score from workout feedback signals. Adding an exercise pushes it up. Removals do not change it.",
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             style = MaterialTheme.typography.bodyMedium,
                         )

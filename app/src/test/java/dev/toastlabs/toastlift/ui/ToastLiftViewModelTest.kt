@@ -395,6 +395,28 @@ class ToastLiftViewModelTest {
     }
 
     @Test
+    fun pickNextSessionExerciseIndex_withRemovedFilteredExercise_keepsEquipmentFilterApplied() {
+        val sessionAfterDeletingMachineExercise = ActiveSession(
+            title = "Gym Upper Day",
+            origin = "generated",
+            locationModeId = 2L,
+            startedAtUtc = "2026-03-20T10:00:00Z",
+            exercises = listOf(
+                sessionExercise(id = 101L, name = "Bench Press", equipment = "Barbell", completedSets = listOf(false, false, false)),
+                sessionExercise(id = 202L, name = "Cable Row", equipment = "Cable", completedSets = listOf(false, false, false)),
+            ),
+        )
+
+        assertNull(
+            pickNextSessionExerciseIndex(
+                session = sessionAfterDeletingMachineExercise,
+                equipmentFilter = "Machine",
+                random = Random(0),
+            ),
+        )
+    }
+
+    @Test
     fun pickNextSessionExerciseIndex_prioritizesUntouchedExerciseThatBestMatchesSavedMuscleTarget() {
         val session = ActiveSession(
             title = "Pull Day",

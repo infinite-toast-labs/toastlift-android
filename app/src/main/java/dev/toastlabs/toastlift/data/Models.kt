@@ -55,9 +55,9 @@ enum class WorkoutFeedbackSignalType(
     val recommendationDelta: Double,
 ) {
     GENERATED_PLAN_MANUAL_ADD("generated_plan_manual_add", 1.0),
-    GENERATED_PLAN_REMOVE("generated_plan_remove", -1.0),
+    GENERATED_PLAN_REMOVE("generated_plan_remove", 0.0),
     ACTIVE_SESSION_MANUAL_ADD("active_session_manual_add", 1.0),
-    ACTIVE_SESSION_REMOVE("active_session_remove", -1.0),
+    ACTIVE_SESSION_REMOVE("active_session_remove", 0.0),
     SKIPPED_EXERCISE_DISLIKED("skipped_exercise_disliked", -1.0),
     SKIPPED_EXERCISE_DISMISSED("skipped_exercise_dismissed", 0.0),
     ;
