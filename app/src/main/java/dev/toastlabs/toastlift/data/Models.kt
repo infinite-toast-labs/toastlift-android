@@ -296,6 +296,7 @@ data class UserProfile(
     val devFruitExerciseIconsEnabled: Boolean = false,
     val devExerciseDetailPersonalNoteVisible: Boolean = true,
     val devExerciseDetailLearnedPreferenceVisible: Boolean = true,
+    val devRestTimerSoundDisabled: Boolean = false,
 )
 
 data class WorkoutExercise(

@@ -16,7 +16,8 @@ class UserRepository(private val database: ToastLiftDatabase) {
                    theme_preference, smart_picker_body_filter, smart_picker_target_muscle,
                    gym_machine_cable_bias_enabled, history_workout_ab_flags_visible,
                    dev_pick_next_exercise_enabled, dev_fruit_exercise_icons_enabled,
-                   dev_exercise_detail_personal_note_visible, dev_exercise_detail_learned_preference_visible
+                   dev_exercise_detail_personal_note_visible, dev_exercise_detail_learned_preference_visible,
+                   dev_rest_timer_sound_disabled
             FROM user_profile
             WHERE user_id = 1
             """.trimIndent(),
@@ -43,6 +44,7 @@ class UserRepository(private val database: ToastLiftDatabase) {
                 devFruitExerciseIconsEnabled = cursor.getInt(14) == 1,
                 devExerciseDetailPersonalNoteVisible = cursor.getInt(15) == 1,
                 devExerciseDetailLearnedPreferenceVisible = cursor.getInt(16) == 1,
+                devRestTimerSoundDisabled = cursor.getInt(17) == 1,
             )
         }
     }
@@ -230,6 +232,14 @@ class UserRepository(private val database: ToastLiftDatabase) {
         )
     }
 
+    fun saveDevRestTimerSoundDisabled(disabled: Boolean) {
+        val db = database.open()
+        db.execSQL(
+            "UPDATE user_profile SET dev_rest_timer_sound_disabled = ?, updated_at_utc = ? WHERE user_id = 1",
+            arrayOf(if (disabled) 1 else 0, Instant.now().toString()),
+        )
+    }
+
     fun loadNextFocus(): String? {
         val db = database.open()
         return db.rawQuery(
@@ -324,6 +334,7 @@ class UserRepository(private val database: ToastLiftDatabase) {
                 p.dev_fruit_exercise_icons_enabled,
                 p.dev_exercise_detail_personal_note_visible,
                 p.dev_exercise_detail_learned_preference_visible,
+                p.dev_rest_timer_sound_disabled,
                 p.next_focus,
                 p.created_at_utc,
                 p.updated_at_utc
@@ -355,9 +366,10 @@ class UserRepository(private val database: ToastLiftDatabase) {
                 .put("dev_fruit_exercise_icons_enabled", cursor.getInt(16) == 1)
                 .put("dev_exercise_detail_personal_note_visible", cursor.getInt(17) == 1)
                 .put("dev_exercise_detail_learned_preference_visible", cursor.getInt(18) == 1)
-                .put("next_focus", cursor.getString(19))
-                .put("created_at_utc", cursor.getString(20))
-                .put("updated_at_utc", cursor.getString(21))
+                .put("dev_rest_timer_sound_disabled", cursor.getInt(19) == 1)
+                .put("next_focus", cursor.getString(20))
+                .put("created_at_utc", cursor.getString(21))
+                .put("updated_at_utc", cursor.getString(22))
         }
     }
 

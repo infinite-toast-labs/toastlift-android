@@ -1,8 +1,10 @@
 package dev.toastlabs.toastlift.ui
 
 import android.content.ActivityNotFoundException
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.provider.Settings
 import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -219,6 +221,7 @@ import dev.toastlabs.toastlift.data.MIN_WEEKLY_FREQUENCY
 import dev.toastlabs.toastlift.data.MIN_WORKOUT_DURATION_MINUTES
 import dev.toastlabs.toastlift.data.OnboardingDraft
 import dev.toastlabs.toastlift.data.RecommendationBias
+import dev.toastlabs.toastlift.data.RestTimerNotificationContract
 import dev.toastlabs.toastlift.data.SessionExercise
 import dev.toastlabs.toastlift.data.SessionSet
 import dev.toastlabs.toastlift.data.SessionOutcomeTier
@@ -839,6 +842,8 @@ fun ToastLiftApp(
                     onDeleteExercise = viewModel::removeSessionExercise,
                     onLogSet = viewModel::logNextSessionSet,
                     onLogAllSets = viewModel::logAllSessionSets,
+                    onCancelRestTimer = viewModel::cancelRestTimer,
+                    onDismissRestTimer = viewModel::dismissFinishedRestTimer,
                     onTogglePauseSession = viewModel::toggleSessionPause,
                     onUpdateExerciseRir = viewModel::updateSessionExerciseRepsInReserve,
                     onFinishExercise = viewModel::finishSessionExercise,
@@ -5330,6 +5335,7 @@ private fun HistoryEntryCard(
 
 @Composable
 private fun ProfileScreen(state: AppUiState, viewModel: ToastLiftViewModel) {
+    val context = LocalContext.current
     ProfileEditor(
         title = "Profile",
         subtitle = "Settings are grouped into compact cards. Equipment configuration lives in bottom sheets.",
@@ -5353,10 +5359,25 @@ private fun ProfileScreen(state: AppUiState, viewModel: ToastLiftViewModel) {
         onSetDevFruitExerciseIconsEnabled = viewModel::setDevFruitExerciseIconsEnabled,
         onSetDevExerciseDetailPersonalNoteVisible = viewModel::setDevExerciseDetailPersonalNoteVisible,
         onSetDevExerciseDetailLearnedPreferenceVisible = viewModel::setDevExerciseDetailLearnedPreferenceVisible,
+        onSetDevRestTimerSoundDisabled = viewModel::setDevRestTimerSoundDisabled,
+        onOpenRestTimerSoundSettings = { openRestTimerSoundSettings(context) },
         onExportPersonalData = viewModel::preparePersonalDataExport,
         onDeletePersonalData = viewModel::deleteAllPersonalData,
         showAppearanceSettings = true,
     )
+}
+
+private fun openRestTimerSoundSettings(context: Context) {
+    val channelIntent = Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS)
+        .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+        .putExtra(Settings.EXTRA_CHANNEL_ID, RestTimerNotificationContract.CHANNEL_ID)
+    val fallbackIntent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+        .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+    try {
+        context.startActivity(channelIntent)
+    } catch (_: ActivityNotFoundException) {
+        context.startActivity(fallbackIntent)
+    }
 }
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -5384,6 +5405,8 @@ private fun ProfileEditor(
     onSetDevFruitExerciseIconsEnabled: ((Boolean) -> Unit)? = null,
     onSetDevExerciseDetailPersonalNoteVisible: ((Boolean) -> Unit)? = null,
     onSetDevExerciseDetailLearnedPreferenceVisible: ((Boolean) -> Unit)? = null,
+    onSetDevRestTimerSoundDisabled: ((Boolean) -> Unit)? = null,
+    onOpenRestTimerSoundSettings: (() -> Unit)? = null,
     onExportPersonalData: (() -> Unit)? = null,
     onDeletePersonalData: (() -> Unit)? = null,
     showAppearanceSettings: Boolean = false,
@@ -5608,7 +5631,9 @@ private fun ProfileEditor(
                     onSetDevPickNextExerciseEnabled != null ||
                     onSetDevFruitExerciseIconsEnabled != null ||
                     onSetDevExerciseDetailPersonalNoteVisible != null ||
-                    onSetDevExerciseDetailLearnedPreferenceVisible != null
+                    onSetDevExerciseDetailLearnedPreferenceVisible != null ||
+                    onSetDevRestTimerSoundDisabled != null ||
+                    onOpenRestTimerSoundSettings != null
             )
         ) {
             CompactSectionCard(
@@ -5661,6 +5686,22 @@ private fun ProfileEditor(
                         supportingText = "Controls the Learned preference card on the shared exercise detail sheet used across the app.",
                         checked = profile.devExerciseDetailLearnedPreferenceVisible,
                         onCheckedChange = onToggle,
+                    )
+                }
+                onSetDevRestTimerSoundDisabled?.let { onToggle ->
+                    SettingsSwitchRow(
+                        label = "Disable rest timer sound",
+                        supportingText = "Keeps automatic rest timers visible but suppresses the completion beeps entirely.",
+                        checked = profile.devRestTimerSoundDisabled,
+                        onCheckedChange = onToggle,
+                    )
+                }
+                onOpenRestTimerSoundSettings?.let { openSettings ->
+                    CompactRow(
+                        title = "Rest timer sound",
+                        subtitle = "Change the default completion sound in Android notification settings.",
+                        actionLabel = "Open",
+                        onAction = openSettings,
                     )
                 }
             }
@@ -7206,6 +7247,8 @@ private fun ActiveSessionScreen(
     onDeleteExercise: (Int, Boolean, String?) -> Unit,
     onLogSet: (Int) -> Unit,
     onLogAllSets: (Int) -> Unit,
+    onCancelRestTimer: () -> Unit,
+    onDismissRestTimer: () -> Unit,
     onTogglePauseSession: () -> Unit,
     onUpdateExerciseRir: (Int, Int) -> Unit,
     onFinishExercise: (Int) -> Unit,
@@ -7284,6 +7327,9 @@ private fun ActiveSessionScreen(
             snackbarHostState = snackbarHostState,
             onLogSet = onLogSet,
             onLogAllSets = onLogAllSets,
+            restTimer = state.restTimer?.takeIf { timer -> timer.exerciseId == selectedExercise.exerciseId },
+            onCancelRestTimer = onCancelRestTimer,
+            onDismissRestTimer = onDismissRestTimer,
             onUpdateExerciseRir = onUpdateExerciseRir,
             onFinishExercise = onFinishExercise,
         )
@@ -8537,6 +8583,9 @@ private fun SessionExerciseDetailScreen(
     snackbarHostState: SnackbarHostState,
     onLogSet: (Int) -> Unit,
     onLogAllSets: (Int) -> Unit,
+    restTimer: RestTimerUiState?,
+    onCancelRestTimer: () -> Unit,
+    onDismissRestTimer: () -> Unit,
     onUpdateExerciseRir: (Int, Int) -> Unit,
     onFinishExercise: (Int) -> Unit,
 ) {
@@ -8671,6 +8720,15 @@ private fun SessionExerciseDetailScreen(
                     .padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
+                restTimer?.let { activeRestTimer ->
+                    item {
+                        RestTimerCard(
+                            timer = activeRestTimer,
+                            onCancel = onCancelRestTimer,
+                            onDone = onDismissRestTimer,
+                        )
+                    }
+                }
                 itemsIndexed(
                     items = exercise.sets,
                     key = { _, set -> set.id },
@@ -8731,6 +8789,98 @@ private fun SessionExerciseDetailScreen(
             },
         )
     }
+}
+
+@Composable
+private fun RestTimerCard(
+    timer: RestTimerUiState,
+    onCancel: () -> Unit,
+    onDone: () -> Unit,
+) {
+    val nowMillis by produceState(System.currentTimeMillis(), timer.startedAtEpochMillis, timer.status) {
+        while (true) {
+            value = System.currentTimeMillis()
+            delay(if (timer.status == RestTimerStatus.Running) 250L else 1_000L)
+        }
+    }
+    val remainingSeconds = when (timer.status) {
+        RestTimerStatus.Running -> timer.remainingSeconds(nowMillis)
+        RestTimerStatus.Finished -> 0
+    }
+    val progress = if (timer.durationSeconds <= 0) {
+        1f
+    } else {
+        1f - (remainingSeconds / timer.durationSeconds.toFloat())
+    }.coerceIn(0f, 1f)
+    val title = when (timer.status) {
+        RestTimerStatus.Running -> "Rest Timer"
+        RestTimerStatus.Finished -> "Rest Complete"
+    }
+    val subtitle = when (timer.status) {
+        RestTimerStatus.Running -> "Prescribed rest for ${timer.exerciseName}"
+        RestTimerStatus.Finished -> "Ready for the next set"
+    }
+    FeatureCard(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.72f)) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black)
+                    Text(
+                        subtitle,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.78f),
+                    )
+                }
+                Text(
+                    formatRestTimerTime(remainingSeconds),
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Black,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                )
+            }
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(8.dp)
+                    .clip(RoundedCornerShape(999.dp))
+                    .background(MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.16f)),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxHeight()
+                        .fillMaxWidth(progress)
+                        .clip(RoundedCornerShape(999.dp))
+                        .background(MaterialTheme.colorScheme.primary),
+                )
+            }
+            when (timer.status) {
+                RestTimerStatus.Running -> {
+                    OutlinedButton(onClick = onCancel, modifier = Modifier.fillMaxWidth()) {
+                        Text("Cancel Timer")
+                    }
+                }
+                RestTimerStatus.Finished -> {
+                    Button(onClick = onDone, modifier = Modifier.fillMaxWidth()) {
+                        Text("Done")
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun formatRestTimerTime(totalSeconds: Int): String {
+    val safeSeconds = totalSeconds.coerceAtLeast(0)
+    val minutes = safeSeconds / 60
+    val seconds = safeSeconds % 60
+    return "%d:%02d".format(Locale.US, minutes, seconds)
 }
 
 @Composable

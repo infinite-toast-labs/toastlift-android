@@ -148,12 +148,33 @@ internal data class ActiveSessionGeneratedExerciseState(
     val seenExerciseIds: Set<Long> = emptySet(),
 )
 
+internal enum class RestTimerStatus {
+    Running,
+    Finished,
+}
+
+internal data class RestTimerUiState(
+    val exerciseId: Long,
+    val exerciseName: String,
+    val durationSeconds: Int,
+    val startedAtEpochMillis: Long,
+    val endsAtEpochMillis: Long,
+    val status: RestTimerStatus = RestTimerStatus.Running,
+    val autoDismissAtEpochMillis: Long? = null,
+) {
+    fun remainingSeconds(nowEpochMillis: Long = System.currentTimeMillis()): Int {
+        val remainingMillis = (endsAtEpochMillis - nowEpochMillis).coerceAtLeast(0L)
+        return ((remainingMillis + 999L) / 1000L).toInt()
+    }
+}
+
 private const val UPCOMING_PROGRAM_SESSIONS_LIMIT = 4
 internal const val PROFILE_SAVED_MESSAGE = "Profile saved."
 private const val ANALYTICS_ROLE_WEIGHT_PRIME = 1.0
 private const val ANALYTICS_ROLE_WEIGHT_SECONDARY = 0.55
 private const val ANALYTICS_ROLE_WEIGHT_TERTIARY = 0.3
 private const val ANALYTICS_UNILATERAL_TARGET_SHARE = 0.33
+private const val REST_TIMER_DONE_AUTO_DISMISS_MS = 15_000L
 
 private val ANALYTICS_BASE_WEEKLY_STIMULUS = mapOf(
     "Strength" to 8.5,
@@ -339,6 +360,7 @@ internal data class AppUiState(
     val completionReceipt: CompletionReceiptUiState? = null,
     val activeSession: ActiveSession? = null,
     val activeSessionExerciseIndex: Int? = null,
+    val restTimer: RestTimerUiState? = null,
     val activeSessionAddExerciseVisible: Boolean = false,
     val activeSessionAddExerciseMode: ActiveSessionAddExerciseMode = ActiveSessionAddExerciseMode.Choice,
     val activeSessionGeneratedExercise: ActiveSessionGeneratedExerciseState = ActiveSessionGeneratedExerciseState(),
@@ -1603,6 +1625,8 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
         private set
 
     private var customExerciseNameLookupJob: Job? = null
+    private var restTimerJob: Job? = null
+    private var restTimerSoundJob: Job? = null
     private val exercisePrescriptionEngine = dev.toastlabs.toastlift.data.ExercisePrescriptionEngine()
 
     init {
@@ -1909,6 +1933,24 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
+    fun setDevRestTimerSoundDisabled(disabled: Boolean) {
+        val profile = uiState.profile ?: return
+        uiState = uiState.copy(
+            profile = profile.copy(devRestTimerSoundDisabled = disabled),
+            message = if (disabled) {
+                "Rest timer sound disabled."
+            } else {
+                "Rest timer sound enabled."
+            },
+        )
+        if (disabled) {
+            restTimerSoundJob?.cancel()
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            container.userRepository.saveDevRestTimerSoundDisabled(disabled)
+        }
+    }
+
     fun toggleEquipment(locationModeId: Long, equipment: String) {
         viewModelScope.launch(Dispatchers.IO) {
             val before = container.userRepository.loadEquipmentForLocation(locationModeId)
@@ -1983,6 +2025,7 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     fun deleteAllPersonalData() {
+        cancelRestTimer()
         viewModelScope.launch(Dispatchers.IO) {
             container.userRepository.deleteAllPersonalData()
             container.customExerciseRepository.deleteAllCustomExercisesAndSnapshot()
@@ -2952,7 +2995,8 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
         val exercise = updatedExercises[exerciseIndex]
         val updatedSets = exercise.sets.toMutableList()
         val targetSet = updatedSets[setIndex]
-        updatedSets[setIndex] = targetSet.copy(completed = !targetSet.completed)
+        val willCompleteSet = !targetSet.completed
+        updatedSets[setIndex] = targetSet.copy(completed = willCompleteSet)
         val prioritizedSetId = updatedSets[setIndex].id.takeIf { updatedSets[setIndex].completed }
         val reorderedSets = reorderActiveSessionSets(
             sets = updatedSets,
@@ -2971,6 +3015,9 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
         val updatedSession = session.copy(exercises = updatedExercises)
         uiState = uiState.copy(activeSession = updatedSession)
         persistActiveSessionState(session = updatedSession)
+        if (willCompleteSet) {
+            startRestTimerForExercise(exercise)
+        }
     }
 
     fun addSessionSet(exerciseIndex: Int) {
@@ -3105,16 +3152,39 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
 
     fun logNextSessionSet(exerciseIndex: Int) {
         val session = uiState.activeSession ?: return
+        val exercise = session.exercises.getOrNull(exerciseIndex) ?: return
+        val completedBefore = exercise.sets.count(SessionSet::completed)
         val updatedSession = logNextSessionSetInActiveSession(session, exerciseIndex)
         uiState = uiState.copy(activeSession = updatedSession)
         persistActiveSessionState(session = updatedSession)
+        val completedAfter = updatedSession.exercises.getOrNull(exerciseIndex)?.sets?.count(SessionSet::completed) ?: completedBefore
+        if (completedAfter > completedBefore) {
+            startRestTimerForExercise(exercise)
+        }
     }
 
     fun logAllSessionSets(exerciseIndex: Int) {
         val session = uiState.activeSession ?: return
+        val exercise = session.exercises.getOrNull(exerciseIndex) ?: return
+        val completedBefore = exercise.sets.count(SessionSet::completed)
         val updatedSession = logAllSessionSetsInActiveSession(session, exerciseIndex)
         uiState = uiState.copy(activeSession = updatedSession)
         persistActiveSessionState(session = updatedSession)
+        val completedAfter = updatedSession.exercises.getOrNull(exerciseIndex)?.sets?.count(SessionSet::completed) ?: completedBefore
+        if (completedAfter > completedBefore) {
+            startRestTimerForExercise(exercise)
+        }
+    }
+
+    fun cancelRestTimer() {
+        restTimerJob?.cancel()
+        restTimerSoundJob?.cancel()
+        uiState = uiState.copy(restTimer = null)
+    }
+
+    fun dismissFinishedRestTimer() {
+        restTimerSoundJob?.cancel()
+        uiState = uiState.copy(restTimer = null)
     }
 
     fun updateSessionExerciseRepsInReserve(exerciseIndex: Int, repsInReserve: Int) {
@@ -3383,6 +3453,7 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     fun completeSession() {
+        cancelRestTimer()
         viewModelScope.launch(Dispatchers.IO) {
             val session = uiState.activeSession ?: return@launch
             if (!canFinishActiveSession(session.exercises.size)) {
@@ -4512,6 +4583,7 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
 
     fun cancelSession() {
         val session = uiState.activeSession ?: return
+        cancelRestTimer()
         viewModelScope.launch(Dispatchers.IO) {
             container.workoutRepository.saveAbandonedWorkout(session)
             container.workoutRepository.clearActiveSession()
@@ -5132,6 +5204,51 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
             } else {
                 container.workoutRepository.saveActiveSession(session, selectedExerciseIndex)
             }
+        }
+    }
+
+    private fun startRestTimerForExercise(exercise: SessionExercise) {
+        val durationSeconds = exercise.restSeconds.coerceAtLeast(1)
+        val now = System.currentTimeMillis()
+        val timer = RestTimerUiState(
+            exerciseId = exercise.exerciseId,
+            exerciseName = exercise.name,
+            durationSeconds = durationSeconds,
+            startedAtEpochMillis = now,
+            endsAtEpochMillis = now + durationSeconds * 1000L,
+        )
+        restTimerJob?.cancel()
+        restTimerSoundJob?.cancel()
+        uiState = uiState.copy(restTimer = timer)
+        restTimerJob = viewModelScope.launch {
+            delay((timer.endsAtEpochMillis - System.currentTimeMillis()).coerceAtLeast(0L))
+            finishRestTimer(timer)
+        }
+    }
+
+    private suspend fun finishRestTimer(timer: RestTimerUiState) {
+        val current = uiState.restTimer ?: return
+        if (current.startedAtEpochMillis != timer.startedAtEpochMillis || current.exerciseId != timer.exerciseId) {
+            return
+        }
+        val now = System.currentTimeMillis()
+        val finishedTimer = current.copy(
+            status = RestTimerStatus.Finished,
+            autoDismissAtEpochMillis = now + REST_TIMER_DONE_AUTO_DISMISS_MS,
+        )
+        uiState = uiState.copy(restTimer = finishedTimer)
+        if (uiState.profile?.devRestTimerSoundDisabled != true) {
+            restTimerSoundJob = viewModelScope.launch {
+                container.restTimerNotifier.playCompletionBeeps()
+            }
+        }
+        delay(REST_TIMER_DONE_AUTO_DISMISS_MS)
+        val pending = uiState.restTimer
+        if (
+            pending?.startedAtEpochMillis == finishedTimer.startedAtEpochMillis &&
+            pending.status == RestTimerStatus.Finished
+        ) {
+            uiState = uiState.copy(restTimer = null)
         }
     }
 
