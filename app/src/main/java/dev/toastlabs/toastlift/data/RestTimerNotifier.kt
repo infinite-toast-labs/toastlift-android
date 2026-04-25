@@ -41,21 +41,16 @@ class RestTimerNotifier(context: Context) {
         } else {
             RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION) ?: return
         }
-        repeat(3) { index ->
-            val ringtone = RingtoneManager.getRingtone(appContext, soundUri) ?: return
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                ringtone.audioAttributes = notificationAudioAttributes()
-            }
-            ringtone.play()
-            try {
-                delay(700)
-            } finally {
-                if (ringtone.isPlaying) {
-                    ringtone.stop()
-                }
-            }
-            if (index < 2) {
-                delay(550)
+        val ringtone = RingtoneManager.getRingtone(appContext, soundUri) ?: return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            ringtone.audioAttributes = notificationAudioAttributes()
+        }
+        ringtone.play()
+        try {
+            delay(900)
+        } finally {
+            if (ringtone.isPlaying) {
+                ringtone.stop()
             }
         }
     }

@@ -1748,6 +1748,7 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
             } ?: container.workoutRepository.loadActiveSession()?.let { persisted ->
                 persisted.copy(session = sanitizeActiveSessionCompletionState(persisted.session))
             }
+            val effectiveActiveSession = uiState.activeSession ?: restoredActiveSession?.session
             val todayCompletionFeedbackVariant = if (profile != null) {
                 container.experimentRepository.loadTodayCompletionFeedbackVariant()
             } else {
@@ -1786,7 +1787,7 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
                 todayCompletionFeedbackVariant = todayCompletionFeedbackVariant,
                 todayWorkoutCompletion = todayWorkoutCompletion,
                 todayReceiptRecap = todayReceiptRecap,
-                activeSession = uiState.activeSession ?: restoredActiveSession?.session,
+                activeSession = effectiveActiveSession,
                 activeSessionExerciseIndex = uiState.activeSessionExerciseIndex ?: restoredActiveSession?.selectedExerciseIndex,
                 selectedHistoryDetail = if (selectedHistoryDetail != null) {
                     container.workoutRepository.loadHistoryDetail(selectedHistoryDetail.id)
@@ -1804,6 +1805,7 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
                 debugReceiptLaunch = uiState.debugReceiptLaunch,
                 message = null,
             )
+            syncActiveWorkoutNotification(effectiveActiveSession)
         }
     }
 
@@ -2032,6 +2034,7 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
             container.userRepository.deleteAllPersonalData()
             container.customExerciseRepository.deleteAllCustomExercisesAndSnapshot()
             container.workoutRepository.clearActiveSession()
+            syncActiveWorkoutNotification(null)
             container.workoutRepository.clearAbandonedWorkout()
             val splitPrograms = container.userRepository.loadSplitPrograms()
             val locationModes = container.userRepository.loadLocationModes()
@@ -2674,6 +2677,7 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
             val session = buildActiveSession(workout)
             container.workoutRepository.clearAbandonedWorkout()
             container.workoutRepository.saveActiveSession(session, null)
+            syncActiveWorkoutNotification(session)
             refreshAll()
             uiState = uiState.copy(
                 activeSession = session,
@@ -2704,6 +2708,7 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
             val session = buildActiveSession(workout)
             container.workoutRepository.clearAbandonedWorkout()
             container.workoutRepository.saveActiveSession(session, null)
+            syncActiveWorkoutNotification(session)
             refreshAll()
             uiState = uiState.copy(
                 activeSession = session,
@@ -2726,6 +2731,7 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
             container.workoutRepository.clearAbandonedWorkout()
             val session = buildActiveSession(workout)
             container.workoutRepository.saveActiveSession(session, null)
+            syncActiveWorkoutNotification(session)
             refreshAll()
             uiState = uiState.copy(
                 activeSession = session,
@@ -2841,6 +2847,7 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
             val session = buildActiveSession(workout)
             container.workoutRepository.clearAbandonedWorkout()
             container.workoutRepository.saveActiveSession(session, null)
+            syncActiveWorkoutNotification(session)
             refreshAll()
             uiState = uiState.copy(
                 todayEditingTemplateId = null,
@@ -3490,6 +3497,7 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
                 ),
             )
             container.workoutRepository.clearActiveSession()
+            syncActiveWorkoutNotification(null)
             if (session.focusKey != null && splitName != null) {
                 container.userRepository.saveNextFocus(
                     container.generatorRepository.nextFocusAfter(splitName, session.focusKey),
@@ -4592,6 +4600,7 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
         viewModelScope.launch(Dispatchers.IO) {
             container.workoutRepository.saveAbandonedWorkout(session)
             container.workoutRepository.clearActiveSession()
+            syncActiveWorkoutNotification(null)
             refreshAll()
             uiState = uiState.copy(
                 activeSession = null,
@@ -4610,6 +4619,7 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
             val restoredSession = ensureSessionFruitIcons(abandoned)
             container.workoutRepository.clearAbandonedWorkout()
             container.workoutRepository.saveActiveSession(restoredSession, null)
+            syncActiveWorkoutNotification(restoredSession)
             refreshAll()
             uiState = uiState.copy(
                 activeSession = restoredSession,
@@ -4819,6 +4829,7 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
             val activeSession = buildActiveSession(workout)
             container.workoutRepository.clearAbandonedWorkout()
             container.workoutRepository.saveActiveSession(activeSession, null)
+            syncActiveWorkoutNotification(activeSession)
 
             uiState = uiState.copy(
                 activeSession = activeSession,
@@ -5203,12 +5214,21 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
         session: ActiveSession? = uiState.activeSession,
         selectedExerciseIndex: Int? = uiState.activeSessionExerciseIndex,
     ) {
+        syncActiveWorkoutNotification(session)
         viewModelScope.launch(Dispatchers.IO) {
             if (session == null) {
                 container.workoutRepository.clearActiveSession()
             } else {
                 container.workoutRepository.saveActiveSession(session, selectedExerciseIndex)
             }
+        }
+    }
+
+    private fun syncActiveWorkoutNotification(session: ActiveSession?) {
+        if (session == null) {
+            container.workoutNotificationNotifier.cancelActiveWorkout()
+        } else {
+            container.workoutNotificationNotifier.showActiveWorkout(session.title)
         }
     }
 

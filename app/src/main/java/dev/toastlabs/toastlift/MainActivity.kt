@@ -1,6 +1,9 @@
 package dev.toastlabs.toastlift
 
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -28,6 +31,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         applyDebugLaunchOverrides(intent)
+        requestNotificationPermissionIfNeeded()
 
         setContent {
             ToastLiftApp(
@@ -108,7 +112,14 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun requestNotificationPermissionIfNeeded() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
+        if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) return
+        requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), REQUEST_POST_NOTIFICATIONS)
+    }
+
     private companion object {
+        const val REQUEST_POST_NOTIFICATIONS = 5101
         const val EXTRA_DEBUG_TAB = "dev.toastlabs.toastlift.extra.DEBUG_TAB"
         const val EXTRA_DEBUG_THEME = "dev.toastlabs.toastlift.extra.DEBUG_THEME"
         const val EXTRA_DEBUG_SURFACE = "dev.toastlabs.toastlift.extra.DEBUG_SURFACE"
