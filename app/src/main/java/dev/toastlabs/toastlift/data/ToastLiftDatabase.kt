@@ -511,6 +511,12 @@ class ToastLiftDatabase(private val context: Context) {
             column = "recommendation_confidence",
             definition = "REAL",
         )
+        ensureColumn(
+            db = db,
+            table = "performed_sets",
+            column = "completed_at_utc",
+            definition = "TEXT",
+        )
         db.execSQL(
             "CREATE INDEX IF NOT EXISTS idx_performed_exercises_exercise_id ON performed_exercises (exercise_id)",
         )
@@ -637,6 +643,12 @@ class ToastLiftDatabase(private val context: Context) {
             column = "recommendation_confidence",
             definition = "REAL",
         )
+        ensureColumn(
+            db = db,
+            table = "abandoned_sets",
+            column = "completed_at_utc",
+            definition = "TEXT",
+        )
         db.execSQL(
             """
             CREATE TABLE IF NOT EXISTS active_workouts (
@@ -761,6 +773,12 @@ class ToastLiftDatabase(private val context: Context) {
             table = "active_sets",
             column = "recommendation_confidence",
             definition = "REAL",
+        )
+        ensureColumn(
+            db = db,
+            table = "active_sets",
+            column = "completed_at_utc",
+            definition = "TEXT",
         )
         db.execSQL(
             "CREATE INDEX IF NOT EXISTS idx_exercise_synonyms_norm ON exercise_synonyms (synonym_name_normalized)",

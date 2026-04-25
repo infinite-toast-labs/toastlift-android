@@ -139,6 +139,12 @@ class CompletionReceiptSupportTest {
     }
 
     @Test
+    fun formatMinutesSecondsLong_includesMinutesAndSeconds() {
+        assertEquals("5 minutes 48 seconds", formatMinutesSecondsLong(348))
+        assertEquals("1 minute 1 second", formatMinutesSecondsLong(61))
+    }
+
+    @Test
     fun completionStats_ignoreCompletedSetsWithZeroLoggedReps() {
         val workout = session(exerciseName = "Push-Up", reps = "0", weight = "")
 

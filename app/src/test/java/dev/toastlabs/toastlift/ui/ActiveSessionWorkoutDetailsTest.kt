@@ -46,6 +46,36 @@ class ActiveSessionWorkoutDetailsTest {
     }
 
     @Test
+    fun activeWorkoutProgressMetrics_averagesCompletionGapsWithinExercisesOnly() {
+        val base = Instant.parse("2026-03-23T10:00:00Z")
+        val session = session(
+            exercises = listOf(
+                exercise(
+                    "Bench Press",
+                    sets = listOf(
+                        completedSet(1, base.plusSeconds(0)),
+                        completedSet(2, base.plusSeconds(60)),
+                        completedSet(3, base.plusSeconds(180)),
+                        completedSet(4, base.plusSeconds(360)),
+                    ),
+                ),
+                exercise(
+                    "Cable Row",
+                    sets = listOf(
+                        completedSet(1, base.plusSeconds(1_000)),
+                        completedSet(2, base.plusSeconds(1_240)),
+                        completedSet(3, base.plusSeconds(1_600)),
+                    ),
+                ),
+            ),
+        )
+
+        val metrics = activeWorkoutProgressMetrics(session)
+
+        assertEquals(192, metrics.averageTimeBetweenSetCompletionsSeconds)
+    }
+
+    @Test
     fun activeSessionExpectedRepSummary_sumsRepRangesAcrossPlannedSets() {
         val session = session(
             exercises = listOf(
@@ -185,6 +215,15 @@ class ActiveSessionWorkoutDetailsTest {
             equipment = "Barbell",
             restSeconds = 90,
             sets = sets,
+        )
+    }
+
+    private fun completedSet(setNumber: Int, completedAt: Instant): SessionSet {
+        return SessionSet(
+            setNumber = setNumber,
+            targetReps = "8",
+            completed = true,
+            completedAtUtc = completedAt.toString(),
         )
     }
 }

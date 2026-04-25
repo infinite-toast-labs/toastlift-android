@@ -636,6 +636,7 @@ internal fun logNextSessionSetInActiveSession(
     val nextSet = updatedSets[nextIndex]
     updatedSets[nextIndex] = nextSet.copy(
         completed = true,
+        completedAtUtc = loggedAt.toString(),
         reps = nextSet.resolvedRepsForLogging(),
         weight = nextSet.resolvedWeightForLogging(),
     )
@@ -663,6 +664,7 @@ internal fun logAllSessionSetsInActiveSession(
     val updatedSets = exercise.sets.map { set ->
         set.copy(
             completed = true,
+            completedAtUtc = set.completedAtUtc ?: loggedAt.toString(),
             reps = set.resolvedRepsForLogging(),
             weight = set.resolvedWeightForLogging(),
         )
@@ -2996,7 +2998,10 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
         val updatedSets = exercise.sets.toMutableList()
         val targetSet = updatedSets[setIndex]
         val willCompleteSet = !targetSet.completed
-        updatedSets[setIndex] = targetSet.copy(completed = willCompleteSet)
+        updatedSets[setIndex] = targetSet.copy(
+            completed = willCompleteSet,
+            completedAtUtc = if (willCompleteSet) Instant.now().toString() else null,
+        )
         val prioritizedSetId = updatedSets[setIndex].id.takeIf { updatedSets[setIndex].completed }
         val reorderedSets = reorderActiveSessionSets(
             sets = updatedSets,

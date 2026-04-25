@@ -3,6 +3,7 @@ package dev.toastlabs.toastlift.data
 import java.time.Duration
 import java.time.Instant
 import java.util.concurrent.atomic.AtomicLong
+import kotlin.math.roundToInt
 
 private val sessionSetIdGenerator = AtomicLong(1L)
 
@@ -392,6 +393,7 @@ data class HistorySummary(
     val focusKey: String? = null,
     val completionReceipt: CompletionReceiptSnapshot? = null,
     val strengthScore: Int? = null,
+    val averageTimeBetweenSetCompletionsSeconds: Int? = null,
 )
 
 data class HistoryExerciseDetail(
@@ -434,6 +436,7 @@ data class HistoryDetail(
     val exercises: List<HistoryExerciseDetail>,
     val abFlags: CompletedWorkoutAbFlags? = null,
     val completionReceipt: CompletionReceiptSnapshot? = null,
+    val averageTimeBetweenSetCompletionsSeconds: Int? = null,
 )
 
 enum class SessionOutcomeTier {
@@ -773,6 +776,7 @@ data class SessionSet(
     val recommendationSource: RecommendationSource = RecommendationSource.NONE,
     val recommendationConfidence: Double? = null,
     val completed: Boolean = false,
+    val completedAtUtc: String? = null,
 ) {
     fun displayedReps(): String = reps
 
@@ -785,6 +789,28 @@ data class SessionSet(
 
 internal fun SessionSet.hasLoggedRepSignal(): Boolean =
     completed && (reps.toIntOrNull() ?: 0) > 0
+
+fun ActiveSession.averageTimeBetweenSetCompletionsSeconds(): Int? =
+    averageTimeBetweenSetCompletionsSeconds(
+        sessionSetCompletionGroups = exercises.map { exercise ->
+            exercise.sets.map { set ->
+                set.completedAtUtc.takeIf { set.completed }
+            }
+        },
+    )
+
+fun averageTimeBetweenSetCompletionsSeconds(sessionSetCompletionGroups: List<List<String?>>): Int? {
+    val intervals = sessionSetCompletionGroups.flatMap { completedAtValues ->
+        completedAtValues
+            .mapNotNull { completedAtUtc -> completedAtUtc?.let { runCatching { Instant.parse(it) }.getOrNull() } }
+            .sorted()
+            .zipWithNext { previous, next ->
+                Duration.between(previous, next).seconds.coerceAtLeast(0)
+            }
+    }
+    if (intervals.isEmpty()) return null
+    return intervals.average().roundToInt()
+}
 
 data class SessionExercise(
     val exerciseId: Long,

@@ -192,6 +192,7 @@ import dev.toastlabs.toastlift.data.ExerciseHistoryDetail
 import dev.toastlabs.toastlift.data.AdherenceCurrencyTrend
 import dev.toastlabs.toastlift.data.AdherenceCurrencyTrendPoint
 import dev.toastlabs.toastlift.data.elapsedDurationSeconds
+import dev.toastlabs.toastlift.data.averageTimeBetweenSetCompletionsSeconds
 import dev.toastlabs.toastlift.data.HistoryShareFormat
 import dev.toastlabs.toastlift.data.ExerciseSummary
 import dev.toastlabs.toastlift.data.ExerciseVideoLinks
@@ -8119,6 +8120,11 @@ private fun ActiveWorkoutDetailsSheet(
                 items = listOf(
                     Triple("Elapsed", elapsed, if (isPaused) "paused" else "live"),
                     Triple("Plan", (session.estimatedMinutes ?: activeSessionFallbackEstimatedMinutes(session)).toString(), "target min"),
+                    Triple(
+                        "Avg Set Gap",
+                        progressMetrics.averageTimeBetweenSetCompletionsSeconds?.let(::formatMinutesSecondsLong) ?: "-",
+                        "between sets",
+                    ),
                     Triple("Exercises", session.exercises.size.toString(), "in session"),
                 ),
             )
@@ -8187,6 +8193,7 @@ internal data class ActiveWorkoutProgressMetrics(
     val completedSets: Int,
     val totalSets: Int,
     val completedVolume: Double,
+    val averageTimeBetweenSetCompletionsSeconds: Int?,
 ) {
     val exerciseProgressLabel: String = "$completedExercises/$totalExercises exercises"
     val setProgressLabel: String = "$completedSets/$totalSets sets"
@@ -8202,6 +8209,7 @@ internal fun activeWorkoutProgressMetrics(session: ActiveSession): ActiveWorkout
         completedSets = session.exercises.sumOf { exercise -> exercise.sets.count(SessionSet::completed) },
         totalSets = session.exercises.sumOf { exercise -> exercise.sets.size },
         completedVolume = computeSessionVolume(session),
+        averageTimeBetweenSetCompletionsSeconds = session.averageTimeBetweenSetCompletionsSeconds(),
     )
 }
 
@@ -9979,6 +9987,11 @@ private fun HistoryDetailSheet(
                 items = listOf(
                     Triple("Elapsed", formatMinutes(detail.durationSeconds), ""),
                     Triple("Volume", formatVolume(detail.totalVolume), ""),
+                    Triple(
+                        "Avg Set Gap",
+                        detail.averageTimeBetweenSetCompletionsSeconds?.let(::formatMinutesSecondsLong) ?: "-",
+                        "between sets",
+                    ),
                     Triple("Exercises", detail.exerciseCount.toString(), "logged"),
                 ),
             )

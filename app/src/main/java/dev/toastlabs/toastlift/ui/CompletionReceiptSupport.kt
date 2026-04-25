@@ -29,6 +29,7 @@ import dev.toastlabs.toastlift.data.SessionOutcomeTier
 import dev.toastlabs.toastlift.data.SessionSet
 import dev.toastlabs.toastlift.data.SkippedExerciseFeedbackPrompt
 import dev.toastlabs.toastlift.data.WeeklyPromiseSnapshot
+import dev.toastlabs.toastlift.data.averageTimeBetweenSetCompletionsSeconds
 import dev.toastlabs.toastlift.data.hasLoggedRepSignal
 import java.time.Duration
 import java.time.Instant
@@ -302,6 +303,7 @@ internal fun buildReceiptStatsRailSnapshot(
         )
     }
 
+    val averageCompletionGap = session.averageTimeBetweenSetCompletionsSeconds()
     return CompletionReceiptStatsRailSnapshot(
         items = listOf(
             volumeOrRepsStat,
@@ -309,6 +311,11 @@ internal fun buildReceiptStatsRailSnapshot(
                 label = "Time",
                 value = formatMinutesCompact(durationSeconds),
                 supportingText = "Elapsed",
+            ),
+            CompletionReceiptStatSnapshot(
+                label = "Avg Set Gap",
+                value = averageCompletionGap?.let(::formatMinutesSecondsLong) ?: "-",
+                supportingText = "Between sets",
             ),
             CompletionReceiptStatSnapshot(
                 label = "Sets",
@@ -554,6 +561,19 @@ private fun signedWeightDelta(delta: Double): String {
 internal fun formatMinutesCompact(durationSeconds: Int): String {
     val minutes = (durationSeconds / 60.0).toInt().coerceAtLeast(1)
     return "$minutes min"
+}
+
+internal fun formatMinutesSecondsLong(durationSeconds: Int): String {
+    val totalSeconds = durationSeconds.coerceAtLeast(0)
+    val minutes = totalSeconds / 60
+    val seconds = totalSeconds % 60
+    val minuteLabel = if (minutes == 1) "minute" else "minutes"
+    val secondLabel = if (seconds == 1) "second" else "seconds"
+    return if (minutes > 0) {
+        "$minutes $minuteLabel $seconds $secondLabel"
+    } else {
+        "$seconds $secondLabel"
+    }
 }
 
 internal fun formatVolumeShort(volume: Double): String {

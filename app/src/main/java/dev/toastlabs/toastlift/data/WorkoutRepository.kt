@@ -386,8 +386,8 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
                         INSERT INTO performed_sets (
                             performed_exercise_id, set_number, target_reps, recommended_reps,
                             recommended_weight_value, actual_reps, weight_value, is_completed,
-                            recommendation_source, recommendation_confidence
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            recommendation_source, recommendation_confidence, completed_at_utc
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """.trimIndent(),
                         arrayOf(
                             performedExerciseId,
@@ -400,6 +400,7 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
                             if (set.completed) 1 else 0,
                             set.recommendationSource.name,
                             set.recommendationConfidence,
+                            set.completedAtUtc,
                         ),
                     )
                 }
@@ -517,8 +518,8 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
                         INSERT INTO active_sets (
                             active_exercise_id, set_stable_id, set_number, target_reps, recommended_reps,
                             recommended_weight_value, actual_reps, weight_value, is_completed,
-                            recommendation_source, recommendation_confidence
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            recommendation_source, recommendation_confidence, completed_at_utc
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """.trimIndent(),
                         arrayOf(
                             activeExerciseId,
@@ -532,6 +533,7 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
                             if (set.completed) 1 else 0,
                             set.recommendationSource.name,
                             set.recommendationConfidence,
+                            set.completedAtUtc,
                         ),
                     )
                 }
@@ -606,7 +608,8 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
                             weight_value,
                             is_completed,
                             recommendation_source,
-                            recommendation_confidence
+                            recommendation_confidence,
+                            completed_at_utc
                         FROM active_sets
                         WHERE active_exercise_id = ?
                         ORDER BY set_number
@@ -627,6 +630,7 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
                                         completed = setCursor.getInt(7) == 1,
                                         recommendationSource = recommendationSourceFromStorage(setCursor.getStringOrNull(8)),
                                         recommendationConfidence = if (setCursor.isNull(9)) null else setCursor.getDouble(9),
+                                        completedAtUtc = setCursor.getStringOrNull(10),
                                     ),
                                 )
                             }
@@ -720,8 +724,8 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
                         INSERT INTO abandoned_sets (
                             abandoned_exercise_id, set_stable_id, set_number, target_reps, recommended_reps,
                             recommended_weight_value, actual_reps, weight_value, is_completed,
-                            recommendation_source, recommendation_confidence
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            recommendation_source, recommendation_confidence, completed_at_utc
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """.trimIndent(),
                         arrayOf(
                             abandonedExerciseId,
@@ -735,6 +739,7 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
                             if (set.completed) 1 else 0,
                             set.recommendationSource.name,
                             set.recommendationConfidence,
+                            set.completedAtUtc,
                         ),
                     )
                 }
@@ -806,7 +811,8 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
                             weight_value,
                             is_completed,
                             recommendation_source,
-                            recommendation_confidence
+                            recommendation_confidence,
+                            completed_at_utc
                         FROM abandoned_sets
                         WHERE abandoned_exercise_id = ?
                         ORDER BY set_number
@@ -827,6 +833,7 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
                                         completed = setCursor.getInt(7) == 1,
                                         recommendationSource = recommendationSourceFromStorage(setCursor.getStringOrNull(8)),
                                         recommendationConfidence = if (setCursor.isNull(9)) null else setCursor.getDouble(9),
+                                        completedAtUtc = setCursor.getStringOrNull(10),
                                     ),
                                 )
                             }
@@ -925,6 +932,7 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
                             exerciseNames = loadExerciseNamesForWorkout(workoutId),
                             focusKey = cursor.getStringOrNull(9),
                             completionReceipt = deserializeCompletionReceiptSnapshot(cursor.getStringOrNull(10)),
+                            averageTimeBetweenSetCompletionsSeconds = loadAverageSetCompletionIntervalSeconds(db, workoutId),
                         ),
                     )
                 }
@@ -1197,6 +1205,7 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
                 exercises = emptyList(),
                 abFlags = deserializeCompletedWorkoutAbFlags(cursor.getStringOrNull(8)),
                 completionReceipt = deserializeCompletionReceiptSnapshot(cursor.getStringOrNull(9)),
+                averageTimeBetweenSetCompletionsSeconds = loadAverageSetCompletionIntervalSeconds(db, workoutId),
             )
         }
 
@@ -1640,6 +1649,33 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
                 while (cursor.moveToNext()) add(cursor.getLong(0))
             }
         }
+    }
+
+    private fun loadAverageSetCompletionIntervalSeconds(
+        db: android.database.sqlite.SQLiteDatabase,
+        workoutId: Long,
+    ): Int? {
+        val groups = db.rawQuery(
+            """
+            SELECT
+                pe.performed_exercise_id,
+                ps.completed_at_utc
+            FROM performed_exercises pe
+            INNER JOIN performed_sets ps ON ps.performed_exercise_id = pe.performed_exercise_id
+            WHERE pe.performed_workout_id = ?
+              AND ps.is_completed = 1
+              AND ps.completed_at_utc IS NOT NULL
+            ORDER BY pe.sort_order, ps.completed_at_utc, ps.performed_set_id
+            """.trimIndent(),
+            arrayOf(workoutId.toString()),
+        ).use { cursor ->
+            val grouped = linkedMapOf<Long, MutableList<String?>>()
+            while (cursor.moveToNext()) {
+                grouped.getOrPut(cursor.getLong(0)) { mutableListOf() } += cursor.getStringOrNull(1)
+            }
+            grouped.values.map { it.toList() }
+        }
+        return averageTimeBetweenSetCompletionsSeconds(groups)
     }
 
     private fun serializeCompletionReceiptSnapshot(snapshot: CompletionReceiptSnapshot): String {
