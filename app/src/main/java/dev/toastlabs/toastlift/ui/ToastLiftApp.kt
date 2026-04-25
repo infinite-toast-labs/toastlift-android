@@ -799,6 +799,7 @@ fun ToastLiftApp(
                 state.activeSession != null -> ActiveSessionScreen(
                     state = state,
                     session = requireNotNull(state.activeSession),
+                    snackbarHostState = snackbars,
                     selectedExerciseIndex = state.activeSessionExerciseIndex,
                     activeSessionAddExerciseVisible = state.activeSessionAddExerciseVisible,
                     customExerciseDraft = state.customExerciseDraft,
@@ -3447,6 +3448,8 @@ private fun HistoryCalendarDetailScreen(
     val mode = HistoryCalendarMode.valueOf(selectedModeName)
     val weekPages = remember(history) { buildHistoryCalendarWeekPages(history) }
     val monthPages = remember(history) { buildHistoryCalendarMonthPages(history) }
+    var selectedWeekDateKey by rememberSaveable { mutableStateOf<String?>(null) }
+    var selectedMonthDateKey by rememberSaveable { mutableStateOf<String?>(null) }
     val weekPagerState = rememberPagerState(
         initialPage = weekPages.lastIndex.coerceAtLeast(0),
         pageCount = { weekPages.size.coerceAtLeast(1) },
@@ -3487,6 +3490,10 @@ private fun HistoryCalendarDetailScreen(
                 )
                 if (mode == HistoryCalendarMode.Week) {
                     val selectedPage = weekPages.getOrElse(weekPagerState.currentPage) { weekPages.last() }
+                    val selectedDate = selectedWeekDateKey?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
+                    val selectedWorkouts = selectedDate
+                        ?.let { date -> historyCalendarWorkoutsForDate(selectedPage.workouts, date) }
+                        .orEmpty()
                     HistoryCalendarPagerHeader(
                         title = formatHistoryCalendarWeekTitle(selectedPage.weekStart),
                         detail = historyCalendarPeriodDetail(
@@ -3513,7 +3520,14 @@ private fun HistoryCalendarDetailScreen(
                             .fillMaxWidth()
                             .height(196.dp),
                     ) { page ->
-                        HistoryWeekPagerPage(page = weekPages[page])
+                        HistoryWeekPagerPage(
+                            page = weekPages[page],
+                            selectedDate = selectedDate,
+                            onToggleDate = { date ->
+                                val key = date.toString()
+                                selectedWeekDateKey = if (selectedWeekDateKey == key) null else key
+                            },
+                        )
                     }
                     StatRail(
                         items = listOf(
@@ -3522,6 +3536,7 @@ private fun HistoryCalendarDetailScreen(
                             Triple("Volume", formatVolume(selectedPage.totalVolume), "completed"),
                         ),
                     )
+                    HistoryCalendarSelectedDayDetails(workouts = selectedWorkouts)
                     HistoryCalendarWorkoutsCard(
                         title = "Week Workouts",
                         subtitle = "Completed sessions from ${formatHistoryCalendarWeekTitle(selectedPage.weekStart)}",
@@ -3532,6 +3547,10 @@ private fun HistoryCalendarDetailScreen(
                     )
                 } else {
                     val selectedPage = monthPages.getOrElse(monthPagerState.currentPage) { monthPages.last() }
+                    val selectedDate = selectedMonthDateKey?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
+                    val selectedWorkouts = selectedDate
+                        ?.let { date -> historyCalendarWorkoutsForDate(selectedPage.workouts, date) }
+                        .orEmpty()
                     HistoryCalendarPagerHeader(
                         title = formatHistoryCalendarMonthTitle(selectedPage.month),
                         detail = historyCalendarPeriodDetail(
@@ -3558,7 +3577,14 @@ private fun HistoryCalendarDetailScreen(
                             .fillMaxWidth()
                             .height(360.dp),
                     ) { page ->
-                        HistoryMonthPagerPage(page = monthPages[page])
+                        HistoryMonthPagerPage(
+                            page = monthPages[page],
+                            selectedDate = selectedDate,
+                            onToggleDate = { date ->
+                                val key = date.toString()
+                                selectedMonthDateKey = if (selectedMonthDateKey == key) null else key
+                            },
+                        )
                     }
                     StatRail(
                         items = listOf(
@@ -3567,6 +3593,7 @@ private fun HistoryCalendarDetailScreen(
                             Triple("Volume", formatVolume(selectedPage.totalVolume), "completed"),
                         ),
                     )
+                    HistoryCalendarSelectedDayDetails(workouts = selectedWorkouts)
                     HistoryCalendarWorkoutsCard(
                         title = "Month Workouts",
                         subtitle = "Completed sessions from ${formatHistoryCalendarMonthTitle(selectedPage.month)}",
@@ -3624,7 +3651,11 @@ private fun HistoryCalendarPagerHeader(
 }
 
 @Composable
-private fun HistoryWeekPagerPage(page: HistoryCalendarWeekPage) {
+private fun HistoryWeekPagerPage(
+    page: HistoryCalendarWeekPage,
+    selectedDate: LocalDate?,
+    onToggleDate: (LocalDate) -> Unit,
+) {
     val today = LocalDate.now()
     Column(
         modifier = Modifier.fillMaxSize(),
@@ -3649,6 +3680,8 @@ private fun HistoryWeekPagerPage(page: HistoryCalendarWeekPage) {
                     modifier = Modifier.weight(1f),
                     day = day,
                     isToday = day.date == today,
+                    isSelected = day.date == selectedDate,
+                    onClick = { onToggleDate(day.date) },
                 )
             }
         }
@@ -3673,13 +3706,19 @@ private fun HistoryWeekDayCell(
     modifier: Modifier,
     day: HistoryCalendarDay,
     isToday: Boolean,
+    isSelected: Boolean,
+    onClick: () -> Unit,
 ) {
     val hasWorkout = day.workoutCount > 0
     Surface(
-        modifier = modifier,
+        modifier = modifier.clickable(enabled = hasWorkout, onClick = onClick),
         shape = RoundedCornerShape(12.dp),
         color = if (hasWorkout) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.72f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.62f),
-        border = if (isToday) BorderStroke(1.dp, MaterialTheme.colorScheme.primary) else null,
+        border = when {
+            isSelected -> BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
+            isToday -> BorderStroke(1.dp, MaterialTheme.colorScheme.primary)
+            else -> null
+        },
     ) {
         Column(
             modifier = Modifier.padding(vertical = 12.dp, horizontal = 6.dp),
@@ -3698,7 +3737,11 @@ private fun HistoryWeekDayCell(
 }
 
 @Composable
-private fun HistoryMonthPagerPage(page: HistoryCalendarMonthPage) {
+private fun HistoryMonthPagerPage(
+    page: HistoryCalendarMonthPage,
+    selectedDate: LocalDate?,
+    onToggleDate: (LocalDate) -> Unit,
+) {
     Column(
         modifier = Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -3723,6 +3766,8 @@ private fun HistoryMonthPagerPage(page: HistoryCalendarMonthPage) {
                         HistoryMonthDayCell(
                             modifier = Modifier.weight(1f),
                             cell = cell,
+                            isSelected = cell.date == selectedDate,
+                            onClick = { onToggleDate(cell.date) },
                         )
                     }
                 }
@@ -3735,18 +3780,26 @@ private fun HistoryMonthPagerPage(page: HistoryCalendarMonthPage) {
 private fun HistoryMonthDayCell(
     modifier: Modifier,
     cell: HistoryCalendarMonthCell,
+    isSelected: Boolean,
+    onClick: () -> Unit,
 ) {
     val isToday = cell.date == LocalDate.now()
     val hasWorkout = cell.workoutCount > 0
     Surface(
-        modifier = modifier.height(48.dp),
+        modifier = modifier
+            .height(48.dp)
+            .clickable(enabled = hasWorkout && cell.isInMonth, onClick = onClick),
         shape = RoundedCornerShape(10.dp),
         color = when {
             !cell.isInMonth -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.28f)
             hasWorkout -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.72f)
             else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.58f)
         },
-        border = if (isToday) BorderStroke(1.dp, MaterialTheme.colorScheme.primary) else null,
+        border = when {
+            isSelected && cell.isInMonth -> BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
+            isToday -> BorderStroke(1.dp, MaterialTheme.colorScheme.primary)
+            else -> null
+        },
     ) {
         Column(
             modifier = Modifier
@@ -3766,6 +3819,28 @@ private fun HistoryMonthDayCell(
                 style = MaterialTheme.typography.labelSmall,
                 color = if (hasWorkout) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                 fontWeight = FontWeight.SemiBold,
+            )
+        }
+    }
+}
+
+@Composable
+private fun HistoryCalendarSelectedDayDetails(workouts: List<HistorySummary>) {
+    if (workouts.isEmpty()) return
+
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        workouts.forEach { workout ->
+            Text(
+                workout.title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+            )
+            StatRail(
+                items = listOf(
+                    Triple("Exercises", workout.exerciseCount.toString(), "total"),
+                    Triple("Sets", workout.setCount.toString(), "total"),
+                    Triple("Volume", formatVolume(workout.totalVolume), "total"),
+                ),
             )
         }
     }
@@ -4038,7 +4113,7 @@ private fun TokenBalanceDetailScreen(
                             accent = palette.negative.copy(alpha = 0.16f),
                         )
                         MiniTag(
-                            text = "Ceiling +${trend.snapshot.ceiling}",
+                            text = "Upside uncapped",
                             accent = palette.positive.copy(alpha = 0.16f),
                         )
                     }
@@ -4069,7 +4144,7 @@ private fun TokenBalanceDetailScreen(
                                 color = deltaColor,
                             )
                             Text(
-                                "Completed workouts grow the wallet. Skipped program sessions spend it. Downside stays capped and solid sessions rebuild it fast.",
+                                "Completed workouts grow the wallet without an upside cap. Skipped program sessions spend it, with downside floored.",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -4117,7 +4192,7 @@ private fun TokenBalanceDetailScreen(
             items = listOf(
                 Triple("Last swing", signedCompactNumber(trend.latestDelta), trend.latestDate?.format(DateTimeFormatter.ofPattern("MMM d")) ?: "No dated swing"),
                 Triple("Monthly", signedCompactNumber(trend.monthlyDelta), "last 30 days"),
-                Triple("Bounds", "${trend.snapshot.floor} / +${trend.snapshot.ceiling}", "hard limits"),
+                Triple("Downside", trend.snapshot.floor.toString(), "only hard limit"),
             ),
         )
 
@@ -5023,6 +5098,14 @@ internal fun formatHistoryEntryTime(
 private fun historyStartedInstant(summary: HistorySummary): Instant? {
     return runCatching { Instant.parse(summary.startedAtUtc) }.getOrNull()
         ?: runCatching { Instant.parse(summary.completedAtUtc) }.getOrNull()
+}
+
+internal fun historyCalendarWorkoutsForDate(
+    workouts: List<HistorySummary>,
+    date: LocalDate,
+    zoneId: ZoneId = ZoneId.systemDefault(),
+): List<HistorySummary> {
+    return workouts.filter { workout -> historyStartedLocalDate(workout, zoneId) == date }
 }
 
 internal fun buildHistoryCalendarWeekPages(
@@ -7083,6 +7166,7 @@ private fun ActiveSessionAddExerciseScreen(
 private fun ActiveSessionScreen(
     state: AppUiState,
     session: ActiveSession,
+    snackbarHostState: SnackbarHostState,
     selectedExerciseIndex: Int?,
     activeSessionAddExerciseVisible: Boolean,
     customExerciseDraft: CustomExerciseDraft?,
@@ -7197,6 +7281,7 @@ private fun ActiveSessionScreen(
             onDeleteExercise = { exerciseIndexToDelete ->
                 onDeleteExercise(exerciseIndexToDelete, true, selectedEquipmentFilter)
             },
+            snackbarHostState = snackbarHostState,
             onLogSet = onLogSet,
             onLogAllSets = onLogAllSets,
             onUpdateExerciseRir = onUpdateExerciseRir,
@@ -7234,6 +7319,7 @@ private fun ActiveSessionScreen(
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         bottomBar = {
             Button(
                 onClick = { showFinishConfirmDialog = true },
@@ -8448,6 +8534,7 @@ private fun SessionExerciseDetailScreen(
     onAddSet: (Int) -> Unit,
     onDeleteSet: (Int, Int) -> Unit,
     onDeleteExercise: (Int) -> Unit,
+    snackbarHostState: SnackbarHostState,
     onLogSet: (Int) -> Unit,
     onLogAllSets: (Int) -> Unit,
     onUpdateExerciseRir: (Int, Int) -> Unit,
@@ -8474,6 +8561,7 @@ private fun SessionExerciseDetailScreen(
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         bottomBar = {
             if (allSetsCompleted) {
                 Button(

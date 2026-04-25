@@ -386,6 +386,7 @@ data class HistorySummary(
     val durationSeconds: Int,
     val totalVolume: Double,
     val exerciseCount: Int,
+    val setCount: Int = 0,
     val exerciseNames: List<String>,
     val focusKey: String? = null,
     val completionReceipt: CompletionReceiptSnapshot? = null,

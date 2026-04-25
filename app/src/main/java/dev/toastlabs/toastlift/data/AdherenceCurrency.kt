@@ -5,7 +5,6 @@ import java.time.LocalDate
 import java.time.ZoneId
 
 internal const val ADHERENCE_CURRENCY_FLOOR = -12
-internal const val ADHERENCE_CURRENCY_CEILING = 24
 
 private const val ADHERENCE_SKIP_PENALTY = -3
 private const val ADHERENCE_PARTIAL_COMPLETION_REWARD = 1
@@ -20,7 +19,7 @@ private const val ADHERENCE_STREAK_BONUS_THRESHOLD = 2
 data class AdherenceCurrencySnapshot(
     val balance: Int,
     val floor: Int,
-    val ceiling: Int,
+    val ceiling: Int? = null,
     val displayValue: String,
     val statusLabel: String,
     val detail: String,
@@ -241,7 +240,7 @@ private fun buildAdherenceCurrencyLedger(signals: List<AdherenceSessionSignal>):
                         completionRatio = completionRatio,
                         consecutiveSolidCompletionsBefore = consecutiveSolidCompletions,
                     )
-                    balance = clampAdherenceBalance(balance + reward)
+                    balance = clampAdherenceDownside(balance + reward)
                     entries += AdherenceLedgerEntry(
                         sequenceNumber = signal.sequenceNumber,
                         status = signal.status,
@@ -257,7 +256,7 @@ private fun buildAdherenceCurrencyLedger(signals: List<AdherenceSessionSignal>):
                 }
 
                 SessionStatus.SKIPPED -> {
-                    balance = clampAdherenceBalance(balance + ADHERENCE_SKIP_PENALTY)
+                    balance = clampAdherenceDownside(balance + ADHERENCE_SKIP_PENALTY)
                     entries += AdherenceLedgerEntry(
                         sequenceNumber = signal.sequenceNumber,
                         status = signal.status,
@@ -279,7 +278,6 @@ private fun buildAdherenceCurrencyLedger(signals: List<AdherenceSessionSignal>):
         snapshot = AdherenceCurrencySnapshot(
             balance = balance,
             floor = ADHERENCE_CURRENCY_FLOOR,
-            ceiling = ADHERENCE_CURRENCY_CEILING,
             displayValue = if (balance > 0) "+$balance" else balance.toString(),
             statusLabel = adherenceStatusLabel(balance),
             detail = adherenceDetail(balance),
@@ -321,8 +319,8 @@ private fun plannedSessionCompletionRatio(
     return completedSetCount.toDouble() / plannedSetCount.toDouble()
 }
 
-private fun clampAdherenceBalance(balance: Int): Int {
-    return balance.coerceIn(ADHERENCE_CURRENCY_FLOOR, ADHERENCE_CURRENCY_CEILING)
+private fun clampAdherenceDownside(balance: Int): Int {
+    return balance.coerceAtLeast(ADHERENCE_CURRENCY_FLOOR)
 }
 
 private fun adherenceStatusLabel(balance: Int): String = when {
@@ -332,7 +330,7 @@ private fun adherenceStatusLabel(balance: Int): String = when {
 }
 
 private fun adherenceDetail(balance: Int): String = when {
-    balance >= 12 -> "Consistency buffer is stocked. Misses are still capped."
-    balance >= 0 -> "Solid sessions bank flexibility before skips spend it."
+    balance >= 12 -> "Consistency buffer is stocked. Upside is uncapped and misses are still floored."
+    balance >= 0 -> "Solid sessions bank flexibility before skips spend it. Upside has no ceiling."
     else -> "Recent misses spent the buffer. Penalties stop at -12 and solid sessions recover it faster."
 }

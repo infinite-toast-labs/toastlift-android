@@ -1,6 +1,7 @@
 package dev.toastlabs.toastlift.data
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.LocalDate
@@ -26,7 +27,7 @@ class AdherenceCurrencyTest {
     }
 
     @Test
-    fun repeatedSolidSessionsAccumulateButRespectTheCeiling() {
+    fun repeatedSolidSessionsAccumulateWithoutUpsideLimit() {
         val snapshot = buildAdherenceCurrencySnapshot(
             signals = (1..10).map { index ->
                 AdherenceSessionSignal(
@@ -38,9 +39,11 @@ class AdherenceCurrencyTest {
             },
         )
 
-        assertEquals(ADHERENCE_CURRENCY_CEILING, snapshot.balance)
-        assertEquals("+24", snapshot.displayValue)
+        assertEquals(38, snapshot.balance)
+        assertEquals("+38", snapshot.displayValue)
         assertEquals("Banked", snapshot.statusLabel)
+        assertNull(snapshot.ceiling)
+        assertTrue(snapshot.detail.contains("Upside is uncapped"))
     }
 
     @Test

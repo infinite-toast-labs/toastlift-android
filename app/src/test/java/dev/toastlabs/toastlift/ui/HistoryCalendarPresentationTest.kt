@@ -107,11 +107,31 @@ class HistoryCalendarPresentationTest {
         assertEquals("7:05 PM", formatHistoryEntryTime(evening, ZoneId.of("UTC")))
     }
 
+    @Test
+    fun historyCalendarWorkoutsForDate_returnsAllWorkoutsStartedOnSelectedDay() {
+        val workouts = listOf(
+            historySummary(id = 1L, completedAtUtc = "2026-04-03T08:00:00Z", startedAtUtc = "2026-04-03T06:00:00Z", setCount = 8),
+            historySummary(id = 2L, completedAtUtc = "2026-04-03T20:00:00Z", startedAtUtc = "2026-04-03T18:00:00Z", setCount = 10),
+            historySummary(id = 3L, completedAtUtc = "2026-04-04T01:00:00Z", startedAtUtc = "2026-04-03T23:00:00Z", setCount = 6),
+            historySummary(id = 4L, completedAtUtc = "2026-04-04T12:00:00Z", startedAtUtc = "2026-04-04T10:00:00Z", setCount = 4),
+        )
+
+        val selected = historyCalendarWorkoutsForDate(
+            workouts = workouts,
+            date = LocalDate.of(2026, 4, 3),
+            zoneId = ZoneId.of("UTC"),
+        )
+
+        assertEquals(listOf(1L, 2L, 3L), selected.map(HistorySummary::id))
+        assertEquals(listOf(8, 10, 6), selected.map(HistorySummary::setCount))
+    }
+
     private fun historySummary(
         id: Long,
         completedAtUtc: String,
         startedAtUtc: String = completedAtUtc,
         totalVolume: Double = 1000.0,
+        setCount: Int = 12,
     ) = HistorySummary(
         id = id,
         title = "Workout $id",
@@ -120,6 +140,7 @@ class HistoryCalendarPresentationTest {
         durationSeconds = 1800,
         totalVolume = totalVolume,
         exerciseCount = 4,
+        setCount = setCount,
         exerciseNames = listOf("Squat", "Bench"),
     )
 }

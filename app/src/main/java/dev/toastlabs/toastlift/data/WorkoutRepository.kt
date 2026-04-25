@@ -887,6 +887,7 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
                     END
                 ), 0),
                 COUNT(DISTINCT CASE WHEN ${loggedRepSignalClause()} THEN pe.performed_exercise_id END) AS logged_exercise_count,
+                COUNT(CASE WHEN ${loggedRepSignalClause()} THEN ps.performed_set_id END) AS logged_set_count,
                 pw.focus_key,
                 pw.completion_receipt_snapshot_json
             FROM performed_workouts pw
@@ -920,9 +921,10 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
                             durationSeconds = cursor.getInt(5),
                             totalVolume = cursor.getDouble(6),
                             exerciseCount = cursor.getInt(7),
+                            setCount = cursor.getInt(8),
                             exerciseNames = loadExerciseNamesForWorkout(workoutId),
-                            focusKey = cursor.getStringOrNull(8),
-                            completionReceipt = deserializeCompletionReceiptSnapshot(cursor.getStringOrNull(9)),
+                            focusKey = cursor.getStringOrNull(9),
+                            completionReceipt = deserializeCompletionReceiptSnapshot(cursor.getStringOrNull(10)),
                         ),
                     )
                 }
