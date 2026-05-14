@@ -109,6 +109,37 @@ internal fun buildExerciseHistoryDetail(
     )
 }
 
+internal fun buildExercisePerformanceStats(
+    rows: List<ExerciseHistoryRow>,
+    recentSessionLimit: Int = 5,
+): ExercisePerformanceStats? {
+    val weightedRows = rows.filter { row ->
+        row.hasLoggedRepSignal() && (row.weight ?: 0.0) > 0.0
+    }
+    if (weightedRows.isEmpty()) return null
+
+    val maxRow = weightedRows.maxWith(
+        compareBy<ExerciseHistoryRow> { it.weight ?: 0.0 }
+            .thenBy { it.reps ?: 0 }
+            .thenBy { it.completedAtUtc },
+    )
+    val recentSessionKeys = weightedRows
+        .groupBy { it.completedAtUtc to it.workoutTitle }
+        .keys
+        .sortedByDescending { it.first }
+        .take(recentSessionLimit.coerceAtLeast(1))
+        .toSet()
+    val recentWeights = weightedRows
+        .filter { row -> row.completedAtUtc to row.workoutTitle in recentSessionKeys }
+        .mapNotNull(ExerciseHistoryRow::weight)
+        .filter { it > 0.0 }
+    return ExercisePerformanceStats(
+        maxWeight = maxRow.weight ?: 0.0,
+        maxWeightReps = maxRow.reps ?: 0,
+        averageWeightLastFiveSessions = recentWeights.takeIf { it.isNotEmpty() }?.average(),
+    )
+}
+
 internal fun historyReuseRepRange(startingSets: List<WorkoutExerciseSetDraft>): String {
     val explicitTarget = startingSets.firstOrNull { it.targetReps.isNotBlank() }?.targetReps?.trim()
     if (!explicitTarget.isNullOrBlank()) return explicitTarget
@@ -2118,8 +2149,21 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
     }
 
     fun loadExerciseHistory(exerciseId: Long, fallbackName: String, prOnly: Boolean = false): ExerciseHistoryDetail {
-        val db = database.open()
-        val rows = db.rawQuery(
+        val rows = loadExerciseHistoryRows(exerciseId)
+        return buildExerciseHistoryDetail(
+            exerciseId = exerciseId,
+            fallbackName = fallbackName,
+            rows = rows,
+            prOnly = prOnly,
+        )
+    }
+
+    fun loadExercisePerformanceStats(exerciseId: Long): ExercisePerformanceStats? {
+        return buildExercisePerformanceStats(loadExerciseHistoryRows(exerciseId))
+    }
+
+    private fun loadExerciseHistoryRows(exerciseId: Long): List<ExerciseHistoryRow> {
+        return database.open().rawQuery(
             """
             SELECT
                 pw.completed_at_utc,
@@ -2158,12 +2202,6 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
                 }
             }
         }
-        return buildExerciseHistoryDetail(
-            exerciseId = exerciseId,
-            fallbackName = fallbackName,
-            rows = rows,
-            prOnly = prOnly,
-        )
     }
 
     private fun loadTemplateExercises(templateId: Long): List<WorkoutExercise> {

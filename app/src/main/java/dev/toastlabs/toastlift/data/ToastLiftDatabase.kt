@@ -222,6 +222,7 @@ class ToastLiftDatabase(private val context: Context) {
                 dev_exercise_detail_personal_note_visible INTEGER NOT NULL DEFAULT 1,
                 dev_exercise_detail_learned_preference_visible INTEGER NOT NULL DEFAULT 1,
                 dev_rest_timer_sound_disabled INTEGER NOT NULL DEFAULT 0,
+                training_freshness_threshold_days INTEGER NOT NULL DEFAULT 3,
                 next_focus TEXT NOT NULL DEFAULT 'full_body',
                 created_at_utc TEXT NOT NULL,
                 updated_at_utc TEXT NOT NULL
@@ -296,6 +297,12 @@ class ToastLiftDatabase(private val context: Context) {
             table = "user_profile",
             column = "dev_rest_timer_sound_disabled",
             definition = "INTEGER NOT NULL DEFAULT 0",
+        )
+        ensureColumn(
+            db = db,
+            table = "user_profile",
+            column = "training_freshness_threshold_days",
+            definition = "INTEGER NOT NULL DEFAULT 3",
         )
         db.execSQL(
             """

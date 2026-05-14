@@ -189,6 +189,7 @@ import dev.toastlabs.toastlift.data.CustomExerciseDraft
 import dev.toastlabs.toastlift.data.DailyCoachMessage
 import dev.toastlabs.toastlift.data.ExerciseDetail
 import dev.toastlabs.toastlift.data.ExerciseHistoryDetail
+import dev.toastlabs.toastlift.data.ExercisePerformanceStats
 import dev.toastlabs.toastlift.data.AdherenceCurrencyTrend
 import dev.toastlabs.toastlift.data.AdherenceCurrencyTrendPoint
 import dev.toastlabs.toastlift.data.elapsedDurationSeconds
@@ -1032,6 +1033,8 @@ fun ToastLiftApp(
                                         onEndProgram = { state.activeProgram?.id?.let { viewModel.endProgram(it) } },
                                         onUpdateReadiness = viewModel::updateReadiness,
                                         onRunCheckpoint = viewModel::runPendingCheckpoint,
+                                        onTrainingFreshnessFilterChange = viewModel::setTrainingFreshnessFilter,
+                                        onTrainingFreshnessSortChange = viewModel::setTrainingFreshnessSort,
                                     )
 
                                 MainTab.Generate -> GenerateScreen(
@@ -1348,11 +1351,14 @@ private fun TodayScreen(
     onEndProgram: () -> Unit,
     onUpdateReadiness: ((dev.toastlabs.toastlift.data.ReadinessContext) -> dev.toastlabs.toastlift.data.ReadinessContext) -> Unit,
     onRunCheckpoint: () -> Unit,
+    onTrainingFreshnessFilterChange: (TrainingFreshnessFilter) -> Unit,
+    onTrainingFreshnessSortChange: (TrainingFreshnessSort) -> Unit,
 ) {
     var renameTarget by remember { mutableStateOf<TemplateSummary?>(null) }
     var deleteTarget by remember { mutableStateOf<TemplateSummary?>(null) }
     var pendingProgramAction by remember { mutableStateOf<TodayProgramActionConfirmation?>(null) }
     var showTemplateAddScreen by remember { mutableStateOf(false) }
+    var showTrainingFreshnessDashboard by remember { mutableStateOf(false) }
     val profile = state.profile
     val templates = state.templates
     val history = state.history
@@ -1396,6 +1402,18 @@ private fun TodayScreen(
         return
     }
 
+    if (showTrainingFreshnessDashboard && state.trainingFreshness != null) {
+        TrainingFreshnessDashboardScreen(
+            summary = state.trainingFreshness,
+            filter = state.trainingFreshnessFilter,
+            sort = state.trainingFreshnessSort,
+            onFilterChange = onTrainingFreshnessFilterChange,
+            onSortChange = onTrainingFreshnessSortChange,
+            onBack = { showTrainingFreshnessDashboard = false },
+        )
+        return
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -1412,6 +1430,12 @@ private fun TodayScreen(
                 onResumeProgram = onResumeProgram,
                 onEndProgram = { pendingProgramAction = TodayProgramActionConfirmation.EndProgram },
             )
+            state.trainingFreshness?.let { freshness ->
+                TrainingFreshnessCard(
+                    summary = freshness,
+                    onOpen = { showTrainingFreshnessDashboard = true },
+                )
+            }
             TodayCompletionFeedbackSection(
                 variant = state.todayCompletionFeedbackVariant,
                 completion = state.todayWorkoutCompletion,
@@ -1494,6 +1518,12 @@ private fun TodayScreen(
                     Button(onClick = onGenerate) { Text("Generate") }
                     OutlinedButton(onClick = onOpenGenerate) { Text("Builder") }
                 }
+            }
+            state.trainingFreshness?.let { freshness ->
+                TrainingFreshnessCard(
+                    summary = freshness,
+                    onOpen = { showTrainingFreshnessDashboard = true },
+                )
             }
             TodayCompletionFeedbackSection(
                 variant = state.todayCompletionFeedbackVariant,
@@ -2338,6 +2368,295 @@ private fun TodayCompletionMeterCard(model: TodayCompletionFeedbackModel) {
                 color = accent.start,
             )
         }
+    }
+}
+
+@Composable
+private fun TrainingFreshnessCard(
+    summary: TrainingFreshnessSummary,
+    onOpen: () -> Unit,
+) {
+    val primaryRows = summary.bucketRows.filter { it.family != TrainingFreshnessFamily.Core }
+    val accent = trainingFreshnessAccent(
+        primaryRows.firstOrNull { it.status == TrainingFreshnessStatus.Overdue }?.status
+            ?: primaryRows.firstOrNull { it.status == TrainingFreshnessStatus.DueSoon }?.status
+            ?: summary.bucketRows.firstOrNull()?.status
+            ?: TrainingFreshnessStatus.Untracked,
+    )
+    FeatureCard(
+        modifier = Modifier
+            .clickable(onClick = onOpen)
+            .semantics(mergeDescendants = true) {
+                contentDescription = "Open training freshness dashboard. ${summary.headline}"
+                role = Role.Button
+            },
+        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
+        border = BorderStroke(1.dp, accent.start.copy(alpha = 0.24f)),
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.Top,
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Text(
+                        "Training Freshness",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    Text(
+                        summary.headline,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                MiniTag(
+                    text = trainingFreshnessCardLabel(summary.cardMode),
+                    accent = accent.start.copy(alpha = 0.18f),
+                )
+            }
+            primaryRows.take(2).forEach { row ->
+                TrainingFreshnessBucketMiniRow(row = row)
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    summary.supportingText,
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Icon(
+                    imageVector = Icons.Rounded.KeyboardArrowRight,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun TrainingFreshnessBucketMiniRow(row: TrainingFreshnessBucketRow) {
+    val accent = trainingFreshnessAccent(row.status)
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                row.label,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                "${trainingFreshnessStatusLabel(row.status)} • ${trainingFreshnessTimingLabel(row)}",
+                style = MaterialTheme.typography.bodySmall,
+                color = accent.start,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(6.dp)
+                .clip(RoundedCornerShape(999.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.82f)),
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(row.progressFraction.coerceIn(0f, 1f))
+                    .fillMaxHeight()
+                    .background(accent.color, RoundedCornerShape(999.dp)),
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun TrainingFreshnessDashboardScreen(
+    summary: TrainingFreshnessSummary,
+    filter: TrainingFreshnessFilter,
+    sort: TrainingFreshnessSort,
+    onFilterChange: (TrainingFreshnessFilter) -> Unit,
+    onSortChange: (TrainingFreshnessSort) -> Unit,
+    onBack: () -> Unit,
+) {
+    val filteredRows = remember(summary, filter, sort) {
+        filterTrainingFreshnessMuscles(
+            rows = summary.muscleRows,
+            filter = filter,
+            sort = sort,
+        )
+    }
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        item {
+            HistoryDetailHeader(
+                title = "Training Freshness",
+                onBack = onBack,
+            )
+        }
+        item {
+            CompactSectionCard(
+                title = trainingFreshnessCardLabel(summary.cardMode),
+                subtitle = "${summary.thresholdDays}-day refresh target • final ${summary.dueSoonHours}h counts as due soon",
+            ) {
+                Text(
+                    summary.headline,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    "This is a training cadence helper, not a muscle-loss timer. Completed logged sets reset the view; planned exercises do not.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        item {
+            CompactSectionCard(
+                title = "Filters",
+                subtitle = "Narrow the muscle list without changing the underlying calculation.",
+            ) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TrainingFreshnessFilter.entries.forEach { option ->
+                        ToastLiftFilterChip(
+                            selected = filter == option,
+                            onClick = { onFilterChange(option) },
+                            label = { Text(option.label) },
+                        )
+                    }
+                }
+                Divider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.18f))
+                Text("Sort", fontWeight = FontWeight.SemiBold)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TrainingFreshnessSort.entries.forEach { option ->
+                        ToastLiftFilterChip(
+                            selected = sort == option,
+                            onClick = { onSortChange(option) },
+                            label = { Text(option.label) },
+                        )
+                    }
+                }
+            }
+        }
+        if (filteredRows.isEmpty()) {
+            item {
+                FeatureCard {
+                    Text(
+                        "No muscles match this filter yet.",
+                        modifier = Modifier.padding(16.dp),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        } else {
+            items(filteredRows, key = { it.key }) { row ->
+                TrainingFreshnessMuscleCard(row = row)
+            }
+        }
+        item {
+            Spacer(modifier = Modifier.height(32.dp))
+        }
+    }
+}
+
+@Composable
+private fun TrainingFreshnessMuscleCard(row: TrainingFreshnessMuscleRow) {
+    val accent = trainingFreshnessAccent(row.status)
+    FeatureCard(
+        border = BorderStroke(1.dp, accent.start.copy(alpha = 0.16f)),
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.Top,
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Text(
+                        row.label,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        trainingFreshnessMuscleSupportingText(row),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                MiniTag(
+                    text = trainingFreshnessStatusLabel(row.status),
+                    accent = accent.start.copy(alpha = 0.18f),
+                )
+            }
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(8.dp)
+                    .clip(RoundedCornerShape(999.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.82f)),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth(row.progressFraction.coerceIn(0f, 1f))
+                        .fillMaxHeight()
+                        .background(accent.color, RoundedCornerShape(999.dp)),
+                )
+            }
+            if (row.lastExerciseNames.isNotEmpty()) {
+                Text(
+                    "Last refreshed by ${row.lastExerciseNames.joinToString()}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+private fun trainingFreshnessCardLabel(mode: TrainingFreshnessCardMode): String = when (mode) {
+    TrainingFreshnessCardMode.NoHistory -> "Tracking starts after logging"
+    TrainingFreshnessCardMode.OnTrack -> "Fresh"
+    TrainingFreshnessCardMode.DueSoon -> "Due today"
+    TrainingFreshnessCardMode.Overdue -> "Past target"
+}
+
+@Composable
+private fun trainingFreshnessAccent(status: TrainingFreshnessStatus): GlowAccent = when (status) {
+    TrainingFreshnessStatus.Fresh -> surgeAccent
+    TrainingFreshnessStatus.DueSoon -> goldAccent
+    TrainingFreshnessStatus.Overdue -> emberAccent
+    TrainingFreshnessStatus.Untracked -> amethystAccent
+}
+
+private fun trainingFreshnessMuscleSupportingText(row: TrainingFreshnessMuscleRow): String {
+    return when (row.status) {
+        TrainingFreshnessStatus.Untracked -> "No logged stimulus yet."
+        else -> "Last trained ${formatTrainingFreshnessDuration(row.hoursSinceStimulus ?: 0)} ago • ${trainingFreshnessTimingLabel(row)}"
     }
 }
 
@@ -5361,6 +5680,7 @@ private fun ProfileScreen(state: AppUiState, viewModel: ToastLiftViewModel) {
         onSetDevExerciseDetailPersonalNoteVisible = viewModel::setDevExerciseDetailPersonalNoteVisible,
         onSetDevExerciseDetailLearnedPreferenceVisible = viewModel::setDevExerciseDetailLearnedPreferenceVisible,
         onSetDevRestTimerSoundDisabled = viewModel::setDevRestTimerSoundDisabled,
+        onSetTrainingFreshnessThresholdDays = viewModel::setTrainingFreshnessThresholdDays,
         onOpenRestTimerSoundSettings = { openRestTimerSoundSettings(context) },
         onExportPersonalData = viewModel::preparePersonalDataExport,
         onDeletePersonalData = viewModel::deleteAllPersonalData,
@@ -5407,6 +5727,7 @@ private fun ProfileEditor(
     onSetDevExerciseDetailPersonalNoteVisible: ((Boolean) -> Unit)? = null,
     onSetDevExerciseDetailLearnedPreferenceVisible: ((Boolean) -> Unit)? = null,
     onSetDevRestTimerSoundDisabled: ((Boolean) -> Unit)? = null,
+    onSetTrainingFreshnessThresholdDays: ((Int) -> Unit)? = null,
     onOpenRestTimerSoundSettings: (() -> Unit)? = null,
     onExportPersonalData: (() -> Unit)? = null,
     onDeletePersonalData: (() -> Unit)? = null,
@@ -5634,6 +5955,7 @@ private fun ProfileEditor(
                     onSetDevExerciseDetailPersonalNoteVisible != null ||
                     onSetDevExerciseDetailLearnedPreferenceVisible != null ||
                     onSetDevRestTimerSoundDisabled != null ||
+                    onSetTrainingFreshnessThresholdDays != null ||
                     onOpenRestTimerSoundSettings != null
             )
         ) {
@@ -5695,6 +6017,19 @@ private fun ProfileEditor(
                         supportingText = "Keeps automatic rest timers visible but suppresses the completion beeps entirely.",
                         checked = profile.devRestTimerSoundDisabled,
                         onCheckedChange = onToggle,
+                    )
+                }
+                onSetTrainingFreshnessThresholdDays?.let { onChange ->
+                    Text("Training freshness target", fontWeight = FontWeight.SemiBold)
+                    ChoiceChipRow(
+                        values = (2..7).map { it.toString() },
+                        selected = profile.trainingFreshnessThresholdDays.toString(),
+                        onSelect = { selected -> onChange(selected.toInt()) },
+                    )
+                    Text(
+                        "Used by the Today Training Freshness card. Default is 3 days; this is a cadence target, not a muscle-loss timer.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
                 onOpenRestTimerSoundSettings?.let { openSettings ->
@@ -7315,6 +7650,7 @@ private fun ActiveSessionScreen(
     if (selectedExercise != null) {
         SessionExerciseDetailScreen(
             exercise = selectedExercise,
+            performanceStats = state.activeExercisePerformanceStatsById[selectedExercise.exerciseId],
             exerciseIndex = requireNotNull(selectedExerciseIndex),
             onBack = onCloseExercise,
             onShowExerciseDetail = { onShowExerciseDetail(selectedExercise.exerciseId) },
@@ -8580,6 +8916,7 @@ private fun ExerciseEffortPromptCard(
 @Composable
 private fun SessionExerciseDetailScreen(
     exercise: SessionExercise,
+    performanceStats: ExercisePerformanceStats?,
     exerciseIndex: Int,
     onBack: () -> Unit,
     onShowExerciseDetail: () -> Unit,
@@ -8712,13 +9049,16 @@ private fun SessionExerciseDetailScreen(
                     modifier = Modifier
                         .align(Alignment.BottomStart)
                         .padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(7.dp),
                 ) {
                     Text(exercise.name, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Black)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         MiniTag("${exercise.restSeconds}s rest")
                         MiniTag(exercise.targetMuscleGroup)
                         MiniTag(exercise.equipment)
+                    }
+                    performanceStats?.let { stats ->
+                        ActiveExercisePerformanceStatsRow(stats = stats)
                     }
                 }
             }
@@ -8797,6 +9137,29 @@ private fun SessionExerciseDetailScreen(
             },
         )
     }
+}
+
+@Composable
+private fun ActiveExercisePerformanceStatsRow(stats: ExercisePerformanceStats) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        MiniTag(
+            text = "Max: ${formatExercisePerformanceWeight(stats.maxWeight)} x ${stats.maxWeightReps}",
+            accent = goldAccent.start.copy(alpha = 0.18f),
+        )
+        stats.averageWeightLastFiveSessions?.let { averageWeight ->
+            MiniTag(
+                text = "Avg: ${formatExercisePerformanceWeight(averageWeight)}",
+                accent = surgeAccent.start.copy(alpha = 0.18f),
+            )
+        }
+    }
+}
+
+private fun formatExercisePerformanceWeight(weight: Double): String {
+    return "${decimalString(weight)}lb"
 }
 
 @Composable

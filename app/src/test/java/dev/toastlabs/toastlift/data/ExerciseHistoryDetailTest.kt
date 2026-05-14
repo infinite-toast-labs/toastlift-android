@@ -123,6 +123,36 @@ class ExerciseHistoryDetailTest {
         assertTrue(workingSets[1].isWeightPr)
     }
 
+    @Test
+    fun buildExercisePerformanceStats_usesHighestIndividualWeightAndShowsThatSetsReps() {
+        val rows = listOf(
+            row(completedAtUtc = "2026-03-01T12:00:00Z", workoutTitle = "Day 1", setNumber = 1, reps = 25, weight = 20.0),
+            row(completedAtUtc = "2026-03-03T12:00:00Z", workoutTitle = "Day 2", setNumber = 1, reps = 10, weight = 45.0),
+            row(completedAtUtc = "2026-03-05T12:00:00Z", workoutTitle = "Day 3", setNumber = 1, reps = 8, weight = 40.0),
+        )
+
+        val stats = buildExercisePerformanceStats(rows)
+
+        assertEquals(45.0, stats?.maxWeight ?: 0.0, 0.001)
+        assertEquals(10, stats?.maxWeightReps)
+    }
+
+    @Test
+    fun buildExercisePerformanceStats_averagesWeightedSetsFromLastFiveLoggedSessions() {
+        val rows = listOf(
+            row(completedAtUtc = "2026-03-01T12:00:00Z", workoutTitle = "Day 1", setNumber = 1, reps = 8, weight = 10.0),
+            row(completedAtUtc = "2026-03-02T12:00:00Z", workoutTitle = "Day 2", setNumber = 1, reps = 8, weight = 20.0),
+            row(completedAtUtc = "2026-03-03T12:00:00Z", workoutTitle = "Day 3", setNumber = 1, reps = 8, weight = 30.0),
+            row(completedAtUtc = "2026-03-04T12:00:00Z", workoutTitle = "Day 4", setNumber = 1, reps = 8, weight = 40.0),
+            row(completedAtUtc = "2026-03-05T12:00:00Z", workoutTitle = "Day 5", setNumber = 1, reps = 8, weight = 50.0),
+            row(completedAtUtc = "2026-03-06T12:00:00Z", workoutTitle = "Day 6", setNumber = 1, reps = 8, weight = 60.0),
+        )
+
+        val stats = buildExercisePerformanceStats(rows)
+
+        assertEquals(40.0, stats?.averageWeightLastFiveSessions ?: 0.0, 0.001)
+    }
+
     private fun row(
         completedAtUtc: String,
         workoutTitle: String,

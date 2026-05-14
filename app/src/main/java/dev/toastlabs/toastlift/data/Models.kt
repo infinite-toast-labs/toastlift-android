@@ -243,6 +243,9 @@ const val MIN_WORKOUT_DURATION_MINUTES = 15
 const val MAX_WORKOUT_DURATION_MINUTES = 300
 const val MIN_WEEKLY_FREQUENCY = 1
 const val MAX_WEEKLY_FREQUENCY = 7
+const val MIN_TRAINING_FRESHNESS_THRESHOLD_DAYS = 2
+const val MAX_TRAINING_FRESHNESS_THRESHOLD_DAYS = 7
+const val DEFAULT_TRAINING_FRESHNESS_THRESHOLD_DAYS = 3
 const val FORMULA_A_SPLIT_PROGRAM_ID = 6L
 const val FORMULA_A_SPLIT_PROGRAM_NAME = "6-Day PPL Intensity"
 const val FORMULA_A_UPPER_PUSH_STRENGTH_FOCUS_KEY = "upper_push_strength"
@@ -279,6 +282,10 @@ fun normalizeWeeklyFrequency(frequency: Int): Int {
     return frequency.coerceIn(MIN_WEEKLY_FREQUENCY, MAX_WEEKLY_FREQUENCY)
 }
 
+fun normalizeTrainingFreshnessThresholdDays(days: Int): Int {
+    return days.coerceIn(MIN_TRAINING_FRESHNESS_THRESHOLD_DAYS, MAX_TRAINING_FRESHNESS_THRESHOLD_DAYS)
+}
+
 data class UserProfile(
     val goal: String,
     val experience: String,
@@ -298,6 +305,7 @@ data class UserProfile(
     val devExerciseDetailPersonalNoteVisible: Boolean = true,
     val devExerciseDetailLearnedPreferenceVisible: Boolean = true,
     val devRestTimerSoundDisabled: Boolean = false,
+    val trainingFreshnessThresholdDays: Int = DEFAULT_TRAINING_FRESHNESS_THRESHOLD_DAYS,
 )
 
 data class WorkoutExercise(
@@ -686,6 +694,12 @@ data class ExerciseHistoryDetail(
     val isPrOnlyFilterEnabled: Boolean,
     val totalEntries: Int,
     val prEntryCount: Int,
+)
+
+data class ExercisePerformanceStats(
+    val maxWeight: Double,
+    val maxWeightReps: Int,
+    val averageWeightLastFiveSessions: Double?,
 )
 
 data class ExerciseVideoLinks(

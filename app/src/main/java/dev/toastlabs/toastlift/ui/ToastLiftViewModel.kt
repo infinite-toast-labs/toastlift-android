@@ -34,6 +34,7 @@ import dev.toastlabs.toastlift.data.EquipmentConflictItem
 import dev.toastlabs.toastlift.data.AdherenceSessionSignal
 import dev.toastlabs.toastlift.data.ExerciseDetail
 import dev.toastlabs.toastlift.data.ExerciseHistoryDetail
+import dev.toastlabs.toastlift.data.ExercisePerformanceStats
 import dev.toastlabs.toastlift.data.ExerciseSummary
 import dev.toastlabs.toastlift.data.ExerciseVideoLinks
 import dev.toastlabs.toastlift.data.FORMULA_A_LOWER_HIGH_REPS_FOCUS_KEY
@@ -59,6 +60,7 @@ import dev.toastlabs.toastlift.data.LocationMode
 import dev.toastlabs.toastlift.data.normalizeExerciseNote
 import dev.toastlabs.toastlift.data.normalizeExerciseVideoLinkLabel
 import dev.toastlabs.toastlift.data.normalizeExerciseVideoLinkUrl
+import dev.toastlabs.toastlift.data.normalizeTrainingFreshnessThresholdDays
 import dev.toastlabs.toastlift.data.normalizeWeeklyFrequency
 import dev.toastlabs.toastlift.data.normalizeWorkoutDurationMinutes
 import dev.toastlabs.toastlift.data.OnboardingDraft
@@ -360,6 +362,7 @@ internal data class AppUiState(
     val completionReceipt: CompletionReceiptUiState? = null,
     val activeSession: ActiveSession? = null,
     val activeSessionExerciseIndex: Int? = null,
+    val activeExercisePerformanceStatsById: Map<Long, ExercisePerformanceStats> = emptyMap(),
     val restTimer: RestTimerUiState? = null,
     val activeSessionAddExerciseVisible: Boolean = false,
     val activeSessionAddExerciseMode: ActiveSessionAddExerciseMode = ActiveSessionAddExerciseMode.Choice,
@@ -385,6 +388,9 @@ internal data class AppUiState(
     val tokenBalanceTrend: AdherenceCurrencyTrend? = null,
     val programProgress: ProgramProgressSummary? = null,
     val weeklyMuscleTargets: WeeklyMuscleTargetSummary? = null,
+    val trainingFreshness: TrainingFreshnessSummary? = null,
+    val trainingFreshnessFilter: TrainingFreshnessFilter = TrainingFreshnessFilter.All,
+    val trainingFreshnessSort: TrainingFreshnessSort = TrainingFreshnessSort.MostUrgent,
     val nextPlannedSession: PlannedSession? = null,
     val recoverableSkippedSession: PlannedSession? = null,
     val nextSessionExercises: List<PlannedSessionExercise> = emptyList(),
@@ -1742,6 +1748,30 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
                     zoneId = zoneId,
                 )
             }
+            val trainingFreshness = profile?.let { activeProfile ->
+                val now = LocalDate.now()
+                val zoneId = ZoneId.systemDefault()
+                val historyStart = now
+                    .minusDays((activeProfile.trainingFreshnessThresholdDays.coerceAtLeast(1).toLong() * 3L).coerceAtLeast(14L))
+                    .atStartOfDay(zoneId)
+                    .toInstant()
+                    .toString()
+                val freshnessRows = container.workoutRepository.loadWeeklyMuscleTargetRows(historyStart)
+                val exerciseDetailsById = freshnessRows
+                    .map { it.exerciseId }
+                    .distinct()
+                    .mapNotNull { exerciseId ->
+                        container.catalogRepository.getExerciseDetail(exerciseId)?.let { detail -> exerciseId to detail }
+                    }
+                    .toMap()
+                buildTrainingFreshnessSummary(
+                    profile = activeProfile,
+                    rows = freshnessRows,
+                    exerciseDetailsById = exerciseDetailsById,
+                    nowUtc = Instant.now(),
+                    zoneId = zoneId,
+                )
+            }
             val tokenBalanceTrend = buildTokenBalanceTrend()
             val restoredActiveSession = uiState.activeSession?.let {
                 null
@@ -1749,6 +1779,16 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
                 persisted.copy(session = sanitizeActiveSessionCompletionState(persisted.session))
             }
             val effectiveActiveSession = uiState.activeSession ?: restoredActiveSession?.session
+            val effectiveActiveSessionExerciseIndex = uiState.activeSessionExerciseIndex ?: restoredActiveSession?.selectedExerciseIndex
+            val activeExercisePerformanceStatsById = effectiveActiveSession
+                ?.exercises
+                ?.getOrNull(effectiveActiveSessionExerciseIndex ?: -1)
+                ?.let { exercise ->
+                    container.workoutRepository.loadExercisePerformanceStats(exercise.exerciseId)?.let { stats ->
+                        uiState.activeExercisePerformanceStatsById + (exercise.exerciseId to stats)
+                    }
+                }
+                ?: uiState.activeExercisePerformanceStatsById
             val todayCompletionFeedbackVariant = if (profile != null) {
                 container.experimentRepository.loadTodayCompletionFeedbackVariant()
             } else {
@@ -1783,12 +1823,14 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
                 projectedMovementInsights = projectedAnalytics.movements,
                 tokenBalanceTrend = tokenBalanceTrend,
                 weeklyMuscleTargets = weeklyMuscleTargets,
+                trainingFreshness = trainingFreshness,
                 abandonedWorkout = abandonedWorkout,
                 todayCompletionFeedbackVariant = todayCompletionFeedbackVariant,
                 todayWorkoutCompletion = todayWorkoutCompletion,
                 todayReceiptRecap = todayReceiptRecap,
                 activeSession = effectiveActiveSession,
-                activeSessionExerciseIndex = uiState.activeSessionExerciseIndex ?: restoredActiveSession?.selectedExerciseIndex,
+                activeSessionExerciseIndex = effectiveActiveSessionExerciseIndex,
+                activeExercisePerformanceStatsById = activeExercisePerformanceStatsById,
                 selectedHistoryDetail = if (selectedHistoryDetail != null) {
                     container.workoutRepository.loadHistoryDetail(selectedHistoryDetail.id)
                 } else {
@@ -1952,6 +1994,27 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
         }
         viewModelScope.launch(Dispatchers.IO) {
             container.userRepository.saveDevRestTimerSoundDisabled(disabled)
+        }
+    }
+
+    internal fun setTrainingFreshnessFilter(filter: TrainingFreshnessFilter) {
+        uiState = uiState.copy(trainingFreshnessFilter = filter)
+    }
+
+    internal fun setTrainingFreshnessSort(sort: TrainingFreshnessSort) {
+        uiState = uiState.copy(trainingFreshnessSort = sort)
+    }
+
+    fun setTrainingFreshnessThresholdDays(days: Int) {
+        val profile = uiState.profile ?: return
+        val normalizedDays = normalizeTrainingFreshnessThresholdDays(days)
+        uiState = uiState.copy(
+            profile = profile.copy(trainingFreshnessThresholdDays = normalizedDays),
+            message = "Training freshness target set to $normalizedDays days.",
+        )
+        viewModelScope.launch(Dispatchers.IO) {
+            container.userRepository.saveTrainingFreshnessThresholdDays(normalizedDays)
+            refreshAll()
         }
     }
 
@@ -2906,6 +2969,19 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
     fun openSessionExercise(exerciseIndex: Int) {
         uiState = uiState.copy(activeSessionExerciseIndex = exerciseIndex)
         persistActiveSessionState(selectedExerciseIndex = exerciseIndex)
+        uiState.activeSession?.exercises?.getOrNull(exerciseIndex)?.let { exercise ->
+            loadActiveExercisePerformanceStats(exercise.exerciseId)
+        }
+    }
+
+    private fun loadActiveExercisePerformanceStats(exerciseId: Long) {
+        if (uiState.activeExercisePerformanceStatsById.containsKey(exerciseId)) return
+        viewModelScope.launch(Dispatchers.IO) {
+            val stats = container.workoutRepository.loadExercisePerformanceStats(exerciseId) ?: return@launch
+            uiState = uiState.copy(
+                activeExercisePerformanceStatsById = uiState.activeExercisePerformanceStatsById + (exerciseId to stats),
+            )
+        }
     }
 
     fun toggleSessionPause() {
