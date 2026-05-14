@@ -48,7 +48,10 @@ lint:
 	$(GRADLE) lintDebug
 
 build-debug:
-	$(GRADLE) assembleDebug
+	$(GRADLE) assembleDebug || { \
+		echo "assembleDebug failed; retrying once after clean to recover stale Gradle/Kotlin build caches." >&2; \
+		$(GRADLE) clean assembleDebug; \
+	}
 
 build-release:
 	$(GRADLE) assembleRelease

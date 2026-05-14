@@ -17,7 +17,8 @@ class UserRepository(private val database: ToastLiftDatabase) {
                    gym_machine_cable_bias_enabled, history_workout_ab_flags_visible,
                    dev_pick_next_exercise_enabled, dev_fruit_exercise_icons_enabled,
                    dev_exercise_detail_personal_note_visible, dev_exercise_detail_learned_preference_visible,
-                   dev_rest_timer_sound_disabled, training_freshness_threshold_days
+                   dev_rest_timer_sound_disabled, training_freshness_threshold_days,
+                   dev_session_set_swipe_complete_enabled
             FROM user_profile
             WHERE user_id = 1
             """.trimIndent(),
@@ -46,6 +47,7 @@ class UserRepository(private val database: ToastLiftDatabase) {
                 devExerciseDetailLearnedPreferenceVisible = cursor.getInt(16) == 1,
                 devRestTimerSoundDisabled = cursor.getInt(17) == 1,
                 trainingFreshnessThresholdDays = normalizeTrainingFreshnessThresholdDays(cursor.getInt(18)),
+                devSessionSetSwipeCompleteEnabled = cursor.getInt(19) == 1,
             )
         }
     }
@@ -246,6 +248,14 @@ class UserRepository(private val database: ToastLiftDatabase) {
         db.execSQL(
             "UPDATE user_profile SET training_freshness_threshold_days = ?, updated_at_utc = ? WHERE user_id = 1",
             arrayOf(normalizeTrainingFreshnessThresholdDays(days), Instant.now().toString()),
+        )
+    }
+
+    fun saveDevSessionSetSwipeCompleteEnabled(enabled: Boolean) {
+        val db = database.open()
+        db.execSQL(
+            "UPDATE user_profile SET dev_session_set_swipe_complete_enabled = ?, updated_at_utc = ? WHERE user_id = 1",
+            arrayOf(if (enabled) 1 else 0, Instant.now().toString()),
         )
     }
 

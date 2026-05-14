@@ -57,7 +57,11 @@ class WorkoutNotificationNotifier(context: Context) {
             .setCategory(NotificationCompat.CATEGORY_STATUS)
             .build()
 
-        NotificationManagerCompat.from(appContext).notify(ACTIVE_WORKOUT_NOTIFICATION_ID, notification)
+        try {
+            NotificationManagerCompat.from(appContext).notify(ACTIVE_WORKOUT_NOTIFICATION_ID, notification)
+        } catch (_: SecurityException) {
+            // Notification permission can be revoked after the preflight check.
+        }
     }
 
     fun cancelActiveWorkout() {

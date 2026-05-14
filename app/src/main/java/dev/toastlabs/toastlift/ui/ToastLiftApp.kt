@@ -190,6 +190,7 @@ import dev.toastlabs.toastlift.data.DailyCoachMessage
 import dev.toastlabs.toastlift.data.ExerciseDetail
 import dev.toastlabs.toastlift.data.ExerciseHistoryDetail
 import dev.toastlabs.toastlift.data.ExercisePerformanceStats
+import dev.toastlabs.toastlift.data.ExercisePreviousSetPerformance
 import dev.toastlabs.toastlift.data.AdherenceCurrencyTrend
 import dev.toastlabs.toastlift.data.AdherenceCurrencyTrendPoint
 import dev.toastlabs.toastlift.data.elapsedDurationSeconds
@@ -308,6 +309,7 @@ private val DarkGoldAccent = GlowAccent(
 
 private val ACTIVE_SESSION_HEADER_TOP_PADDING = 5.dp
 private const val SESSION_SET_RENUMBER_DELAY_MS = 280L
+private const val SESSION_WEIGHT_JUMP_LB = 5.0
 
 private val DarkAmethystAccent = GlowAccent(
     color = Color(0xFF3D9FFF),
@@ -838,6 +840,7 @@ fun ToastLiftApp(
                     onSaveCustomExercise = viewModel::saveCustomExercise,
                     onPendingSelectionConsumed = viewModel::clearPendingAddExercisePickerSelection,
                     onValueChange = viewModel::updateSessionValue,
+                    onApplyWeightToNextIncompleteSet = viewModel::applyWeightToNextIncompleteSet,
                     onToggleComplete = viewModel::toggleSessionSetComplete,
                     onAddSet = viewModel::addSessionSet,
                     onDeleteSet = viewModel::deleteSessionSet,
@@ -5680,6 +5683,7 @@ private fun ProfileScreen(state: AppUiState, viewModel: ToastLiftViewModel) {
         onSetDevExerciseDetailPersonalNoteVisible = viewModel::setDevExerciseDetailPersonalNoteVisible,
         onSetDevExerciseDetailLearnedPreferenceVisible = viewModel::setDevExerciseDetailLearnedPreferenceVisible,
         onSetDevRestTimerSoundDisabled = viewModel::setDevRestTimerSoundDisabled,
+        onSetDevSessionSetSwipeCompleteEnabled = viewModel::setDevSessionSetSwipeCompleteEnabled,
         onSetTrainingFreshnessThresholdDays = viewModel::setTrainingFreshnessThresholdDays,
         onOpenRestTimerSoundSettings = { openRestTimerSoundSettings(context) },
         onExportPersonalData = viewModel::preparePersonalDataExport,
@@ -5727,6 +5731,7 @@ private fun ProfileEditor(
     onSetDevExerciseDetailPersonalNoteVisible: ((Boolean) -> Unit)? = null,
     onSetDevExerciseDetailLearnedPreferenceVisible: ((Boolean) -> Unit)? = null,
     onSetDevRestTimerSoundDisabled: ((Boolean) -> Unit)? = null,
+    onSetDevSessionSetSwipeCompleteEnabled: ((Boolean) -> Unit)? = null,
     onSetTrainingFreshnessThresholdDays: ((Int) -> Unit)? = null,
     onOpenRestTimerSoundSettings: (() -> Unit)? = null,
     onExportPersonalData: (() -> Unit)? = null,
@@ -5955,6 +5960,7 @@ private fun ProfileEditor(
                     onSetDevExerciseDetailPersonalNoteVisible != null ||
                     onSetDevExerciseDetailLearnedPreferenceVisible != null ||
                     onSetDevRestTimerSoundDisabled != null ||
+                    onSetDevSessionSetSwipeCompleteEnabled != null ||
                     onSetTrainingFreshnessThresholdDays != null ||
                     onOpenRestTimerSoundSettings != null
             )
@@ -6016,6 +6022,14 @@ private fun ProfileEditor(
                         label = "Disable rest timer sound",
                         supportingText = "Keeps automatic rest timers visible but suppresses the completion beeps entirely.",
                         checked = profile.devRestTimerSoundDisabled,
+                        onCheckedChange = onToggle,
+                    )
+                }
+                onSetDevSessionSetSwipeCompleteEnabled?.let { onToggle ->
+                    SettingsSwitchRow(
+                        label = "Swipe right to complete sets",
+                        supportingText = "Lets active workout set rows complete or undo a set when swiped right. Turn this off if it feels too easy to trigger.",
+                        checked = profile.devSessionSetSwipeCompleteEnabled,
                         onCheckedChange = onToggle,
                     )
                 }
@@ -7577,6 +7591,7 @@ private fun ActiveSessionScreen(
     onSaveCustomExercise: () -> Unit,
     onPendingSelectionConsumed: () -> Unit,
     onValueChange: (Int, Int, String, Boolean) -> Unit,
+    onApplyWeightToNextIncompleteSet: (Int, Double) -> Unit,
     onToggleComplete: (Int, Int) -> Unit,
     onAddSet: (Int) -> Unit,
     onDeleteSet: (Int, Int) -> Unit,
@@ -7655,6 +7670,7 @@ private fun ActiveSessionScreen(
             onBack = onCloseExercise,
             onShowExerciseDetail = { onShowExerciseDetail(selectedExercise.exerciseId) },
             onValueChange = onValueChange,
+            onApplyWeightToNextIncompleteSet = onApplyWeightToNextIncompleteSet,
             onToggleComplete = onToggleComplete,
             onAddSet = onAddSet,
             onDeleteSet = onDeleteSet,
@@ -7665,6 +7681,7 @@ private fun ActiveSessionScreen(
             onLogSet = onLogSet,
             onLogAllSets = onLogAllSets,
             restTimer = state.restTimer?.takeIf { timer -> timer.exerciseId == selectedExercise.exerciseId },
+            swipeCompleteEnabled = state.profile?.devSessionSetSwipeCompleteEnabled != false,
             onCancelRestTimer = onCancelRestTimer,
             onDismissRestTimer = onDismissRestTimer,
             onUpdateExerciseRir = onUpdateExerciseRir,
@@ -8921,6 +8938,7 @@ private fun SessionExerciseDetailScreen(
     onBack: () -> Unit,
     onShowExerciseDetail: () -> Unit,
     onValueChange: (Int, Int, String, Boolean) -> Unit,
+    onApplyWeightToNextIncompleteSet: (Int, Double) -> Unit,
     onToggleComplete: (Int, Int) -> Unit,
     onAddSet: (Int) -> Unit,
     onDeleteSet: (Int, Int) -> Unit,
@@ -8929,6 +8947,7 @@ private fun SessionExerciseDetailScreen(
     onLogSet: (Int) -> Unit,
     onLogAllSets: (Int) -> Unit,
     restTimer: RestTimerUiState?,
+    swipeCompleteEnabled: Boolean,
     onCancelRestTimer: () -> Unit,
     onDismissRestTimer: () -> Unit,
     onUpdateExerciseRir: (Int, Int) -> Unit,
@@ -9058,7 +9077,16 @@ private fun SessionExerciseDetailScreen(
                         MiniTag(exercise.equipment)
                     }
                     performanceStats?.let { stats ->
-                        ActiveExercisePerformanceStatsRow(stats = stats)
+                        ActiveExercisePerformanceStatsRow(
+                            stats = stats,
+                            hasPendingSets = exercise.sets.any { !it.completed },
+                            onApplyBeatMaxWeight = {
+                                onApplyWeightToNextIncompleteSet(
+                                    exerciseIndex,
+                                    stats.maxWeight + SESSION_WEIGHT_JUMP_LB,
+                                )
+                            },
+                        )
                     }
                 }
             }
@@ -9090,8 +9118,10 @@ private fun SessionExerciseDetailScreen(
                         ),
                         set = set,
                         displaySetNumber = animatedSetNumbers[set.id] ?: set.setNumber,
+                        previousSetPerformance = performanceStats?.previousSessionSetsBySetNumber?.get(set.setNumber),
                         exerciseIndex = exerciseIndex,
                         setIndex = setIndex,
+                        swipeCompleteEnabled = swipeCompleteEnabled,
                         onValueChange = onValueChange,
                         onToggleComplete = onToggleComplete,
                         onDeleteSet = onDeleteSet,
@@ -9139,11 +9169,16 @@ private fun SessionExerciseDetailScreen(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun ActiveExercisePerformanceStatsRow(stats: ExercisePerformanceStats) {
-    Row(
+private fun ActiveExercisePerformanceStatsRow(
+    stats: ExercisePerformanceStats,
+    hasPendingSets: Boolean,
+    onApplyBeatMaxWeight: () -> Unit,
+) {
+    FlowRow(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically,
+        verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         MiniTag(
             text = "Max: ${formatExercisePerformanceWeight(stats.maxWeight)} x ${stats.maxWeightReps}",
@@ -9155,6 +9190,41 @@ private fun ActiveExercisePerformanceStatsRow(stats: ExercisePerformanceStats) {
                 accent = surgeAccent.start.copy(alpha = 0.18f),
             )
         }
+        if (hasPendingSets) {
+            ClickableMiniTag(
+                text = "Try ${formatExercisePerformanceWeight(stats.maxWeight + SESSION_WEIGHT_JUMP_LB)}",
+                accent = MaterialTheme.colorScheme.primaryContainer,
+                onClick = onApplyBeatMaxWeight,
+                accessibilityLabel = "Set next incomplete set to ${formatExercisePerformanceWeight(stats.maxWeight + SESSION_WEIGHT_JUMP_LB)}",
+            )
+        }
+    }
+}
+
+@Composable
+private fun ClickableMiniTag(
+    text: String,
+    accent: Color,
+    onClick: () -> Unit,
+    accessibilityLabel: String,
+) {
+    Surface(
+        modifier = Modifier
+            .clickable(onClick = onClick)
+            .semantics(mergeDescendants = true) {
+                contentDescription = accessibilityLabel
+                role = Role.Button
+            },
+        shape = RoundedCornerShape(999.dp),
+        color = accent,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+    ) {
+        Text(
+            text,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.SemiBold,
+        )
     }
 }
 
@@ -9259,8 +9329,10 @@ private fun DismissibleSessionSetRow(
     modifier: Modifier = Modifier,
     set: SessionSet,
     displaySetNumber: Int,
+    previousSetPerformance: ExercisePreviousSetPerformance?,
     exerciseIndex: Int,
     setIndex: Int,
+    swipeCompleteEnabled: Boolean,
     onValueChange: (Int, Int, String, Boolean) -> Unit,
     onToggleComplete: (Int, Int) -> Unit,
     onDeleteSet: (Int, Int) -> Unit,
@@ -9333,6 +9405,39 @@ private fun DismissibleSessionSetRow(
             .fillMaxWidth()
             .clip(RoundedCornerShape(10.dp))
     ) {
+        if (swipeCompleteEnabled) {
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .padding(end = 12.dp),
+                contentAlignment = Alignment.CenterStart,
+            ) {
+                Surface(
+                    modifier = Modifier
+                        .width(actionWidth)
+                        .fillMaxSize(),
+                    color = if (set.completed) goldAccent.start else surgeAccent.start,
+                    contentColor = if (set.completed) goldAccent.textOnAccent else surgeAccent.textOnAccent,
+                    shape = RoundedCornerShape(topStart = 18.dp, bottomStart = 18.dp),
+                ) {
+                    Column(
+                        modifier = Modifier.fillMaxSize(),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Check,
+                            contentDescription = null,
+                        )
+                        Text(
+                            if (set.completed) "Undo" else "Done",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    }
+                }
+            }
+        }
         Box(
             modifier = Modifier
                 .matchParentSize()
@@ -9370,13 +9475,18 @@ private fun DismissibleSessionSetRow(
                 .draggable(
                     orientation = Orientation.Horizontal,
                     state = rememberDraggableState { delta ->
-                        horizontalOffset = (horizontalOffset + delta).coerceIn(-actionWidthPx, 0f)
+                        val maxOffset = if (swipeCompleteEnabled) actionWidthPx else 0f
+                        horizontalOffset = (horizontalOffset + delta).coerceIn(-actionWidthPx, maxOffset)
                     },
                     onDragStopped = {
-                        horizontalOffset = if (horizontalOffset <= -actionWidthPx * 0.45f) {
-                            -actionWidthPx
-                        } else {
-                            0f
+                        horizontalOffset = when {
+                            swipeCompleteEnabled && horizontalOffset >= actionWidthPx * 0.45f -> {
+                                focusManager.clearFocus(force = true)
+                                onToggleComplete(exerciseIndex, setIndex)
+                                0f
+                            }
+                            horizontalOffset <= -actionWidthPx * 0.45f -> -actionWidthPx
+                            else -> 0f
                         }
                     },
                 ),
@@ -9411,28 +9521,82 @@ private fun DismissibleSessionSetRow(
                         accent = rowAccent,
                         textColor = if (set.completed) rowAccent.textOnAccent else Color.Unspecified,
                     )
-                    PersistentLabelOutlinedTextField(
-                        value = set.displayedReps(),
-                        onValueChange = { value -> onValueChange(exerciseIndex, setIndex, value, false) },
+                    Column(
                         modifier = Modifier.weight(1f),
-                        label = "Reps",
-                        textColor = completedTextColor,
-                        keyboardOptions = KeyboardOptions(
-                            keyboardType = KeyboardType.Number,
-                            imeAction = ImeAction.Next,
-                        ),
-                    )
-                    PersistentLabelOutlinedTextField(
-                        value = set.displayedWeight(),
-                        onValueChange = { value -> onValueChange(exerciseIndex, setIndex, value, true) },
-                        modifier = Modifier.weight(1f),
-                        label = "Weight (lb)",
-                        textColor = completedTextColor,
-                        keyboardOptions = KeyboardOptions(
-                            keyboardType = KeyboardType.Decimal,
-                            imeAction = ImeAction.Next,
-                        ),
-                    )
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            PersistentLabelOutlinedTextField(
+                                value = set.displayedReps(),
+                                onValueChange = { value -> onValueChange(exerciseIndex, setIndex, value, false) },
+                                modifier = Modifier.weight(1f),
+                                label = "Reps",
+                                textColor = completedTextColor,
+                                keyboardOptions = KeyboardOptions(
+                                    keyboardType = KeyboardType.Number,
+                                    imeAction = ImeAction.Next,
+                                ),
+                            )
+                            PersistentLabelOutlinedTextField(
+                                value = set.displayedWeight(),
+                                onValueChange = { value -> onValueChange(exerciseIndex, setIndex, value, true) },
+                                modifier = Modifier.weight(1f),
+                                label = "Weight (lb)",
+                                textColor = completedTextColor,
+                                keyboardOptions = KeyboardOptions(
+                                    keyboardType = KeyboardType.Decimal,
+                                    imeAction = ImeAction.Next,
+                                ),
+                            )
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            SetValueStepper(
+                                label = "Reps",
+                                decrementLabel = "-1",
+                                incrementLabel = "+1",
+                                modifier = Modifier.weight(1f),
+                                onDecrement = {
+                                    val current = currentSessionSetReps(set)
+                                    onValueChange(exerciseIndex, setIndex, (current - 1).coerceAtLeast(0).toString(), false)
+                                },
+                                onIncrement = {
+                                    val current = currentSessionSetReps(set)
+                                    onValueChange(exerciseIndex, setIndex, (current + 1).toString(), false)
+                                },
+                            )
+                            SetValueStepper(
+                                label = "Weight",
+                                decrementLabel = "-5",
+                                incrementLabel = "+5",
+                                modifier = Modifier.weight(1f),
+                                onDecrement = {
+                                    val current = currentSessionSetWeight(set)
+                                    onValueChange(
+                                        exerciseIndex,
+                                        setIndex,
+                                        formatSetStepperWeight((current - SESSION_WEIGHT_JUMP_LB).coerceAtLeast(0.0)),
+                                        true,
+                                    )
+                                },
+                                onIncrement = {
+                                    val current = currentSessionSetWeight(set)
+                                    onValueChange(
+                                        exerciseIndex,
+                                        setIndex,
+                                        formatSetStepperWeight(current + SESSION_WEIGHT_JUMP_LB),
+                                        true,
+                                    )
+                                },
+                            )
+                        }
+                        previousSetPerformance?.let { previous ->
+                            Text(
+                                "Last: ${formatExercisePerformanceWeight(previous.weight)} x ${previous.reps}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
                     SessionSetCompletionAction(
                         completed = set.completed,
                         accent = rowAccent,
@@ -9445,6 +9609,75 @@ private fun DismissibleSessionSetRow(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun SetValueStepper(
+    label: String,
+    decrementLabel: String,
+    incrementLabel: String,
+    modifier: Modifier = Modifier,
+    onDecrement: () -> Unit,
+    onIncrement: () -> Unit,
+) {
+    val shape = RoundedCornerShape(8.dp)
+    Row(
+        modifier = modifier
+            .height(38.4f.dp)
+            .clip(shape)
+            .border(BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.18f)), shape)
+            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.72f)),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxHeight()
+                .clickable(onClick = onDecrement)
+                .semantics { contentDescription = "Decrease $label" },
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(decrementLabel, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+        }
+        Box(
+            modifier = Modifier
+                .width(1.dp)
+                .fillMaxHeight()
+                .padding(vertical = 7.dp)
+                .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.22f)),
+        )
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxHeight()
+                .clickable(onClick = onIncrement)
+                .semantics { contentDescription = "Increase $label" },
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(incrementLabel, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+        }
+    }
+}
+
+private fun currentSessionSetReps(set: SessionSet): Int {
+    return set.displayedReps().toIntOrNull()
+        ?: set.recommendedReps
+        ?: parseSessionRepRange(set.targetReps)?.first
+        ?: 0
+}
+
+private fun currentSessionSetWeight(set: SessionSet): Double {
+    return set.displayedWeight().toDoubleOrNull()
+        ?: set.recommendedWeight.toDoubleOrNull()
+        ?: 0.0
+}
+
+private fun formatSetStepperWeight(weight: Double): String {
+    return if (weight % 1.0 == 0.0) {
+        weight.roundToInt().toString()
+    } else {
+        "%.1f".format(weight)
     }
 }
 

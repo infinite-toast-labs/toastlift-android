@@ -10,7 +10,7 @@ import java.util.Locale
 class ToastLiftDatabase(private val context: Context) {
     private val databaseName = "toastlift.db"
     private val assetName = "functional_fitness_workout_generator.sqlite"
-    private val appVersion = 18
+    private val appVersion = 19
 
     @Volatile
     private var database: SQLiteDatabase? = null
@@ -223,6 +223,7 @@ class ToastLiftDatabase(private val context: Context) {
                 dev_exercise_detail_learned_preference_visible INTEGER NOT NULL DEFAULT 1,
                 dev_rest_timer_sound_disabled INTEGER NOT NULL DEFAULT 0,
                 training_freshness_threshold_days INTEGER NOT NULL DEFAULT 3,
+                dev_session_set_swipe_complete_enabled INTEGER NOT NULL DEFAULT 1,
                 next_focus TEXT NOT NULL DEFAULT 'full_body',
                 created_at_utc TEXT NOT NULL,
                 updated_at_utc TEXT NOT NULL
@@ -303,6 +304,12 @@ class ToastLiftDatabase(private val context: Context) {
             table = "user_profile",
             column = "training_freshness_threshold_days",
             definition = "INTEGER NOT NULL DEFAULT 3",
+        )
+        ensureColumn(
+            db = db,
+            table = "user_profile",
+            column = "dev_session_set_swipe_complete_enabled",
+            definition = "INTEGER NOT NULL DEFAULT 1",
         )
         db.execSQL(
             """

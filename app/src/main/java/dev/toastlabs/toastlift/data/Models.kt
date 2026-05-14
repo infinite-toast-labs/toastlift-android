@@ -306,6 +306,7 @@ data class UserProfile(
     val devExerciseDetailLearnedPreferenceVisible: Boolean = true,
     val devRestTimerSoundDisabled: Boolean = false,
     val trainingFreshnessThresholdDays: Int = DEFAULT_TRAINING_FRESHNESS_THRESHOLD_DAYS,
+    val devSessionSetSwipeCompleteEnabled: Boolean = true,
 )
 
 data class WorkoutExercise(
@@ -696,10 +697,17 @@ data class ExerciseHistoryDetail(
     val prEntryCount: Int,
 )
 
+data class ExercisePreviousSetPerformance(
+    val setNumber: Int,
+    val weight: Double,
+    val reps: Int,
+)
+
 data class ExercisePerformanceStats(
     val maxWeight: Double,
     val maxWeightReps: Int,
     val averageWeightLastFiveSessions: Double?,
+    val previousSessionSetsBySetNumber: Map<Int, ExercisePreviousSetPerformance> = emptyMap(),
 )
 
 data class ExerciseVideoLinks(

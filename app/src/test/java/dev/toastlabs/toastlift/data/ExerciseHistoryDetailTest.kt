@@ -153,6 +153,24 @@ class ExerciseHistoryDetailTest {
         assertEquals(40.0, stats?.averageWeightLastFiveSessions ?: 0.0, 0.001)
     }
 
+    @Test
+    fun buildExercisePerformanceStats_usesLatestLoggedSessionForSetHints() {
+        val rows = listOf(
+            row(completedAtUtc = "2026-03-01T12:00:00Z", workoutTitle = "Day 1", setNumber = 1, reps = 10, weight = 35.0),
+            row(completedAtUtc = "2026-03-01T12:00:00Z", workoutTitle = "Day 1", setNumber = 2, reps = 9, weight = 35.0),
+            row(completedAtUtc = "2026-03-08T12:00:00Z", workoutTitle = "Day 2", setNumber = 1, reps = 8, weight = 40.0),
+            row(completedAtUtc = "2026-03-08T12:00:00Z", workoutTitle = "Day 2", setNumber = 2, reps = 7, weight = 45.0),
+        )
+
+        val stats = buildExercisePerformanceStats(rows)
+
+        assertEquals(2, stats?.previousSessionSetsBySetNumber?.size)
+        assertEquals(40.0, stats?.previousSessionSetsBySetNumber?.get(1)?.weight ?: 0.0, 0.001)
+        assertEquals(8, stats?.previousSessionSetsBySetNumber?.get(1)?.reps)
+        assertEquals(45.0, stats?.previousSessionSetsBySetNumber?.get(2)?.weight ?: 0.0, 0.001)
+        assertEquals(7, stats?.previousSessionSetsBySetNumber?.get(2)?.reps)
+    }
+
     private fun row(
         completedAtUtc: String,
         workoutTitle: String,

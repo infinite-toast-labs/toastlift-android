@@ -1997,6 +1997,21 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
+    fun setDevSessionSetSwipeCompleteEnabled(enabled: Boolean) {
+        val profile = uiState.profile ?: return
+        uiState = uiState.copy(
+            profile = profile.copy(devSessionSetSwipeCompleteEnabled = enabled),
+            message = if (enabled) {
+                "Swipe-to-complete enabled."
+            } else {
+                "Swipe-to-complete disabled."
+            },
+        )
+        viewModelScope.launch(Dispatchers.IO) {
+            container.userRepository.saveDevSessionSetSwipeCompleteEnabled(enabled)
+        }
+    }
+
     internal fun setTrainingFreshnessFilter(filter: TrainingFreshnessFilter) {
         uiState = uiState.copy(trainingFreshnessFilter = filter)
     }
@@ -3071,6 +3086,25 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
         updatedExercises[exerciseIndex] = exercise.copy(sets = updatedSets)
         val updatedSession = session.copy(exercises = updatedExercises)
         uiState = uiState.copy(activeSession = updatedSession)
+        persistActiveSessionState(session = updatedSession)
+    }
+
+    fun applyWeightToNextIncompleteSet(exerciseIndex: Int, weight: Double) {
+        val session = uiState.activeSession ?: return
+        val updatedExercises = session.exercises.toMutableList()
+        val exercise = updatedExercises.getOrNull(exerciseIndex) ?: return
+        val updatedSets = exercise.sets.toMutableList()
+        val nextIndex = updatedSets.indexOfFirst { !it.completed }
+        if (nextIndex == -1) return
+        updatedSets[nextIndex] = updatedSets[nextIndex].copy(
+            weight = formatSessionWeightValue(weight),
+        )
+        updatedExercises[exerciseIndex] = exercise.copy(sets = updatedSets)
+        val updatedSession = session.copy(exercises = updatedExercises)
+        uiState = uiState.copy(
+            activeSession = updatedSession,
+            message = "Next set weight set to ${formatSessionWeightValue(weight)} lb.",
+        )
         persistActiveSessionState(session = updatedSession)
     }
 
@@ -5637,6 +5671,14 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
     private fun initialSessionRepsValue(targetReps: String, recommendedReps: Int?): String {
         return recommendedReps?.toString()
             ?: targetReps.substringBefore('-').trim().ifBlank { targetReps.trim() }
+    }
+
+    private fun formatSessionWeightValue(weight: Double): String {
+        return if (weight % 1.0 == 0.0) {
+            weight.roundToInt().toString()
+        } else {
+            "%.1f".format(weight)
+        }
     }
 
     private fun refreshRecommendationBiasState(exerciseId: Long? = null) {

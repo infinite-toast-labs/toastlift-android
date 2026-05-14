@@ -133,10 +133,33 @@ internal fun buildExercisePerformanceStats(
         .filter { row -> row.completedAtUtc to row.workoutTitle in recentSessionKeys }
         .mapNotNull(ExerciseHistoryRow::weight)
         .filter { it > 0.0 }
+    val previousSessionKey = weightedRows
+        .groupBy { it.completedAtUtc to it.workoutTitle }
+        .keys
+        .maxByOrNull { it.first }
+    val previousSessionSets = previousSessionKey
+        ?.let { sessionKey ->
+            weightedRows
+                .filter { row -> row.completedAtUtc to row.workoutTitle == sessionKey }
+                .groupBy(ExerciseHistoryRow::setNumber)
+                .mapValues { (setNumber, setRows) ->
+                    val bestRow = setRows.maxWith(
+                        compareBy<ExerciseHistoryRow> { it.weight ?: 0.0 }
+                            .thenBy { it.reps ?: 0 },
+                    )
+                    ExercisePreviousSetPerformance(
+                        setNumber = setNumber,
+                        weight = bestRow.weight ?: 0.0,
+                        reps = bestRow.reps ?: 0,
+                    )
+                }
+        }
+        ?: emptyMap()
     return ExercisePerformanceStats(
         maxWeight = maxRow.weight ?: 0.0,
         maxWeightReps = maxRow.reps ?: 0,
         averageWeightLastFiveSessions = recentWeights.takeIf { it.isNotEmpty() }?.average(),
+        previousSessionSetsBySetNumber = previousSessionSets,
     )
 }
 

@@ -90,6 +90,10 @@ tasks.matching { it.name.startsWith("merge") && it.name.endsWith("Assets") }.con
     dependsOn(copySeedDatabase)
 }
 
+tasks.matching { it.name.contains("lint", ignoreCase = true) }.configureEach {
+    dependsOn(copySeedDatabase)
+}
+
 dependencies {
     val composeBom = platform("androidx.compose:compose-bom:2025.01.01")
 
