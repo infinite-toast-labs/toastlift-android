@@ -37,6 +37,19 @@ private fun isSupportedExerciseVideoHost(host: String): Boolean = host == "youtu
     host == "tiktok.com" ||
     host.endsWith(".tiktok.com")
 
+private fun loggedSessionCountJoin(exerciseIdColumn: String = "e.exercise_id"): String = """
+    LEFT JOIN (
+        SELECT
+            pe.exercise_id,
+            COUNT(DISTINCT pe.performed_workout_id) AS logged_session_count
+        FROM performed_exercises pe
+        INNER JOIN performed_sets ps ON ps.performed_exercise_id = pe.performed_exercise_id
+        WHERE ps.is_completed = 1
+          AND COALESCE(ps.actual_reps, 0) > 0
+        GROUP BY pe.exercise_id
+    ) logged_history ON logged_history.exercise_id = $exerciseIdColumn
+""".trimIndent()
+
 class CatalogRepository(private val database: ToastLiftDatabase) {
     private enum class FacetDimension {
         Equipment,
@@ -139,9 +152,11 @@ class CatalogRepository(private val database: ToastLiftDatabase) {
                     COALESCE(p.is_favorite, 0),
                     COALESCE(p.is_hidden, 0),
                     COALESCE(p.is_banned, 0),
-                    COALESCE(p.preference_score_delta, 0)
+                    COALESCE(p.preference_score_delta, 0),
+                    COALESCE(logged_history.logged_session_count, 0)
                 FROM exercises e
                 LEFT JOIN exercise_preferences p ON p.exercise_id = e.exercise_id
+                ${loggedSessionCountJoin()}
                 WHERE
                 """.trimIndent(),
             )
@@ -170,6 +185,7 @@ class CatalogRepository(private val database: ToastLiftDatabase) {
                             banned = cursor.getInt(10) == 1,
                             preferenceScoreDelta = cursor.getDouble(11),
                             recommendationBias = RecommendationBias.fromScoreDelta(cursor.getDouble(11)),
+                            loggedSessionCount = cursor.getInt(12),
                         ),
                     )
                 }
@@ -215,9 +231,11 @@ class CatalogRepository(private val database: ToastLiftDatabase) {
                 e.primary_exercise_classification,
                 e.short_demo_url,
                 e.in_depth_url,
+                COALESCE(logged_history.logged_session_count, 0),
                 ${descriptionColumn?.let { "e.$it" } ?: "NULL"} AS exercise_description
             FROM exercises e
             LEFT JOIN exercise_preferences p ON p.exercise_id = e.exercise_id
+            ${loggedSessionCountJoin()}
             WHERE e.exercise_id = ?
             """.trimIndent(),
             arrayOf(exerciseId.toString()),
@@ -238,6 +256,7 @@ class CatalogRepository(private val database: ToastLiftDatabase) {
                     banned = cursor.getInt(10) == 1,
                     preferenceScoreDelta = cursor.getDouble(11),
                     recommendationBias = RecommendationBias.fromScoreDelta(cursor.getDouble(11)),
+                    loggedSessionCount = cursor.getInt(21),
                 ),
                 notes = cursor.getStringOrNull(12),
                 primeMover = cursor.getStringOrNull(13),
@@ -250,7 +269,7 @@ class CatalogRepository(private val database: ToastLiftDatabase) {
                 planesOfMotion = emptyList(),
                 demoUrl = cursor.getStringOrNull(19),
                 explanationUrl = cursor.getStringOrNull(20),
-                canonicalDescription = normalizeExerciseDescription(cursor.getStringOrNull(21)),
+                canonicalDescription = normalizeExerciseDescription(cursor.getStringOrNull(22)),
                 synonyms = emptyList(),
             )
         }
@@ -539,9 +558,11 @@ class CatalogRepository(private val database: ToastLiftDatabase) {
                 COALESCE(p.is_favorite, 0),
                 COALESCE(p.is_hidden, 0),
                 COALESCE(p.is_banned, 0),
-                COALESCE(p.preference_score_delta, 0)
+                COALESCE(p.preference_score_delta, 0),
+                COALESCE(logged_history.logged_session_count, 0)
             FROM exercises e
             LEFT JOIN exercise_preferences p ON p.exercise_id = e.exercise_id
+            ${loggedSessionCountJoin()}
             WHERE e.exercise_id IN ($placeholders)
             ORDER BY e.name
             """.trimIndent(),
@@ -564,6 +585,7 @@ class CatalogRepository(private val database: ToastLiftDatabase) {
                             banned = cursor.getInt(10) == 1,
                             preferenceScoreDelta = cursor.getDouble(11),
                             recommendationBias = RecommendationBias.fromScoreDelta(cursor.getDouble(11)),
+                            loggedSessionCount = cursor.getInt(12),
                         ),
                     )
                 }

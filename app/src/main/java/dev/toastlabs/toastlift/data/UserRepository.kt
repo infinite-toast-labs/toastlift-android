@@ -18,7 +18,7 @@ class UserRepository(private val database: ToastLiftDatabase) {
                    dev_pick_next_exercise_enabled, dev_fruit_exercise_icons_enabled,
                    dev_exercise_detail_personal_note_visible, dev_exercise_detail_learned_preference_visible,
                    dev_rest_timer_sound_disabled, training_freshness_threshold_days,
-                   dev_session_set_swipe_complete_enabled
+                   training_freshness_min_bucket_exercises, dev_session_set_swipe_complete_enabled
             FROM user_profile
             WHERE user_id = 1
             """.trimIndent(),
@@ -47,7 +47,8 @@ class UserRepository(private val database: ToastLiftDatabase) {
                 devExerciseDetailLearnedPreferenceVisible = cursor.getInt(16) == 1,
                 devRestTimerSoundDisabled = cursor.getInt(17) == 1,
                 trainingFreshnessThresholdDays = normalizeTrainingFreshnessThresholdDays(cursor.getInt(18)),
-                devSessionSetSwipeCompleteEnabled = cursor.getInt(19) == 1,
+                trainingFreshnessMinimumBucketExercises = normalizeTrainingFreshnessBucketExercises(cursor.getInt(19)),
+                devSessionSetSwipeCompleteEnabled = cursor.getInt(20) == 1,
             )
         }
     }
@@ -251,6 +252,14 @@ class UserRepository(private val database: ToastLiftDatabase) {
         )
     }
 
+    fun saveTrainingFreshnessMinimumBucketExercises(exercises: Int) {
+        val db = database.open()
+        db.execSQL(
+            "UPDATE user_profile SET training_freshness_min_bucket_exercises = ?, updated_at_utc = ? WHERE user_id = 1",
+            arrayOf(normalizeTrainingFreshnessBucketExercises(exercises), Instant.now().toString()),
+        )
+    }
+
     fun saveDevSessionSetSwipeCompleteEnabled(enabled: Boolean) {
         val db = database.open()
         db.execSQL(
@@ -355,6 +364,7 @@ class UserRepository(private val database: ToastLiftDatabase) {
                 p.dev_exercise_detail_learned_preference_visible,
                 p.dev_rest_timer_sound_disabled,
                 p.training_freshness_threshold_days,
+                p.training_freshness_min_bucket_exercises,
                 p.next_focus,
                 p.created_at_utc,
                 p.updated_at_utc
@@ -388,9 +398,10 @@ class UserRepository(private val database: ToastLiftDatabase) {
                 .put("dev_exercise_detail_learned_preference_visible", cursor.getInt(18) == 1)
                 .put("dev_rest_timer_sound_disabled", cursor.getInt(19) == 1)
                 .put("training_freshness_threshold_days", normalizeTrainingFreshnessThresholdDays(cursor.getInt(20)))
-                .put("next_focus", cursor.getString(21))
-                .put("created_at_utc", cursor.getString(22))
-                .put("updated_at_utc", cursor.getString(23))
+                .put("training_freshness_min_bucket_exercises", normalizeTrainingFreshnessBucketExercises(cursor.getInt(21)))
+                .put("next_focus", cursor.getString(22))
+                .put("created_at_utc", cursor.getString(23))
+                .put("updated_at_utc", cursor.getString(24))
         }
     }
 

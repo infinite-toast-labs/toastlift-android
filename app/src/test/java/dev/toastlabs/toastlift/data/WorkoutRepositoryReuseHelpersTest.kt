@@ -58,4 +58,18 @@ class WorkoutRepositoryReuseHelpersTest {
             ),
         )
     }
+
+    @Test
+    fun historyReuseWorkoutPlan_preservesCompletedWorkoutFocus() {
+        val workout = historyReuseWorkoutPlan(
+            header = HistoryReuseWorkoutHeader(
+                title = "Upper Day",
+                locationModeId = 2L,
+                focusKey = "upper_body",
+            ),
+            exercises = emptyList(),
+        )
+
+        assertEquals("upper_body", workout.focusKey)
+    }
 }

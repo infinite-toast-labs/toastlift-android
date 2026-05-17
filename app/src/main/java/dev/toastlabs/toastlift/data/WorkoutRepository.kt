@@ -207,6 +207,27 @@ internal fun historyReuseEstimatedMinutes(exercises: List<WorkoutExercise>): Int
     }.coerceAtLeast(5)
 }
 
+internal data class HistoryReuseWorkoutHeader(
+    val title: String,
+    val locationModeId: Long,
+    val focusKey: String?,
+)
+
+internal fun historyReuseWorkoutPlan(
+    header: HistoryReuseWorkoutHeader,
+    exercises: List<WorkoutExercise>,
+): WorkoutPlan {
+    return WorkoutPlan(
+        title = header.title,
+        subtitle = "History reuse",
+        locationModeId = header.locationModeId,
+        estimatedMinutes = historyReuseEstimatedMinutes(exercises),
+        origin = "history",
+        focusKey = header.focusKey,
+        exercises = exercises,
+    )
+}
+
 class WorkoutRepository(private val database: ToastLiftDatabase, private val catalogRepository: CatalogRepository) {
     fun saveTemplate(name: String, origin: String, exercises: List<WorkoutExercise>) {
         if (name.isBlank() || exercises.isEmpty()) return
@@ -1504,14 +1525,18 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
         val db = database.open()
         val header = db.rawQuery(
             """
-            SELECT title, location_mode_id
+            SELECT title, location_mode_id, focus_key
             FROM performed_workouts
             WHERE performed_workout_id = ?
             """.trimIndent(),
             arrayOf(workoutId.toString()),
         ).use { cursor ->
             if (!cursor.moveToFirst()) return null
-            cursor.getString(0) to cursor.getLong(1)
+            HistoryReuseWorkoutHeader(
+                title = cursor.getString(0),
+                locationModeId = cursor.getLong(1),
+                focusKey = cursor.getStringOrNull(2),
+            )
         }
 
         val exercises = mutableListOf<WorkoutExercise>()
@@ -1597,14 +1622,7 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
         }
         flushCurrentExercise()
 
-        return WorkoutPlan(
-            title = header.first,
-            subtitle = "History reuse",
-            locationModeId = header.second,
-            estimatedMinutes = historyReuseEstimatedMinutes(exercises),
-            origin = "history",
-            exercises = exercises,
-        )
+        return historyReuseWorkoutPlan(header, exercises)
     }
 
     private fun loadHistoryWorkoutShareSets(

@@ -3,6 +3,7 @@ package dev.toastlabs.toastlift.ui
 import dev.toastlabs.toastlift.data.ExerciseDetail
 import dev.toastlabs.toastlift.data.UserProfile
 import dev.toastlabs.toastlift.data.WeeklyMuscleTargetWorkoutRow
+import dev.toastlabs.toastlift.data.normalizeTrainingFreshnessBucketExercises
 import dev.toastlabs.toastlift.data.normalizeTrainingFreshnessThresholdDays
 import java.time.Duration
 import java.time.Instant
@@ -103,6 +104,7 @@ private data class StimulusAccumulator(
     var weightedSets: Double = 0.0,
     val muscleLabels: MutableSet<String> = linkedSetOf(),
     val exerciseNames: MutableSet<String> = linkedSetOf(),
+    val exerciseIds: MutableSet<Long> = linkedSetOf(),
 )
 
 private val trackedMuscles = listOf(
@@ -136,6 +138,7 @@ internal fun buildTrainingFreshnessSummary(
     zoneId: ZoneId = ZoneId.systemDefault(),
 ): TrainingFreshnessSummary {
     val thresholdDays = normalizeTrainingFreshnessThresholdDays(profile.trainingFreshnessThresholdDays)
+    val minimumBucketExercises = normalizeTrainingFreshnessBucketExercises(profile.trainingFreshnessMinimumBucketExercises)
     val thresholdHours = thresholdDays * 24L
     val muscleEvents = linkedMapOf<Pair<String, String>, StimulusAccumulator>()
     val bucketEvents = linkedMapOf<Pair<String, String>, StimulusAccumulator>()
@@ -151,12 +154,14 @@ internal fun buildTrainingFreshnessSummary(
                 val weightedSets = row.completedSetCount * contribution.weight
                 muscleAccumulator.weightedSets += weightedSets
                 muscleAccumulator.exerciseNames += contribution.exerciseName
+                muscleAccumulator.exerciseIds += row.exerciseId
 
                 val bucketKey = completedAtUtc to contribution.family.bucketKey()
                 val bucketAccumulator = bucketEvents.getOrPut(bucketKey) { StimulusAccumulator() }
                 bucketAccumulator.weightedSets += weightedSets
                 bucketAccumulator.muscleLabels += contribution.label
                 bucketAccumulator.exerciseNames += contribution.exerciseName
+                bucketAccumulator.exerciseIds += row.exerciseId
             }
         }
 
@@ -186,6 +191,7 @@ internal fun buildTrainingFreshnessSummary(
             slotKey = slot.key,
             events = bucketEvents,
             resetThreshold = BUCKET_RESET_WEIGHTED_SETS,
+            minimumDistinctExercises = minimumBucketExercises,
         )
         val status = freshnessStatus(latest?.first, nowUtc, thresholdHours)
         TrainingFreshnessBucketRow(
@@ -410,9 +416,14 @@ private fun latestQualifyingEvent(
     slotKey: String,
     events: Map<Pair<String, String>, StimulusAccumulator>,
     resetThreshold: Double,
+    minimumDistinctExercises: Int = 1,
 ): Pair<Instant, StimulusAccumulator>? {
     return events.asSequence()
-        .filter { (key, value) -> key.second == slotKey && value.weightedSets >= resetThreshold }
+        .filter { (key, value) ->
+            key.second == slotKey &&
+                value.weightedSets >= resetThreshold &&
+                value.exerciseIds.size >= minimumDistinctExercises
+        }
         .mapNotNull { (key, value) -> Instant.parse(key.first) to value }
         .maxByOrNull { it.first }
 }

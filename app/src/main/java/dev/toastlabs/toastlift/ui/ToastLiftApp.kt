@@ -171,10 +171,13 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
@@ -218,8 +221,10 @@ import dev.toastlabs.toastlift.data.HistorySummary
 import dev.toastlabs.toastlift.data.LibraryFacets
 import dev.toastlabs.toastlift.data.LibraryFilters
 import dev.toastlabs.toastlift.data.LocationMode
+import dev.toastlabs.toastlift.data.MAX_TRAINING_FRESHNESS_BUCKET_EXERCISES
 import dev.toastlabs.toastlift.data.MAX_WEEKLY_FREQUENCY
 import dev.toastlabs.toastlift.data.MAX_WORKOUT_DURATION_MINUTES
+import dev.toastlabs.toastlift.data.MIN_TRAINING_FRESHNESS_BUCKET_EXERCISES
 import dev.toastlabs.toastlift.data.MIN_WEEKLY_FREQUENCY
 import dev.toastlabs.toastlift.data.MIN_WORKOUT_DURATION_MINUTES
 import dev.toastlabs.toastlift.data.OnboardingDraft
@@ -5685,6 +5690,7 @@ private fun ProfileScreen(state: AppUiState, viewModel: ToastLiftViewModel) {
         onSetDevRestTimerSoundDisabled = viewModel::setDevRestTimerSoundDisabled,
         onSetDevSessionSetSwipeCompleteEnabled = viewModel::setDevSessionSetSwipeCompleteEnabled,
         onSetTrainingFreshnessThresholdDays = viewModel::setTrainingFreshnessThresholdDays,
+        onSetTrainingFreshnessMinimumBucketExercises = viewModel::setTrainingFreshnessMinimumBucketExercises,
         onOpenRestTimerSoundSettings = { openRestTimerSoundSettings(context) },
         onExportPersonalData = viewModel::preparePersonalDataExport,
         onDeletePersonalData = viewModel::deleteAllPersonalData,
@@ -5733,6 +5739,7 @@ private fun ProfileEditor(
     onSetDevRestTimerSoundDisabled: ((Boolean) -> Unit)? = null,
     onSetDevSessionSetSwipeCompleteEnabled: ((Boolean) -> Unit)? = null,
     onSetTrainingFreshnessThresholdDays: ((Int) -> Unit)? = null,
+    onSetTrainingFreshnessMinimumBucketExercises: ((Int) -> Unit)? = null,
     onOpenRestTimerSoundSettings: (() -> Unit)? = null,
     onExportPersonalData: (() -> Unit)? = null,
     onDeletePersonalData: (() -> Unit)? = null,
@@ -5962,6 +5969,7 @@ private fun ProfileEditor(
                     onSetDevRestTimerSoundDisabled != null ||
                     onSetDevSessionSetSwipeCompleteEnabled != null ||
                     onSetTrainingFreshnessThresholdDays != null ||
+                    onSetTrainingFreshnessMinimumBucketExercises != null ||
                     onOpenRestTimerSoundSettings != null
             )
         ) {
@@ -6042,6 +6050,19 @@ private fun ProfileEditor(
                     )
                     Text(
                         "Used by the Today Training Freshness card. Default is 3 days; this is a cadence target, not a muscle-loss timer.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                onSetTrainingFreshnessMinimumBucketExercises?.let { onChange ->
+                    Text("Freshness bucket minimum", fontWeight = FontWeight.SemiBold)
+                    ChoiceChipRow(
+                        values = (MIN_TRAINING_FRESHNESS_BUCKET_EXERCISES..MAX_TRAINING_FRESHNESS_BUCKET_EXERCISES).map { it.toString() },
+                        selected = profile.trainingFreshnessMinimumBucketExercises.toString(),
+                        onSelect = { selected -> onChange(selected.toInt()) },
+                    )
+                    Text(
+                        "Upper/lower freshness only refreshes after this many distinct completed exercises. Individual muscle freshness still uses logged stimulus.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -6155,11 +6176,7 @@ private fun ExerciseListCard(
                     )
                     Column(modifier = Modifier.weight(1f)) {
                         Text(exercise.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                        Text(
-                            "${exercise.bodyRegion} • ${exercise.targetMuscleGroup} • ${exercise.equipment}",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                        ExerciseAttributeText(exercise = exercise)
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             MiniTag(exercise.difficulty)
                             MiniTag(exercise.mechanics ?: "Open chain")
@@ -7206,15 +7223,36 @@ private fun SelectableExerciseCard(
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 Text(exercise.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                Text(
-                    "${exercise.bodyRegion} • ${exercise.targetMuscleGroup} • ${exercise.equipment}",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                ExerciseAttributeText(exercise = exercise)
             }
             SelectionIndicatorSlot(selected = selected)
         }
     }
+}
+
+@Composable
+private fun ExerciseAttributeText(exercise: ExerciseSummary) {
+    val baseColor = MaterialTheme.colorScheme.onSurfaceVariant
+    Text(
+        text = buildAnnotatedString {
+            append("${exercise.bodyRegion} • ${exercise.targetMuscleGroup} • ${exercise.equipment}")
+            append(" • ")
+            withStyle(
+                SpanStyle(
+                    color = surgeAccent.start,
+                    fontWeight = FontWeight.SemiBold,
+                ),
+            ) {
+                append(exerciseLoggedSessionLabel(exercise.loggedSessionCount))
+            }
+        },
+        style = MaterialTheme.typography.bodyMedium,
+        color = baseColor,
+    )
+}
+
+private fun exerciseLoggedSessionLabel(count: Int): String {
+    return "$count ${if (count == 1) "session" else "sessions"}"
 }
 
 @Composable
@@ -9826,7 +9864,7 @@ private fun PersistentLabelOutlinedTextField(
     val fieldValue = if (isFocused) draftValue else value
 
     LaunchedEffect(value, isFocused) {
-        if (!isFocused && draftValue != value) {
+        if (draftValue != value) {
             draftValue = value
         }
     }

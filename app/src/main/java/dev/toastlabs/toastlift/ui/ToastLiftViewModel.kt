@@ -60,6 +60,7 @@ import dev.toastlabs.toastlift.data.LocationMode
 import dev.toastlabs.toastlift.data.normalizeExerciseNote
 import dev.toastlabs.toastlift.data.normalizeExerciseVideoLinkLabel
 import dev.toastlabs.toastlift.data.normalizeExerciseVideoLinkUrl
+import dev.toastlabs.toastlift.data.normalizeTrainingFreshnessBucketExercises
 import dev.toastlabs.toastlift.data.normalizeTrainingFreshnessThresholdDays
 import dev.toastlabs.toastlift.data.normalizeWeeklyFrequency
 import dev.toastlabs.toastlift.data.normalizeWorkoutDurationMinutes
@@ -2029,6 +2030,19 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
         )
         viewModelScope.launch(Dispatchers.IO) {
             container.userRepository.saveTrainingFreshnessThresholdDays(normalizedDays)
+            refreshAll()
+        }
+    }
+
+    fun setTrainingFreshnessMinimumBucketExercises(exercises: Int) {
+        val profile = uiState.profile ?: return
+        val normalizedExercises = normalizeTrainingFreshnessBucketExercises(exercises)
+        uiState = uiState.copy(
+            profile = profile.copy(trainingFreshnessMinimumBucketExercises = normalizedExercises),
+            message = "Training freshness minimum set to $normalizedExercises exercises.",
+        )
+        viewModelScope.launch(Dispatchers.IO) {
+            container.userRepository.saveTrainingFreshnessMinimumBucketExercises(normalizedExercises)
             refreshAll()
         }
     }

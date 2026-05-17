@@ -87,6 +87,7 @@ data class ExerciseSummary(
     val banned: Boolean = false,
     val preferenceScoreDelta: Double = 0.0,
     val recommendationBias: RecommendationBias = RecommendationBias.Neutral,
+    val loggedSessionCount: Int = 0,
 )
 
 data class LibraryFilters(
@@ -246,6 +247,9 @@ const val MAX_WEEKLY_FREQUENCY = 7
 const val MIN_TRAINING_FRESHNESS_THRESHOLD_DAYS = 2
 const val MAX_TRAINING_FRESHNESS_THRESHOLD_DAYS = 7
 const val DEFAULT_TRAINING_FRESHNESS_THRESHOLD_DAYS = 3
+const val MIN_TRAINING_FRESHNESS_BUCKET_EXERCISES = 1
+const val MAX_TRAINING_FRESHNESS_BUCKET_EXERCISES = 6
+const val DEFAULT_TRAINING_FRESHNESS_BUCKET_EXERCISES = 2
 const val FORMULA_A_SPLIT_PROGRAM_ID = 6L
 const val FORMULA_A_SPLIT_PROGRAM_NAME = "6-Day PPL Intensity"
 const val FORMULA_A_UPPER_PUSH_STRENGTH_FOCUS_KEY = "upper_push_strength"
@@ -286,6 +290,10 @@ fun normalizeTrainingFreshnessThresholdDays(days: Int): Int {
     return days.coerceIn(MIN_TRAINING_FRESHNESS_THRESHOLD_DAYS, MAX_TRAINING_FRESHNESS_THRESHOLD_DAYS)
 }
 
+fun normalizeTrainingFreshnessBucketExercises(exercises: Int): Int {
+    return exercises.coerceIn(MIN_TRAINING_FRESHNESS_BUCKET_EXERCISES, MAX_TRAINING_FRESHNESS_BUCKET_EXERCISES)
+}
+
 data class UserProfile(
     val goal: String,
     val experience: String,
@@ -306,6 +314,7 @@ data class UserProfile(
     val devExerciseDetailLearnedPreferenceVisible: Boolean = true,
     val devRestTimerSoundDisabled: Boolean = false,
     val trainingFreshnessThresholdDays: Int = DEFAULT_TRAINING_FRESHNESS_THRESHOLD_DAYS,
+    val trainingFreshnessMinimumBucketExercises: Int = DEFAULT_TRAINING_FRESHNESS_BUCKET_EXERCISES,
     val devSessionSetSwipeCompleteEnabled: Boolean = true,
 )
 
