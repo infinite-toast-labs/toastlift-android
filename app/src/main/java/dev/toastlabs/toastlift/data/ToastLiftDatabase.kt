@@ -10,7 +10,7 @@ import java.util.Locale
 class ToastLiftDatabase(private val context: Context) {
     private val databaseName = "toastlift.db"
     private val assetName = "functional_fitness_workout_generator.sqlite"
-    private val appVersion = 19
+    private val appVersion = 20
 
     @Volatile
     private var database: SQLiteDatabase? = null
@@ -80,22 +80,24 @@ class ToastLiftDatabase(private val context: Context) {
                 return
             }
 
+            var catalogAttached = false
             db.beginTransaction()
             try {
                 db.execSQL("ATTACH DATABASE ? AS asset_catalog", arrayOf(assetCopy.absolutePath))
+                catalogAttached = true
                 val tables = listOf(
                     "exercises",
                     "exercise_muscles",
                     "exercise_equipment",
                     "exercise_movement_patterns",
                     "exercise_planes_of_motion",
+                    "exercise_work_units",
                     "exercise_synonyms",
                     "import_metadata",
                 )
                 tables.forEach { table ->
                     db.execSQL("INSERT OR REPLACE INTO $table SELECT * FROM asset_catalog.$table")
                 }
-                db.execSQL("DETACH DATABASE asset_catalog")
                 canonicalizeBundledCustomExercises(db)
                 seedSystemData(db)
                 db.setTransactionSuccessful()
@@ -103,7 +105,9 @@ class ToastLiftDatabase(private val context: Context) {
                 if (db.inTransaction()) {
                     db.endTransaction()
                 }
-                safelyDetachCatalog(db)
+                if (catalogAttached) {
+                    safelyDetachCatalog(db)
+                }
             }
         } finally {
             assetDb.close()
@@ -158,7 +162,35 @@ class ToastLiftDatabase(private val context: Context) {
             WHERE metadata_key = 'source_filename'
             """.trimIndent(),
         )
-        return currentSourceFilename != assetSourceFilename
+        if (currentSourceFilename != assetSourceFilename) return true
+
+        val currentWorkUnitCount = if (currentDb.tableExists("exercise_work_units")) {
+            currentDb.simpleLongForQuery("SELECT COUNT(*) FROM exercise_work_units")
+        } else {
+            0L
+        }
+        val assetWorkUnitCount = if (assetDb.tableExists("exercise_work_units")) {
+            assetDb.simpleLongForQuery("SELECT COUNT(*) FROM exercise_work_units")
+        } else {
+            0L
+        }
+        if (currentWorkUnitCount != assetWorkUnitCount) return true
+
+        val currentWorkUnitVersion = currentDb.singleStringOrNull(
+            """
+            SELECT metadata_value
+            FROM import_metadata
+            WHERE metadata_key = 'exercise_work_units_version'
+            """.trimIndent(),
+        )
+        val assetWorkUnitVersion = assetDb.singleStringOrNull(
+            """
+            SELECT metadata_value
+            FROM import_metadata
+            WHERE metadata_key = 'exercise_work_units_version'
+            """.trimIndent(),
+        )
+        return currentWorkUnitVersion != assetWorkUnitVersion
     }
 
     private fun safelyDetachCatalog(db: SQLiteDatabase) {
@@ -390,6 +422,7 @@ class ToastLiftDatabase(private val context: Context) {
             )
             """.trimIndent(),
         )
+        ensureExerciseWorkUnitTable(db)
         db.execSQL(
             """
             CREATE TABLE IF NOT EXISTS workout_templates (
@@ -538,6 +571,12 @@ class ToastLiftDatabase(private val context: Context) {
             column = "completed_at_utc",
             definition = "TEXT",
         )
+        ensureColumn(
+            db = db,
+            table = "performed_sets",
+            column = "work_unit_values_json",
+            definition = "TEXT",
+        )
         db.execSQL(
             "CREATE INDEX IF NOT EXISTS idx_performed_exercises_exercise_id ON performed_exercises (exercise_id)",
         )
@@ -670,6 +709,12 @@ class ToastLiftDatabase(private val context: Context) {
             column = "completed_at_utc",
             definition = "TEXT",
         )
+        ensureColumn(
+            db = db,
+            table = "abandoned_sets",
+            column = "work_unit_values_json",
+            definition = "TEXT",
+        )
         db.execSQL(
             """
             CREATE TABLE IF NOT EXISTS active_workouts (
@@ -799,6 +844,12 @@ class ToastLiftDatabase(private val context: Context) {
             db = db,
             table = "active_sets",
             column = "completed_at_utc",
+            definition = "TEXT",
+        )
+        ensureColumn(
+            db = db,
+            table = "active_sets",
+            column = "work_unit_values_json",
             definition = "TEXT",
         )
         db.execSQL(
@@ -955,6 +1006,7 @@ class ToastLiftDatabase(private val context: Context) {
     }
 
     private fun ensureCatalogColumns(db: SQLiteDatabase) {
+        ensureExerciseWorkUnitTable(db)
         ensureColumn(
             db = db,
             table = "exercises",
@@ -984,6 +1036,34 @@ class ToastLiftDatabase(private val context: Context) {
             table = "exercises",
             column = "generation_prompt_version",
             definition = "TEXT",
+        )
+    }
+
+    private fun ensureExerciseWorkUnitTable(db: SQLiteDatabase) {
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS exercise_work_units (
+                exercise_id INTEGER NOT NULL,
+                sequence_no INTEGER NOT NULL CHECK (sequence_no >= 1),
+                unit_key TEXT NOT NULL,
+                display_label TEXT NOT NULL,
+                value_type TEXT NOT NULL CHECK (value_type IN ('decimal', 'integer', 'duration', 'text')),
+                unit_label TEXT,
+                default_value TEXT,
+                min_value REAL,
+                max_value REAL,
+                step_value REAL,
+                is_primary INTEGER NOT NULL DEFAULT 0 CHECK (is_primary IN (0, 1)),
+                is_required INTEGER NOT NULL DEFAULT 0 CHECK (is_required IN (0, 1)),
+                tracks_effort INTEGER NOT NULL DEFAULT 0 CHECK (tracks_effort IN (0, 1)),
+                PRIMARY KEY (exercise_id, sequence_no),
+                UNIQUE (exercise_id, unit_key),
+                FOREIGN KEY (exercise_id) REFERENCES exercises (exercise_id) ON DELETE CASCADE
+            )
+            """.trimIndent(),
+        )
+        db.execSQL(
+            "CREATE INDEX IF NOT EXISTS idx_exercise_work_units_exercise ON exercise_work_units (exercise_id, sequence_no)",
         )
     }
 
@@ -1071,6 +1151,12 @@ class ToastLiftDatabase(private val context: Context) {
         rawQuery(query, null).use { cursor ->
             if (!cursor.moveToFirst() || cursor.isNull(0)) null else cursor.getString(0)
         }
+
+    private fun SQLiteDatabase.tableExists(table: String): Boolean =
+        rawQuery(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ? LIMIT 1",
+            arrayOf(table),
+        ).use { cursor -> cursor.moveToFirst() }
 
     private fun seedSystemData(db: SQLiteDatabase) {
         val splitPrograms = listOf(

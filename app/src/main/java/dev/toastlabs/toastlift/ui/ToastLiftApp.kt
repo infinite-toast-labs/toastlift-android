@@ -239,6 +239,7 @@ import dev.toastlabs.toastlift.data.ThemePreference
 import dev.toastlabs.toastlift.data.TrainingSplitProgram
 import dev.toastlabs.toastlift.data.UserProfile
 import dev.toastlabs.toastlift.data.WorkoutExercise
+import dev.toastlabs.toastlift.data.WorkUnitDefinition
 import dev.toastlabs.toastlift.data.WorkoutPlan
 import dev.toastlabs.toastlift.data.CheckpointResult
 import dev.toastlabs.toastlift.data.CheckpointStatus
@@ -845,6 +846,7 @@ fun ToastLiftApp(
                     onSaveCustomExercise = viewModel::saveCustomExercise,
                     onPendingSelectionConsumed = viewModel::clearPendingAddExercisePickerSelection,
                     onValueChange = viewModel::updateSessionValue,
+                    onWorkUnitValueChange = viewModel::updateSessionWorkUnitValue,
                     onApplyWeightToNextIncompleteSet = viewModel::applyWeightToNextIncompleteSet,
                     onToggleComplete = viewModel::toggleSessionSetComplete,
                     onAddSet = viewModel::addSessionSet,
@@ -7629,6 +7631,7 @@ private fun ActiveSessionScreen(
     onSaveCustomExercise: () -> Unit,
     onPendingSelectionConsumed: () -> Unit,
     onValueChange: (Int, Int, String, Boolean) -> Unit,
+    onWorkUnitValueChange: (Int, Int, String, String) -> Unit,
     onApplyWeightToNextIncompleteSet: (Int, Double) -> Unit,
     onToggleComplete: (Int, Int) -> Unit,
     onAddSet: (Int) -> Unit,
@@ -7708,6 +7711,7 @@ private fun ActiveSessionScreen(
             onBack = onCloseExercise,
             onShowExerciseDetail = { onShowExerciseDetail(selectedExercise.exerciseId) },
             onValueChange = onValueChange,
+            onWorkUnitValueChange = onWorkUnitValueChange,
             onApplyWeightToNextIncompleteSet = onApplyWeightToNextIncompleteSet,
             onToggleComplete = onToggleComplete,
             onAddSet = onAddSet,
@@ -8710,7 +8714,9 @@ private fun SessionExerciseRow(
     )
     val summaryLine = if (completedSets > 0) {
         buildString {
-            append("$completedSets/$totalSets Sets Logged")
+            append("$completedSets/$totalSets ")
+            append(if (exercise.workUnits.isEmpty()) "Sets" else "Intervals")
+            append(" Logged")
             if (completedSets == totalSets) {
                 exercise.lastSetRepsInReserve?.let {
                     append(" • RIR ")
@@ -8718,6 +8724,12 @@ private fun SessionExerciseRow(
                 }
             }
         }
+    } else if (exercise.workUnits.isNotEmpty()) {
+        val primaryUnit = exercise.workUnits.firstOrNull { it.isPrimary } ?: exercise.workUnits.firstOrNull()
+        val primaryValue = primaryUnit
+            ?.let { unit -> exercise.sets.firstOrNull()?.workUnitValues?.get(unit.key)?.takeIf { it.isNotBlank() }?.let { "${unit.label} $it${unit.unitLabel?.let { label -> " $label" }.orEmpty()}" } }
+        listOfNotNull("$totalSets Interval".let { if (totalSets == 1) it else "${totalSets} Intervals" }, primaryValue)
+            .joinToString(" • ")
     } else {
         "$totalSets Sets • ${exercise.sets.firstOrNull()?.targetReps ?: "--"} Reps" +
             exercise.sets.firstOrNull()?.displayedWeight()?.takeIf { it.isNotBlank() }?.let { " • $it lb" }.orEmpty()
@@ -8976,6 +8988,7 @@ private fun SessionExerciseDetailScreen(
     onBack: () -> Unit,
     onShowExerciseDetail: () -> Unit,
     onValueChange: (Int, Int, String, Boolean) -> Unit,
+    onWorkUnitValueChange: (Int, Int, String, String) -> Unit,
     onApplyWeightToNextIncompleteSet: (Int, Double) -> Unit,
     onToggleComplete: (Int, Int) -> Unit,
     onAddSet: (Int) -> Unit,
@@ -8993,6 +9006,7 @@ private fun SessionExerciseDetailScreen(
 ) {
     val allSetsCompleted = exercise.sets.isNotEmpty() && exercise.sets.all { it.completed }
     val completedSets = exercise.sets.count { it.completed }
+    val usesCustomWorkUnits = exercise.workUnits.isNotEmpty()
     val currentSetNumbers = exercise.sets.associate { it.id to it.setNumber }
     val currentSetNumberSnapshot = exercise.sets.map { it.id to it.setNumber }
     var animatedSetNumbers by remember(exercise.exerciseId) { mutableStateOf(currentSetNumbers) }
@@ -9017,7 +9031,7 @@ private fun SessionExerciseDetailScreen(
             if (allSetsCompleted) {
                 Button(
                     onClick = { onFinishExercise(exerciseIndex) },
-                    enabled = exercise.lastSetRepsInReserve != null,
+                    enabled = usesCustomWorkUnits || exercise.lastSetRepsInReserve != null,
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(16.dp),
@@ -9032,10 +9046,10 @@ private fun SessionExerciseDetailScreen(
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     OutlinedButton(onClick = { onLogAllSets(exerciseIndex) }, modifier = Modifier.weight(1f)) {
-                        Text("Log All Sets")
+                        Text(if (usesCustomWorkUnits) "Log All" else "Log All Sets")
                     }
                     Button(onClick = { onLogSet(exerciseIndex) }, modifier = Modifier.weight(1f)) {
-                        Text("Log Set")
+                        Text(if (usesCustomWorkUnits) "Log Interval" else "Log Set")
                     }
                 }
             }
@@ -9061,7 +9075,7 @@ private fun SessionExerciseDetailScreen(
                             onBack()
                         }
                     },
-                    enabled = !allSetsCompleted || exercise.lastSetRepsInReserve != null,
+                    enabled = !allSetsCompleted || usesCustomWorkUnits || exercise.lastSetRepsInReserve != null,
                     modifier = Modifier.align(Alignment.TopStart).padding(8.dp),
                 ) {
                     Icon(imageVector = Icons.Rounded.Close, contentDescription = "Back to workout")
@@ -9157,24 +9171,26 @@ private fun SessionExerciseDetailScreen(
                         set = set,
                         displaySetNumber = animatedSetNumbers[set.id] ?: set.setNumber,
                         previousSetPerformance = performanceStats?.previousSessionSetsBySetNumber?.get(set.setNumber),
+                        workUnits = exercise.workUnits,
                         exerciseIndex = exerciseIndex,
                         setIndex = setIndex,
                         swipeCompleteEnabled = swipeCompleteEnabled,
                         onValueChange = onValueChange,
+                        onWorkUnitValueChange = onWorkUnitValueChange,
                         onToggleComplete = onToggleComplete,
                         onDeleteSet = onDeleteSet,
                     )
                 }
                 item {
                     Text(
-                        text = "Add Set",
+                        text = if (exercise.workUnits.isEmpty()) "Add Set" else "Add Interval",
                         color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.clickable { onAddSet(exerciseIndex) }.padding(top = 6.dp),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                     )
                 }
-                if (allSetsCompleted) {
+                if (allSetsCompleted && !usesCustomWorkUnits) {
                     item {
                         ExerciseEffortPromptCard(
                             selectedRepsInReserve = exercise.lastSetRepsInReserve,
@@ -9368,10 +9384,12 @@ private fun DismissibleSessionSetRow(
     set: SessionSet,
     displaySetNumber: Int,
     previousSetPerformance: ExercisePreviousSetPerformance?,
+    workUnits: List<WorkUnitDefinition>,
     exerciseIndex: Int,
     setIndex: Int,
     swipeCompleteEnabled: Boolean,
     onValueChange: (Int, Int, String, Boolean) -> Unit,
+    onWorkUnitValueChange: (Int, Int, String, String) -> Unit,
     onToggleComplete: (Int, Int) -> Unit,
     onDeleteSet: (Int, Int) -> Unit,
 ) {
@@ -9563,68 +9581,22 @@ private fun DismissibleSessionSetRow(
                         modifier = Modifier.weight(1f),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            PersistentLabelOutlinedTextField(
-                                value = set.displayedReps(),
-                                onValueChange = { value -> onValueChange(exerciseIndex, setIndex, value, false) },
-                                modifier = Modifier.weight(1f),
-                                label = "Reps",
-                                textColor = completedTextColor,
-                                keyboardOptions = KeyboardOptions(
-                                    keyboardType = KeyboardType.Number,
-                                    imeAction = ImeAction.Next,
-                                ),
+                        if (workUnits.isEmpty()) {
+                            StrengthSessionSetFields(
+                                set = set,
+                                completedTextColor = completedTextColor,
+                                exerciseIndex = exerciseIndex,
+                                setIndex = setIndex,
+                                onValueChange = onValueChange,
                             )
-                            PersistentLabelOutlinedTextField(
-                                value = set.displayedWeight(),
-                                onValueChange = { value -> onValueChange(exerciseIndex, setIndex, value, true) },
-                                modifier = Modifier.weight(1f),
-                                label = "Weight (lb)",
-                                textColor = completedTextColor,
-                                keyboardOptions = KeyboardOptions(
-                                    keyboardType = KeyboardType.Decimal,
-                                    imeAction = ImeAction.Next,
-                                ),
-                            )
-                        }
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            SetValueStepper(
-                                label = "Reps",
-                                decrementLabel = "-1",
-                                incrementLabel = "+1",
-                                modifier = Modifier.weight(1f),
-                                onDecrement = {
-                                    val current = currentSessionSetReps(set)
-                                    onValueChange(exerciseIndex, setIndex, (current - 1).coerceAtLeast(0).toString(), false)
-                                },
-                                onIncrement = {
-                                    val current = currentSessionSetReps(set)
-                                    onValueChange(exerciseIndex, setIndex, (current + 1).toString(), false)
-                                },
-                            )
-                            SetValueStepper(
-                                label = "Weight",
-                                decrementLabel = "-5",
-                                incrementLabel = "+5",
-                                modifier = Modifier.weight(1f),
-                                onDecrement = {
-                                    val current = currentSessionSetWeight(set)
-                                    onValueChange(
-                                        exerciseIndex,
-                                        setIndex,
-                                        formatSetStepperWeight((current - SESSION_WEIGHT_JUMP_LB).coerceAtLeast(0.0)),
-                                        true,
-                                    )
-                                },
-                                onIncrement = {
-                                    val current = currentSessionSetWeight(set)
-                                    onValueChange(
-                                        exerciseIndex,
-                                        setIndex,
-                                        formatSetStepperWeight(current + SESSION_WEIGHT_JUMP_LB),
-                                        true,
-                                    )
-                                },
+                        } else {
+                            WorkUnitSessionSetFields(
+                                set = set,
+                                workUnits = workUnits,
+                                completedTextColor = completedTextColor,
+                                exerciseIndex = exerciseIndex,
+                                setIndex = setIndex,
+                                onWorkUnitValueChange = onWorkUnitValueChange,
                             )
                         }
                         previousSetPerformance?.let { previous ->
@@ -9648,6 +9620,123 @@ private fun DismissibleSessionSetRow(
             }
         }
     }
+}
+
+@Composable
+private fun StrengthSessionSetFields(
+    set: SessionSet,
+    completedTextColor: Color,
+    exerciseIndex: Int,
+    setIndex: Int,
+    onValueChange: (Int, Int, String, Boolean) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            PersistentLabelOutlinedTextField(
+                value = set.displayedReps(),
+                onValueChange = { value -> onValueChange(exerciseIndex, setIndex, value, false) },
+                modifier = Modifier.weight(1f),
+                label = "Reps",
+                textColor = completedTextColor,
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Number,
+                    imeAction = ImeAction.Next,
+                ),
+            )
+            PersistentLabelOutlinedTextField(
+                value = set.displayedWeight(),
+                onValueChange = { value -> onValueChange(exerciseIndex, setIndex, value, true) },
+                modifier = Modifier.weight(1f),
+                label = "Weight (lb)",
+                textColor = completedTextColor,
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Decimal,
+                    imeAction = ImeAction.Next,
+                ),
+            )
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            SetValueStepper(
+                label = "Reps",
+                decrementLabel = "-1",
+                incrementLabel = "+1",
+                modifier = Modifier.weight(1f),
+                onDecrement = {
+                    val current = currentSessionSetReps(set)
+                    onValueChange(exerciseIndex, setIndex, (current - 1).coerceAtLeast(0).toString(), false)
+                },
+                onIncrement = {
+                    val current = currentSessionSetReps(set)
+                    onValueChange(exerciseIndex, setIndex, (current + 1).toString(), false)
+                },
+            )
+            SetValueStepper(
+                label = "Weight",
+                decrementLabel = "-5",
+                incrementLabel = "+5",
+                modifier = Modifier.weight(1f),
+                onDecrement = {
+                    val current = currentSessionSetWeight(set)
+                    onValueChange(
+                        exerciseIndex,
+                        setIndex,
+                        formatSetStepperWeight((current - SESSION_WEIGHT_JUMP_LB).coerceAtLeast(0.0)),
+                        true,
+                    )
+                },
+                onIncrement = {
+                    val current = currentSessionSetWeight(set)
+                    onValueChange(
+                        exerciseIndex,
+                        setIndex,
+                        formatSetStepperWeight(current + SESSION_WEIGHT_JUMP_LB),
+                        true,
+                    )
+                },
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun WorkUnitSessionSetFields(
+    set: SessionSet,
+    workUnits: List<WorkUnitDefinition>,
+    completedTextColor: Color,
+    exerciseIndex: Int,
+    setIndex: Int,
+    onWorkUnitValueChange: (Int, Int, String, String) -> Unit,
+) {
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        workUnits.forEach { unit ->
+            PersistentLabelOutlinedTextField(
+                value = set.workUnitValues[unit.key].orEmpty(),
+                onValueChange = { value -> onWorkUnitValueChange(exerciseIndex, setIndex, unit.key, value) },
+                modifier = Modifier
+                    .weight(1f)
+                    .width(132.dp),
+                label = workUnitLabel(unit),
+                textColor = completedTextColor,
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = keyboardTypeForWorkUnit(unit),
+                    imeAction = ImeAction.Next,
+                ),
+            )
+        }
+    }
+}
+
+private fun workUnitLabel(unit: WorkUnitDefinition): String =
+    unit.unitLabel?.takeIf { it.isNotBlank() }?.let { "${unit.label} ($it)" } ?: unit.label
+
+private fun keyboardTypeForWorkUnit(unit: WorkUnitDefinition): KeyboardType = when (unit.valueType) {
+    "integer" -> KeyboardType.Number
+    "decimal", "duration" -> KeyboardType.Decimal
+    else -> KeyboardType.Text
 }
 
 @Composable

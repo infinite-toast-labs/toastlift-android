@@ -334,6 +334,20 @@ data class WorkoutExercise(
     val startingSets: List<WorkoutExerciseSetDraft> = emptyList(),
 )
 
+data class WorkUnitDefinition(
+    val key: String,
+    val label: String,
+    val valueType: String,
+    val unitLabel: String?,
+    val defaultValue: String?,
+    val minValue: Double?,
+    val maxValue: Double?,
+    val stepValue: Double?,
+    val isPrimary: Boolean,
+    val isRequired: Boolean,
+    val tracksEffort: Boolean,
+)
+
 data class WorkoutExerciseSetDraft(
     val setNumber: Int,
     val targetReps: String,
@@ -341,6 +355,7 @@ data class WorkoutExerciseSetDraft(
     val recommendedWeight: Double? = null,
     val reps: Int? = null,
     val weight: Double? = null,
+    val workUnitValues: Map<String, String> = emptyMap(),
     val recommendationSource: RecommendationSource = RecommendationSource.NONE,
     val recommendationConfidence: Double? = null,
 )
@@ -804,6 +819,7 @@ data class SessionSet(
     val recommendedWeight: String = "",
     val reps: String = "",
     val weight: String = "",
+    val workUnitValues: Map<String, String> = emptyMap(),
     val recommendationSource: RecommendationSource = RecommendationSource.NONE,
     val recommendationConfidence: Double? = null,
     val completed: Boolean = false,
@@ -851,6 +867,7 @@ data class SessionExercise(
     val equipment: String,
     val restSeconds: Int,
     val sets: List<SessionSet>,
+    val workUnits: List<WorkUnitDefinition> = emptyList(),
     val activitySequence: Int? = null,
     val completionSequence: Int? = null,
     val lastSetRepsInReserve: Int? = null,

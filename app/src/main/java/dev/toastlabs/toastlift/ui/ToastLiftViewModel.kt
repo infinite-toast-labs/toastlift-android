@@ -105,6 +105,7 @@ import dev.toastlabs.toastlift.data.buildCompletionReceiptAbFlags
 import dev.toastlabs.toastlift.data.buildTodayCompletionFeedbackAbFlags
 import dev.toastlabs.toastlift.data.buildAdherenceCurrencySnapshot
 import dev.toastlabs.toastlift.data.buildGlobalAdherenceCurrencyTrend
+import dev.toastlabs.toastlift.data.defaultWorkUnitValues
 import dev.toastlabs.toastlift.data.toPendingWorkoutShare
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -1077,6 +1078,7 @@ internal fun sessionSetFromHistoryReuseDraft(
             ?: recommendedReps?.toString()
             ?: targetReps.substringBefore('-').trim().ifBlank { targetReps.trim() },
         weight = dev.toastlabs.toastlift.data.formatRecommendedWeight(draft.weight ?: draft.recommendedWeight),
+        workUnitValues = draft.workUnitValues,
         recommendationSource = draft.recommendationSource,
         recommendationConfidence = draft.recommendationConfidence,
     )
@@ -3103,6 +3105,31 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
         persistActiveSessionState(session = updatedSession)
     }
 
+    fun updateSessionWorkUnitValue(exerciseIndex: Int, setIndex: Int, unitKey: String, value: String) {
+        val session = uiState.activeSession ?: return
+        val updatedExercises = session.exercises.toMutableList()
+        val exercise = updatedExercises[exerciseIndex]
+        val updatedSets = exercise.sets.toMutableList()
+        val targetSet = updatedSets[setIndex]
+        val propagationSource = targetSet.workUnitValues[unitKey].orEmpty()
+        updatedSets[setIndex] = targetSet.copy(
+            workUnitValues = targetSet.workUnitValues + (unitKey to value),
+        )
+        for (index in (setIndex + 1) until updatedSets.size) {
+            val set = updatedSets[index]
+            if (set.completed) continue
+            if (set.workUnitValues[unitKey].orEmpty() == propagationSource) {
+                updatedSets[index] = set.copy(
+                    workUnitValues = set.workUnitValues + (unitKey to value),
+                )
+            }
+        }
+        updatedExercises[exerciseIndex] = exercise.copy(sets = updatedSets)
+        val updatedSession = session.copy(exercises = updatedExercises)
+        uiState = uiState.copy(activeSession = updatedSession)
+        persistActiveSessionState(session = updatedSession)
+    }
+
     fun applyWeightToNextIncompleteSet(exerciseIndex: Int, weight: Double) {
         val session = uiState.activeSession ?: return
         val updatedExercises = session.exercises.toMutableList()
@@ -3169,6 +3196,7 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
             recommendedWeight = template?.recommendedWeight.orEmpty(),
             weight = template?.weight.orEmpty(),
             reps = template?.reps.orEmpty(),
+            workUnitValues = template?.workUnitValues ?: defaultWorkUnitValues(exercise.workUnits),
             recommendationSource = template?.recommendationSource ?: dev.toastlabs.toastlift.data.RecommendationSource.NONE,
             recommendationConfidence = template?.recommendationConfidence,
             completed = false,
@@ -3336,7 +3364,8 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
     fun finishSessionExercise(exerciseIndex: Int) {
         val session = uiState.activeSession ?: return
         val exercise = session.exercises.getOrNull(exerciseIndex) ?: return
-        if (exercise.sets.isEmpty() || exercise.sets.any { !it.completed } || exercise.lastSetRepsInReserve == null) return
+        val needsEffortRating = exercise.workUnits.isEmpty()
+        if (exercise.sets.isEmpty() || exercise.sets.any { !it.completed } || (needsEffortRating && exercise.lastSetRepsInReserve == null)) return
         uiState = uiState.copy(activeSessionExerciseIndex = null)
         persistActiveSessionState(selectedExerciseIndex = null)
     }
@@ -5603,6 +5632,7 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
         profile: UserProfile?,
         history: List<dev.toastlabs.toastlift.data.HistoricalExerciseSet>,
     ): SessionExercise {
+        val workUnits = container.catalogRepository.loadExerciseWorkUnits(exercise.exerciseId)
         if (exercise.startingSets.isNotEmpty()) {
             return SessionExercise(
                 exerciseId = exercise.exerciseId,
@@ -5611,6 +5641,7 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
                 targetMuscleGroup = exercise.targetMuscleGroup,
                 equipment = exercise.equipment,
                 restSeconds = exercise.restSeconds,
+                workUnits = workUnits,
                 sets = exercise.startingSets
                     .sortedBy(WorkoutExerciseSetDraft::setNumber)
                     .map { draft -> sessionSetFromHistoryReuseDraft(draft, exercise.repRange) },
@@ -5628,18 +5659,20 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
             targetMuscleGroup = exercise.targetMuscleGroup,
             equipment = exercise.equipment,
             restSeconds = exercise.restSeconds,
-            sets = (1..exercise.sets).map { setNo ->
+            workUnits = workUnits,
+            sets = (1..if (workUnits.isNotEmpty()) 1 else exercise.sets).map { setNo ->
                 val initialWeight = dev.toastlabs.toastlift.data.formatRecommendedWeight(prescription.recommendedWeight)
                 SessionSet(
                     setNumber = setNo,
-                    targetReps = prescription.repRange,
-                    recommendedReps = prescription.recommendedRepCount,
-                    recommendedWeight = initialWeight,
+                    targetReps = if (workUnits.isEmpty()) prescription.repRange else "",
+                    recommendedReps = prescription.recommendedRepCount.takeIf { workUnits.isEmpty() },
+                    recommendedWeight = initialWeight.takeIf { workUnits.isEmpty() }.orEmpty(),
                     reps = initialSessionRepsValue(
                         targetReps = prescription.repRange,
                         recommendedReps = prescription.recommendedRepCount,
-                    ),
-                    weight = initialWeight,
+                    ).takeIf { workUnits.isEmpty() }.orEmpty(),
+                    weight = initialWeight.takeIf { workUnits.isEmpty() }.orEmpty(),
+                    workUnitValues = defaultWorkUnitValues(workUnits),
                     recommendationSource = prescription.source,
                     recommendationConfidence = prescription.confidence,
                 )

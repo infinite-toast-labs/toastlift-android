@@ -743,7 +743,8 @@ class UserRepository(private val database: ToastLiftDatabase) {
                 weight_value,
                 is_completed,
                 recommendation_source,
-                recommendation_confidence
+                recommendation_confidence,
+                work_unit_values_json
             FROM performed_sets
             WHERE performed_exercise_id = ?
             ORDER BY set_number, performed_set_id
@@ -762,7 +763,8 @@ class UserRepository(private val database: ToastLiftDatabase) {
                             .putNullable("weight_value", cursor.optionalDouble(5))
                             .put("is_completed", cursor.getInt(6) == 1)
                             .putNullable("recommendation_source", cursor.getStringOrNull(7))
-                            .putNullable("recommendation_confidence", cursor.optionalDouble(8)),
+                            .putNullable("recommendation_confidence", cursor.optionalDouble(8))
+                            .putNullable("work_unit_values_json", cursor.getStringOrNull(9)),
                     )
                 }
             }
@@ -886,7 +888,8 @@ class UserRepository(private val database: ToastLiftDatabase) {
                 weight_value,
                 is_completed,
                 recommendation_source,
-                recommendation_confidence
+                recommendation_confidence,
+                work_unit_values_json
             FROM $setTable
             WHERE $exerciseIdColumn = ?
             ORDER BY set_number, $setIdColumn
@@ -906,7 +909,8 @@ class UserRepository(private val database: ToastLiftDatabase) {
                             .put("weight_value", cursor.getString(6))
                             .put("is_completed", cursor.getInt(7) == 1)
                             .putNullable("recommendation_source", cursor.getStringOrNull(8))
-                            .putNullable("recommendation_confidence", cursor.optionalDouble(9)),
+                            .putNullable("recommendation_confidence", cursor.optionalDouble(9))
+                            .putNullable("work_unit_values_json", cursor.getStringOrNull(10)),
                     )
                 }
             }

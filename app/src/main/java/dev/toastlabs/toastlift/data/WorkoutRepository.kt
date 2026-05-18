@@ -461,8 +461,8 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
                         INSERT INTO performed_sets (
                             performed_exercise_id, set_number, target_reps, recommended_reps,
                             recommended_weight_value, actual_reps, weight_value, is_completed,
-                            recommendation_source, recommendation_confidence, completed_at_utc
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            recommendation_source, recommendation_confidence, completed_at_utc, work_unit_values_json
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """.trimIndent(),
                         arrayOf(
                             performedExerciseId,
@@ -476,6 +476,7 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
                             set.recommendationSource.name,
                             set.recommendationConfidence,
                             set.completedAtUtc,
+                            encodeWorkUnitValues(set.workUnitValues),
                         ),
                     )
                 }
@@ -593,8 +594,8 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
                         INSERT INTO active_sets (
                             active_exercise_id, set_stable_id, set_number, target_reps, recommended_reps,
                             recommended_weight_value, actual_reps, weight_value, is_completed,
-                            recommendation_source, recommendation_confidence, completed_at_utc
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            recommendation_source, recommendation_confidence, completed_at_utc, work_unit_values_json
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """.trimIndent(),
                         arrayOf(
                             activeExerciseId,
@@ -609,6 +610,7 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
                             set.recommendationSource.name,
                             set.recommendationConfidence,
                             set.completedAtUtc,
+                            encodeWorkUnitValues(set.workUnitValues),
                         ),
                     )
                 }
@@ -684,7 +686,8 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
                             is_completed,
                             recommendation_source,
                             recommendation_confidence,
-                            completed_at_utc
+                            completed_at_utc,
+                            work_unit_values_json
                         FROM active_sets
                         WHERE active_exercise_id = ?
                         ORDER BY set_number
@@ -706,6 +709,7 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
                                         recommendationSource = recommendationSourceFromStorage(setCursor.getStringOrNull(8)),
                                         recommendationConfidence = if (setCursor.isNull(9)) null else setCursor.getDouble(9),
                                         completedAtUtc = setCursor.getStringOrNull(10),
+                                        workUnitValues = decodeWorkUnitValues(setCursor.getStringOrNull(11)),
                                     ),
                                 )
                             }
@@ -723,6 +727,7 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
                             lastSetRepsInReserve = if (cursor.isNull(8)) null else cursor.getInt(8),
                             notes = cursor.getString(7),
                             fruitIcon = cursor.getStringOrNull(10),
+                            workUnits = catalogRepository.loadExerciseWorkUnits(cursor.getLong(1)),
                             sets = sets,
                         ),
                     )
@@ -799,8 +804,8 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
                         INSERT INTO abandoned_sets (
                             abandoned_exercise_id, set_stable_id, set_number, target_reps, recommended_reps,
                             recommended_weight_value, actual_reps, weight_value, is_completed,
-                            recommendation_source, recommendation_confidence, completed_at_utc
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            recommendation_source, recommendation_confidence, completed_at_utc, work_unit_values_json
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """.trimIndent(),
                         arrayOf(
                             abandonedExerciseId,
@@ -815,6 +820,7 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
                             set.recommendationSource.name,
                             set.recommendationConfidence,
                             set.completedAtUtc,
+                            encodeWorkUnitValues(set.workUnitValues),
                         ),
                     )
                 }
@@ -887,7 +893,8 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
                             is_completed,
                             recommendation_source,
                             recommendation_confidence,
-                            completed_at_utc
+                            completed_at_utc,
+                            work_unit_values_json
                         FROM abandoned_sets
                         WHERE abandoned_exercise_id = ?
                         ORDER BY set_number
@@ -909,6 +916,7 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
                                         recommendationSource = recommendationSourceFromStorage(setCursor.getStringOrNull(8)),
                                         recommendationConfidence = if (setCursor.isNull(9)) null else setCursor.getDouble(9),
                                         completedAtUtc = setCursor.getStringOrNull(10),
+                                        workUnitValues = decodeWorkUnitValues(setCursor.getStringOrNull(11)),
                                     ),
                                 )
                             }
@@ -925,6 +933,7 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
                             lastSetRepsInReserve = if (cursor.isNull(8)) null else cursor.getInt(8),
                             notes = cursor.getString(7),
                             fruitIcon = cursor.getStringOrNull(9),
+                            workUnits = catalogRepository.loadExerciseWorkUnits(cursor.getLong(1)),
                             sets = sets,
                         ),
                     )
@@ -1584,7 +1593,8 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
                 ps.actual_reps,
                 ps.weight_value,
                 ps.recommendation_source,
-                ps.recommendation_confidence
+                ps.recommendation_confidence,
+                ps.work_unit_values_json
             FROM performed_exercises pe
             LEFT JOIN exercises e ON e.exercise_id = pe.exercise_id
             INNER JOIN performed_sets ps ON ps.performed_exercise_id = pe.performed_exercise_id
@@ -1614,6 +1624,7 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
                         recommendedWeight = if (cursor.isNull(9)) null else cursor.getDouble(9),
                         reps = if (cursor.isNull(10)) null else cursor.getInt(10),
                         weight = if (cursor.isNull(11)) null else cursor.getDouble(11),
+                        workUnitValues = decodeWorkUnitValues(cursor.getStringOrNull(14)),
                         recommendationSource = recommendationSourceFromStorage(cursor.getStringOrNull(12)),
                         recommendationConfidence = if (cursor.isNull(13)) null else cursor.getDouble(13),
                     )

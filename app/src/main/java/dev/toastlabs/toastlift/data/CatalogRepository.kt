@@ -514,6 +514,50 @@ class CatalogRepository(private val database: ToastLiftDatabase) {
 
     fun exerciseById(exerciseId: Long): ExerciseSummary? = searchExercisesByIds(listOf(exerciseId)).firstOrNull()
 
+    fun loadExerciseWorkUnits(exerciseId: Long): List<WorkUnitDefinition> {
+        val db = database.open()
+        return db.rawQuery(
+            """
+            SELECT
+                unit_key,
+                display_label,
+                value_type,
+                unit_label,
+                default_value,
+                min_value,
+                max_value,
+                step_value,
+                is_primary,
+                is_required,
+                tracks_effort
+            FROM exercise_work_units
+            WHERE exercise_id = ?
+            ORDER BY sequence_no
+            """.trimIndent(),
+            arrayOf(exerciseId.toString()),
+        ).use { cursor ->
+            buildList {
+                while (cursor.moveToNext()) {
+                    add(
+                        WorkUnitDefinition(
+                            key = cursor.getString(0),
+                            label = cursor.getString(1),
+                            valueType = cursor.getString(2),
+                            unitLabel = cursor.getStringOrNull(3),
+                            defaultValue = cursor.getStringOrNull(4),
+                            minValue = if (cursor.isNull(5)) null else cursor.getDouble(5),
+                            maxValue = if (cursor.isNull(6)) null else cursor.getDouble(6),
+                            stepValue = if (cursor.isNull(7)) null else cursor.getDouble(7),
+                            isPrimary = cursor.getInt(8) == 1,
+                            isRequired = cursor.getInt(9) == 1,
+                            tracksEffort = cursor.getInt(10) == 1,
+                        ),
+                    )
+                }
+            }
+        }
+    }
+
     private fun buildDefaultExerciseVideoLinks(
         demoUrl: String?,
         explanationUrl: String?,
