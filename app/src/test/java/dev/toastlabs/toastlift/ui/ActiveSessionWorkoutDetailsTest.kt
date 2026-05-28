@@ -268,6 +268,141 @@ class ActiveSessionWorkoutDetailsTest {
         assertEquals(listOf("triceps"), overdueRows.map { it.key })
     }
 
+    @Test
+    fun buildActiveWorkoutFreshnessAction_continuesInProgressOverdueExercise() {
+        val session = session(
+            exercises = listOf(
+                exercise(
+                    "Close-Grip Bench Press",
+                    target = "Chest",
+                    sets = listOf(
+                        SessionSet(setNumber = 1, targetReps = "10", completed = true),
+                        SessionSet(setNumber = 2, targetReps = "10"),
+                    ),
+                ),
+            ),
+        )
+        val details = mapOf(
+            "Close-Grip Bench Press".hashCode().toLong() to detail(
+                "Close-Grip Bench Press",
+                target = "Chest",
+                prime = "Chest",
+                secondary = "Triceps",
+            ),
+        )
+        val summary = buildActiveWorkoutMuscleRefreshSummary(
+            session = session,
+            exerciseDetailsById = details,
+            trainingFreshness = freshnessSummary(mapOf("triceps" to TrainingFreshnessStatus.Overdue)),
+        )
+
+        val action = requireNotNull(buildActiveWorkoutFreshnessAction(session, summary, details))
+
+        assertEquals(ActiveWorkoutFreshnessActionType.OpenExercise, action.type)
+        assertEquals("triceps", action.muscleKey)
+        assertEquals(0, action.exerciseIndex)
+        assertEquals("Continue Close-Grip Bench Press", action.ctaLabel)
+    }
+
+    @Test
+    fun buildActiveWorkoutFreshnessAction_opensPlannedOverdueExercise() {
+        val session = session(
+            exercises = listOf(
+                exercise(
+                    "Cable Row",
+                    target = "Back",
+                    sets = listOf(
+                        SessionSet(setNumber = 1, targetReps = "10"),
+                        SessionSet(setNumber = 2, targetReps = "10"),
+                    ),
+                ),
+            ),
+        )
+        val details = mapOf(
+            "Cable Row".hashCode().toLong() to detail("Cable Row", target = "Back", prime = "Back"),
+        )
+        val summary = buildActiveWorkoutMuscleRefreshSummary(
+            session = session,
+            exerciseDetailsById = details,
+            trainingFreshness = freshnessSummary(mapOf("back" to TrainingFreshnessStatus.Overdue)),
+        )
+
+        val action = requireNotNull(buildActiveWorkoutFreshnessAction(session, summary, details))
+
+        assertEquals(ActiveWorkoutFreshnessActionType.OpenExercise, action.type)
+        assertEquals("back", action.muscleKey)
+        assertEquals(0, action.exerciseIndex)
+        assertEquals("Open Cable Row", action.ctaLabel)
+    }
+
+    @Test
+    fun buildActiveWorkoutFreshnessAction_opensFilteredPickerForUntargetedOverdueMuscle() {
+        val session = session(
+            exercises = listOf(
+                exercise(
+                    "Bench Press",
+                    target = "Chest",
+                    sets = listOf(SessionSet(setNumber = 1, targetReps = "8")),
+                ),
+            ),
+        )
+        val details = mapOf(
+            "Bench Press".hashCode().toLong() to detail("Bench Press", target = "Chest", prime = "Chest"),
+        )
+        val summary = buildActiveWorkoutMuscleRefreshSummary(
+            session = session,
+            exerciseDetailsById = details,
+            trainingFreshness = freshnessSummary(mapOf("hamstrings" to TrainingFreshnessStatus.Overdue)),
+        )
+
+        val action = requireNotNull(buildActiveWorkoutFreshnessAction(session, summary, details))
+
+        assertEquals(ActiveWorkoutFreshnessActionType.OpenFilteredPicker, action.type)
+        assertEquals("hamstrings", action.muscleKey)
+        assertEquals("Hamstrings", action.muscleLabel)
+        assertNull(action.exerciseIndex)
+    }
+
+    @Test
+    fun buildActiveWorkoutFreshnessAction_skipsRefreshedMusclesAndPrioritizesOverdue() {
+        val session = session(
+            exercises = listOf(
+                exercise(
+                    "Bench Press",
+                    target = "Chest",
+                    sets = listOf(
+                        SessionSet(setNumber = 1, targetReps = "8", completed = true),
+                        SessionSet(setNumber = 2, targetReps = "8"),
+                    ),
+                ),
+                exercise(
+                    "Cable Row",
+                    target = "Back",
+                    sets = listOf(SessionSet(setNumber = 1, targetReps = "10")),
+                ),
+            ),
+        )
+        val details = mapOf(
+            "Bench Press".hashCode().toLong() to detail("Bench Press", target = "Chest", prime = "Chest"),
+            "Cable Row".hashCode().toLong() to detail("Cable Row", target = "Back", prime = "Back"),
+        )
+        val summary = buildActiveWorkoutMuscleRefreshSummary(
+            session = session,
+            exerciseDetailsById = details,
+            trainingFreshness = freshnessSummary(
+                mapOf(
+                    "chest" to TrainingFreshnessStatus.DueSoon,
+                    "back" to TrainingFreshnessStatus.Overdue,
+                ),
+            ),
+        )
+
+        val action = requireNotNull(buildActiveWorkoutFreshnessAction(session, summary, details))
+
+        assertEquals("back", action.muscleKey)
+        assertEquals(1, action.exerciseIndex)
+    }
+
     private fun session(
         focusKey: String? = "upper_body",
         exercises: List<SessionExercise>,
@@ -284,13 +419,14 @@ class ActiveSessionWorkoutDetailsTest {
 
     private fun exercise(
         name: String,
+        target: String = "Chest",
         sets: List<SessionSet>,
     ): SessionExercise {
         return SessionExercise(
             exerciseId = name.hashCode().toLong(),
             name = name,
             bodyRegion = "Upper Body",
-            targetMuscleGroup = "Chest",
+            targetMuscleGroup = target,
             equipment = "Barbell",
             restSeconds = 90,
             sets = sets,

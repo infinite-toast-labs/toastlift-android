@@ -49,4 +49,22 @@ class LibraryLoggedHistoryFilterTest {
             ).activeCount(),
         )
     }
+
+    @Test
+    fun librarySearchOrderBy_usesOriginalOrderWhenNoFiltersAreActive() {
+        assertEquals(
+            "COALESCE(p.is_favorite, 0) DESC, e.name ASC",
+            librarySearchOrderBy(LibraryFilters()),
+        )
+    }
+
+    @Test
+    fun librarySearchOrderBy_prioritizesLoggedSessionCountWhenAnyFilterIsActive() {
+        assertEquals(
+            "COALESCE(logged_history.logged_session_count, 0) DESC, COALESCE(p.is_favorite, 0) DESC, e.name ASC",
+            librarySearchOrderBy(
+                LibraryFilters(freshnessMuscleKeys = setOf("erector_spinae")),
+            ),
+        )
+    }
 }

@@ -165,8 +165,10 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -825,6 +827,7 @@ fun ToastLiftApp(
                     onCloseExercise = viewModel::closeSessionExercise,
                     onPickNextExercise = viewModel::pickNextSessionExercise,
                     onOpenAddExercise = viewModel::openActiveSessionAddExercise,
+                    onOpenFreshnessTargetPicker = viewModel::openActiveSessionAddExerciseForFreshnessMuscle,
                     onOpenManualAddExercise = viewModel::openManualActiveSessionExercisePicker,
                     onOpenGeneratedAddExercise = viewModel::openGeneratedActiveSessionExercisePicker,
                     onCloseAddExercise = viewModel::closeActiveSessionAddExercise,
@@ -834,9 +837,11 @@ fun ToastLiftApp(
                     onToggleAddExerciseEquipmentFilter = viewModel::toggleLibraryEquipmentFilter,
                     onToggleAddExerciseTargetMuscleFilter = viewModel::toggleLibraryTargetMuscleFilter,
                     onToggleAddExercisePrimeMoverFilter = viewModel::toggleLibraryPrimeMoverFilter,
+                    onToggleAddExerciseFreshnessMuscleFilter = viewModel::toggleLibraryFreshnessMuscleFilter,
                     onToggleAddExerciseRecommendationBiasFilter = viewModel::toggleLibraryRecommendationBiasFilter,
                     onToggleAddExerciseLoggedHistoryFilter = viewModel::toggleLibraryLoggedHistoryFilter,
                     onClearAddExerciseFilters = viewModel::clearLibraryFilters,
+                    onClearAddExerciseFreshnessMuscleFilters = viewModel::clearLibraryFreshnessMuscleFilters,
                     onShowAddExerciseDetail = viewModel::showExerciseDetail,
                     onOpenCustomExercise = viewModel::openCustomExerciseFlow,
                     onCloseCustomExercise = viewModel::closeCustomExerciseFlow,
@@ -1020,8 +1025,10 @@ fun ToastLiftApp(
                                         onToggleLibraryEquipmentFilter = viewModel::toggleLibraryEquipmentFilter,
                                         onToggleLibraryTargetMuscleFilter = viewModel::toggleLibraryTargetMuscleFilter,
                                         onToggleLibraryPrimeMoverFilter = viewModel::toggleLibraryPrimeMoverFilter,
+                                        onToggleLibraryFreshnessMuscleFilter = viewModel::toggleLibraryFreshnessMuscleFilter,
                                         onToggleLibraryRecommendationBiasFilter = viewModel::toggleLibraryRecommendationBiasFilter,
                                         onToggleLibraryLoggedHistoryFilter = viewModel::toggleLibraryLoggedHistoryFilter,
+                                        onClearLibraryFreshnessMuscleFilters = viewModel::clearLibraryFreshnessMuscleFilters,
                                         onClearLibraryFilters = viewModel::clearLibraryFilters,
                                         onShowExerciseDetail = viewModel::showExerciseDetail,
                                         onOpenCustomExercise = viewModel::openCustomExerciseForTodayTemplate,
@@ -1068,8 +1075,10 @@ fun ToastLiftApp(
                                     onToggleLibraryEquipmentFilter = viewModel::toggleLibraryEquipmentFilter,
                                     onToggleLibraryTargetMuscleFilter = viewModel::toggleLibraryTargetMuscleFilter,
                                     onToggleLibraryPrimeMoverFilter = viewModel::toggleLibraryPrimeMoverFilter,
+                                    onToggleLibraryFreshnessMuscleFilter = viewModel::toggleLibraryFreshnessMuscleFilter,
                                     onToggleLibraryRecommendationBiasFilter = viewModel::toggleLibraryRecommendationBiasFilter,
                                     onToggleLibraryLoggedHistoryFilter = viewModel::toggleLibraryLoggedHistoryFilter,
+                                    onClearLibraryFreshnessMuscleFilters = viewModel::clearLibraryFreshnessMuscleFilters,
                                     onClearLibraryFilters = viewModel::clearLibraryFilters,
                                     onOpenCustomExerciseForGeneratedWorkout = viewModel::openCustomExerciseForGeneratedWorkout,
                                     onOpenCustomExerciseForBuilder = viewModel::openCustomExerciseForBuilder,
@@ -1096,8 +1105,10 @@ fun ToastLiftApp(
                                         onToggleEquipmentFilter = viewModel::toggleLibraryEquipmentFilter,
                                         onToggleTargetMuscleFilter = viewModel::toggleLibraryTargetMuscleFilter,
                                         onTogglePrimeMoverFilter = viewModel::toggleLibraryPrimeMoverFilter,
+                                        onToggleFreshnessMuscleFilter = viewModel::toggleLibraryFreshnessMuscleFilter,
                                         onToggleRecommendationBiasFilter = viewModel::toggleLibraryRecommendationBiasFilter,
                                         onToggleLoggedHistoryFilter = viewModel::toggleLibraryLoggedHistoryFilter,
+                                        onClearFreshnessMuscleFilters = viewModel::clearLibraryFreshnessMuscleFilters,
                                         onClearFilters = viewModel::clearLibraryFilters,
                                         onShowDetail = viewModel::showExerciseDetail,
                                         onAddToBuilder = viewModel::addExerciseToBuilder,
@@ -1338,8 +1349,10 @@ private fun TodayScreen(
     onToggleLibraryEquipmentFilter: (String) -> Unit,
     onToggleLibraryTargetMuscleFilter: (String) -> Unit,
     onToggleLibraryPrimeMoverFilter: (String) -> Unit,
+    onToggleLibraryFreshnessMuscleFilter: (String) -> Unit,
     onToggleLibraryRecommendationBiasFilter: (RecommendationBias) -> Unit,
     onToggleLibraryLoggedHistoryFilter: () -> Unit,
+    onClearLibraryFreshnessMuscleFilters: () -> Unit,
     onClearLibraryFilters: () -> Unit,
     onShowExerciseDetail: (Long) -> Unit,
     onOpenCustomExercise: () -> Unit,
@@ -1401,8 +1414,10 @@ private fun TodayScreen(
             onToggleEquipmentFilter = onToggleLibraryEquipmentFilter,
             onToggleTargetMuscleFilter = onToggleLibraryTargetMuscleFilter,
             onTogglePrimeMoverFilter = onToggleLibraryPrimeMoverFilter,
+            onToggleFreshnessMuscleFilter = onToggleLibraryFreshnessMuscleFilter,
             onToggleRecommendationBiasFilter = onToggleLibraryRecommendationBiasFilter,
             onToggleLoggedHistoryFilter = onToggleLibraryLoggedHistoryFilter,
+            onClearFreshnessMuscleFilters = onClearLibraryFreshnessMuscleFilters,
             onClearFilters = onClearLibraryFilters,
             onShowDetail = onShowExerciseDetail,
             onOpenCustomExercise = onOpenCustomExercise,
@@ -2862,8 +2877,10 @@ private fun GenerateScreen(
     onToggleLibraryEquipmentFilter: (String) -> Unit,
     onToggleLibraryTargetMuscleFilter: (String) -> Unit,
     onToggleLibraryPrimeMoverFilter: (String) -> Unit,
+    onToggleLibraryFreshnessMuscleFilter: (String) -> Unit,
     onToggleLibraryRecommendationBiasFilter: (RecommendationBias) -> Unit,
     onToggleLibraryLoggedHistoryFilter: () -> Unit,
+    onClearLibraryFreshnessMuscleFilters: () -> Unit,
     onClearLibraryFilters: () -> Unit,
     onOpenCustomExerciseForGeneratedWorkout: () -> Unit,
     onOpenCustomExerciseForBuilder: () -> Unit,
@@ -2923,8 +2940,10 @@ private fun GenerateScreen(
             onToggleEquipmentFilter = onToggleLibraryEquipmentFilter,
             onToggleTargetMuscleFilter = onToggleLibraryTargetMuscleFilter,
             onTogglePrimeMoverFilter = onToggleLibraryPrimeMoverFilter,
+            onToggleFreshnessMuscleFilter = onToggleLibraryFreshnessMuscleFilter,
             onToggleRecommendationBiasFilter = onToggleLibraryRecommendationBiasFilter,
             onToggleLoggedHistoryFilter = onToggleLibraryLoggedHistoryFilter,
+            onClearFreshnessMuscleFilters = onClearLibraryFreshnessMuscleFilters,
             onClearFilters = onClearLibraryFilters,
             onShowDetail = onShowExerciseDetail,
             onOpenCustomExercise = onOpenCustomExerciseForGeneratedWorkout,
@@ -2953,8 +2972,10 @@ private fun GenerateScreen(
             onToggleEquipmentFilter = onToggleLibraryEquipmentFilter,
             onToggleTargetMuscleFilter = onToggleLibraryTargetMuscleFilter,
             onTogglePrimeMoverFilter = onToggleLibraryPrimeMoverFilter,
+            onToggleFreshnessMuscleFilter = onToggleLibraryFreshnessMuscleFilter,
             onToggleRecommendationBiasFilter = onToggleLibraryRecommendationBiasFilter,
             onToggleLoggedHistoryFilter = onToggleLibraryLoggedHistoryFilter,
+            onClearFreshnessMuscleFilters = onClearLibraryFreshnessMuscleFilters,
             onClearFilters = onClearLibraryFilters,
             onShowDetail = onShowExerciseDetail,
             onOpenCustomExercise = onOpenCustomExerciseForBuilder,
@@ -3174,8 +3195,10 @@ private fun LibraryScreen(
     onToggleEquipmentFilter: (String) -> Unit,
     onToggleTargetMuscleFilter: (String) -> Unit,
     onTogglePrimeMoverFilter: (String) -> Unit,
+    onToggleFreshnessMuscleFilter: (String) -> Unit,
     onToggleRecommendationBiasFilter: (RecommendationBias) -> Unit,
     onToggleLoggedHistoryFilter: () -> Unit,
+    onClearFreshnessMuscleFilters: () -> Unit,
     onClearFilters: () -> Unit,
     onShowDetail: (Long) -> Unit,
     onAddToBuilder: (ExerciseSummary) -> Unit,
@@ -3269,8 +3292,10 @@ private fun LibraryScreen(
             onToggleEquipment = onToggleEquipmentFilter,
             onToggleTargetMuscle = onToggleTargetMuscleFilter,
             onTogglePrimeMover = onTogglePrimeMoverFilter,
+            onToggleFreshnessMuscle = onToggleFreshnessMuscleFilter,
             onToggleRecommendationBias = onToggleRecommendationBiasFilter,
             onToggleLoggedHistory = onToggleLoggedHistoryFilter,
+            onClearFreshnessMuscleFilters = onClearFreshnessMuscleFilters,
         )
     }
 }
@@ -6929,9 +6954,11 @@ private fun AddExercisesFlowScreen(
     onToggleEquipmentFilter: (String) -> Unit,
     onToggleTargetMuscleFilter: (String) -> Unit,
     onTogglePrimeMoverFilter: (String) -> Unit,
+    onToggleFreshnessMuscleFilter: (String) -> Unit,
     onToggleRecommendationBiasFilter: (RecommendationBias) -> Unit,
     onToggleLoggedHistoryFilter: () -> Unit,
     onClearFilters: () -> Unit,
+    onClearFreshnessMuscleFilters: () -> Unit = onClearFilters,
     onShowDetail: (Long) -> Unit,
     onOpenCustomExercise: () -> Unit,
     onCloseCustomExercise: () -> Unit,
@@ -7004,9 +7031,11 @@ private fun AddExercisesFlowScreen(
             onToggleEquipmentFilter = onToggleEquipmentFilter,
             onToggleTargetMuscleFilter = onToggleTargetMuscleFilter,
             onTogglePrimeMoverFilter = onTogglePrimeMoverFilter,
+            onToggleFreshnessMuscleFilter = onToggleFreshnessMuscleFilter,
             onToggleRecommendationBiasFilter = onToggleRecommendationBiasFilter,
             onToggleLoggedHistoryFilter = onToggleLoggedHistoryFilter,
             onClearFilters = onClearFilters,
+            onClearFreshnessMuscleFilters = onClearFreshnessMuscleFilters,
             onShowDetail = onShowDetail,
             overflowActionLabel = "Add custom exercise",
             onOverflowActionClick = onOpenCustomExercise,
@@ -7028,15 +7057,18 @@ private fun BuilderAddExercisesScreen(
     onToggleEquipmentFilter: (String) -> Unit,
     onToggleTargetMuscleFilter: (String) -> Unit,
     onTogglePrimeMoverFilter: (String) -> Unit,
+    onToggleFreshnessMuscleFilter: (String) -> Unit,
     onToggleRecommendationBiasFilter: (RecommendationBias) -> Unit,
     onToggleLoggedHistoryFilter: () -> Unit,
     onClearFilters: () -> Unit,
+    onClearFreshnessMuscleFilters: () -> Unit,
     onShowDetail: (Long) -> Unit,
     overflowActionLabel: String? = null,
     onOverflowActionClick: (() -> Unit)? = null,
 ) {
     var showFilterScreen by remember { mutableStateOf(false) }
     var showMenu by remember { mutableStateOf(false) }
+    val freshnessFilterLabels = libraryFreshnessMuscleFilterLabels(state.libraryFilters)
 
     if (showFilterScreen) {
         BuilderFilterScreen(
@@ -7048,8 +7080,10 @@ private fun BuilderAddExercisesScreen(
             onToggleEquipment = onToggleEquipmentFilter,
             onToggleTargetMuscle = onToggleTargetMuscleFilter,
             onTogglePrimeMover = onTogglePrimeMoverFilter,
+            onToggleFreshnessMuscle = onToggleFreshnessMuscleFilter,
             onToggleRecommendationBias = onToggleRecommendationBiasFilter,
             onToggleLoggedHistory = onToggleLoggedHistoryFilter,
+            onClearFreshnessMuscleFilters = onClearFreshnessMuscleFilters,
         )
         return
     }
@@ -7162,6 +7196,10 @@ private fun BuilderAddExercisesScreen(
                 }
             }
         }
+        FreshnessMuscleFilterBanner(
+            labels = freshnessFilterLabels,
+            onClear = onClearFreshnessMuscleFilters,
+        )
         Button(
             onClick = onConfirmAdd,
             modifier = Modifier.fillMaxWidth(),
@@ -7174,18 +7212,159 @@ private fun BuilderAddExercisesScreen(
             modifier = Modifier.fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            items(displayedExercises, key = { it.id }) { exercise ->
-                val selected = selectedExercises.containsKey(exercise.id)
-                SelectableExerciseCard(
-                    exercise = exercise,
-                    selected = selected,
-                    onToggleSelected = {
-                        if (selected) selectedExercises.remove(exercise.id) else selectedExercises[exercise.id] = exercise
-                    },
-                    onShowDetail = { onShowDetail(exercise.id) },
+            if (displayedExercises.isEmpty()) {
+                item {
+                    AddExerciseLibraryEmptyState(
+                        activeFilterCount = state.libraryFilters.activeCount(),
+                        freshnessLabels = freshnessFilterLabels,
+                        onClearFreshness = onClearFreshnessMuscleFilters,
+                        onClearAll = onClearFilters,
+                    )
+                }
+            } else {
+                items(displayedExercises, key = { it.id }) { exercise ->
+                    val selected = selectedExercises.containsKey(exercise.id)
+                    SelectableExerciseCard(
+                        exercise = exercise,
+                        selected = selected,
+                        onToggleSelected = {
+                            if (selected) selectedExercises.remove(exercise.id) else selectedExercises[exercise.id] = exercise
+                        },
+                        onShowDetail = { onShowDetail(exercise.id) },
+                    )
+                }
+            }
+            item {
+                Spacer(
+                    modifier = Modifier.height(24.dp),
                 )
             }
-            item { Spacer(modifier = Modifier.height(24.dp)) }
+        }
+    }
+}
+
+@Composable
+private fun FreshnessMuscleFilterBanner(
+    labels: List<String>,
+    onClear: () -> Unit,
+) {
+    if (labels.isEmpty()) return
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(18.dp),
+        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = if (LocalToastLiftIsDarkTheme.current) 0.38f else 0.7f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.22f)),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Surface(
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f),
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.QueryStats,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier
+                        .padding(7.dp)
+                        .size(18.dp),
+                )
+            }
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                Text(
+                    text = "Matches ${freshnessMuscleFilterSummary(labels)} freshness",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = "Primary, secondary, and tertiary muscle matches",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            TextButton(onClick = onClear) {
+                Text("Clear")
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun AddExerciseLibraryEmptyState(
+    activeFilterCount: Int,
+    freshnessLabels: List<String>,
+    onClearFreshness: () -> Unit,
+    onClearAll: () -> Unit,
+) {
+    val hasFreshnessFilter = freshnessLabels.isNotEmpty()
+    val hasOtherFilters = activeFilterCount > freshnessLabels.size
+    val title = when {
+        hasFreshnessFilter -> "No ${freshnessMuscleFilterSummary(freshnessLabels)} freshness matches"
+        activeFilterCount > 0 -> "No exercises match these filters"
+        else -> "No exercises found"
+    }
+    val message = when {
+        hasFreshnessFilter -> "Clear the freshness match or reset filters to widen the picker."
+        activeFilterCount > 0 -> "Reset filters to widen the picker."
+        else -> "Try a different search."
+    }
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(18.dp),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.14f)),
+    ) {
+        Column(
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            horizontalAlignment = Alignment.Start,
+        ) {
+            Surface(
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.78f),
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Search,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier
+                        .padding(9.dp)
+                        .size(20.dp),
+                )
+            }
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text(
+                    message,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (hasFreshnessFilter) {
+                    OutlinedButton(onClick = onClearFreshness) {
+                        Text("Clear freshness")
+                    }
+                }
+                if (activeFilterCount > 0 && (!hasFreshnessFilter || hasOtherFilters)) {
+                    Button(onClick = onClearAll) {
+                        Text("Reset filters")
+                    }
+                }
+            }
         }
     }
 }
@@ -7298,8 +7477,10 @@ private fun BuilderFilterScreen(
     onToggleEquipment: (String) -> Unit,
     onToggleTargetMuscle: (String) -> Unit,
     onTogglePrimeMover: (String) -> Unit,
+    onToggleFreshnessMuscle: (String) -> Unit,
     onToggleRecommendationBias: (RecommendationBias) -> Unit,
     onToggleLoggedHistory: () -> Unit,
+    onClearFreshnessMuscleFilters: () -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -7328,6 +7509,11 @@ private fun BuilderFilterScreen(
                 Text("Apply Filters")
             }
         }
+        FreshnessMuscleFilterSection(
+            filters = filters,
+            onToggle = onToggleFreshnessMuscle,
+            onClear = onClearFreshnessMuscleFilters,
+        )
         FilterFacetSection(
             title = "Equipment",
             options = facets.equipment,
@@ -7373,8 +7559,10 @@ private fun LibraryFilterSheet(
     onToggleEquipment: (String) -> Unit,
     onToggleTargetMuscle: (String) -> Unit,
     onTogglePrimeMover: (String) -> Unit,
+    onToggleFreshnessMuscle: (String) -> Unit,
     onToggleRecommendationBias: (RecommendationBias) -> Unit,
     onToggleLoggedHistory: () -> Unit,
+    onClearFreshnessMuscleFilters: () -> Unit = onClearFilters,
 ) {
     ToastLiftModalBottomSheet(onDismissRequest = onDismiss) {
         LazyColumn(
@@ -7402,6 +7590,13 @@ private fun LibraryFilterSheet(
                         Text("Reset All Filters")
                     }
                 }
+            }
+            item {
+                FreshnessMuscleFilterSection(
+                    filters = filters,
+                    onToggle = onToggleFreshnessMuscle,
+                    onClear = onClearFreshnessMuscleFilters,
+                )
             }
             item {
                 FilterFacetSection(
@@ -7448,6 +7643,54 @@ private fun LibraryFilterSheet(
                 Spacer(modifier = Modifier.height(24.dp))
             }
         }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun FreshnessMuscleFilterSection(
+    filters: LibraryFilters,
+    onToggle: (String) -> Unit,
+    onClear: () -> Unit,
+) {
+    val selectedKeys = libraryFreshnessMuscleFilterKeys(filters)
+    val slots = trainingFreshnessMuscleSlots()
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("Training Freshness", fontWeight = FontWeight.SemiBold)
+            if (selectedKeys.isNotEmpty()) {
+                TextButton(onClick = onClear) {
+                    Text("Clear")
+                }
+            }
+        }
+        Text(
+            "Find exercises that count toward freshness slots, including supporting muscles.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            slots.forEach { slot ->
+                ToastLiftFilterChip(
+                    selected = slot.key in selectedKeys,
+                    onClick = { onToggle(slot.key) },
+                    label = { Text(slot.label) },
+                )
+            }
+        }
+    }
+}
+
+private fun freshnessMuscleFilterSummary(labels: List<String>): String {
+    return when (labels.size) {
+        0 -> "Training Freshness"
+        1 -> labels.first()
+        2 -> labels.joinToString(" and ")
+        else -> labels.take(2).joinToString(", ") + " +${labels.size - 2}"
     }
 }
 
@@ -7532,9 +7775,11 @@ private fun ActiveSessionAddExerciseScreen(
     onToggleEquipmentFilter: (String) -> Unit,
     onToggleTargetMuscleFilter: (String) -> Unit,
     onTogglePrimeMoverFilter: (String) -> Unit,
+    onToggleFreshnessMuscleFilter: (String) -> Unit,
     onToggleRecommendationBiasFilter: (RecommendationBias) -> Unit,
     onToggleLoggedHistoryFilter: () -> Unit,
     onClearFilters: () -> Unit,
+    onClearFreshnessMuscleFilters: () -> Unit,
     onConfirmAdd: (List<ExerciseSummary>) -> Unit,
     onAddCustomExercise: () -> Unit,
     onCloseCustomExercise: () -> Unit,
@@ -7567,9 +7812,11 @@ private fun ActiveSessionAddExerciseScreen(
             onToggleEquipmentFilter = onToggleEquipmentFilter,
             onToggleTargetMuscleFilter = onToggleTargetMuscleFilter,
             onTogglePrimeMoverFilter = onTogglePrimeMoverFilter,
+            onToggleFreshnessMuscleFilter = onToggleFreshnessMuscleFilter,
             onToggleRecommendationBiasFilter = onToggleRecommendationBiasFilter,
             onToggleLoggedHistoryFilter = onToggleLoggedHistoryFilter,
             onClearFilters = onClearFilters,
+            onClearFreshnessMuscleFilters = onClearFreshnessMuscleFilters,
             onShowDetail = onShowDetail,
             onOpenCustomExercise = onAddCustomExercise,
             onCloseCustomExercise = onCloseCustomExercise,
@@ -7612,6 +7859,7 @@ private fun ActiveSessionScreen(
     onCloseExercise: () -> Unit,
     onPickNextExercise: (String?, String?) -> Unit,
     onOpenAddExercise: () -> Unit,
+    onOpenFreshnessTargetPicker: (String, String) -> Unit,
     onOpenManualAddExercise: () -> Unit,
     onOpenGeneratedAddExercise: () -> Unit,
     onCloseAddExercise: () -> Unit,
@@ -7621,9 +7869,11 @@ private fun ActiveSessionScreen(
     onToggleAddExerciseEquipmentFilter: (String) -> Unit,
     onToggleAddExerciseTargetMuscleFilter: (String) -> Unit,
     onToggleAddExercisePrimeMoverFilter: (String) -> Unit,
+    onToggleAddExerciseFreshnessMuscleFilter: (String) -> Unit,
     onToggleAddExerciseRecommendationBiasFilter: (RecommendationBias) -> Unit,
     onToggleAddExerciseLoggedHistoryFilter: () -> Unit,
     onClearAddExerciseFilters: () -> Unit,
+    onClearAddExerciseFreshnessMuscleFilters: () -> Unit,
     onShowAddExerciseDetail: (Long) -> Unit,
     onOpenCustomExercise: () -> Unit,
     onCloseCustomExercise: () -> Unit,
@@ -7695,9 +7945,11 @@ private fun ActiveSessionScreen(
             onToggleEquipmentFilter = onToggleAddExerciseEquipmentFilter,
             onToggleTargetMuscleFilter = onToggleAddExerciseTargetMuscleFilter,
             onTogglePrimeMoverFilter = onToggleAddExercisePrimeMoverFilter,
+            onToggleFreshnessMuscleFilter = onToggleAddExerciseFreshnessMuscleFilter,
             onToggleRecommendationBiasFilter = onToggleAddExerciseRecommendationBiasFilter,
             onToggleLoggedHistoryFilter = onToggleAddExerciseLoggedHistoryFilter,
             onClearFilters = onClearAddExerciseFilters,
+            onClearFreshnessMuscleFilters = onClearAddExerciseFreshnessMuscleFilters,
             onConfirmAdd = onAddExercises,
             onAddCustomExercise = onOpenCustomExercise,
             onCloseCustomExercise = onCloseCustomExercise,
@@ -7756,6 +8008,45 @@ private fun ActiveSessionScreen(
         }
     }
     val progressMetrics = activeWorkoutProgressMetrics(session)
+    val muscleRefreshSummary = remember(session, exerciseDetailsById, trainingFreshness) {
+        buildActiveWorkoutMuscleRefreshSummary(
+            session = session,
+            exerciseDetailsById = exerciseDetailsById,
+            trainingFreshness = trainingFreshness,
+        )
+    }
+    val freshnessAction = remember(session, exerciseDetailsById, muscleRefreshSummary) {
+        buildActiveWorkoutFreshnessAction(
+            session = session,
+            summary = muscleRefreshSummary,
+            exerciseDetailsById = exerciseDetailsById,
+        )
+    }
+    val haptics = LocalHapticFeedback.current
+    val previousRefreshStateByKey = remember(session.startedAtUtc) { mutableStateMapOf<String, ActiveWorkoutMuscleRefreshState>() }
+    val announcedRefreshByKey = remember(session.startedAtUtc) { mutableStateMapOf<String, Boolean>() }
+    LaunchedEffect(session.startedAtUtc, muscleRefreshSummary.rows) {
+        val newlyRefreshed = muscleRefreshSummary.rows.firstOrNull { row ->
+            val wasPending = previousRefreshStateByKey[row.key] == ActiveWorkoutMuscleRefreshState.Pending
+            val isFreshnessRelevant = row.freshnessStatus == TrainingFreshnessStatus.DueSoon ||
+                row.freshnessStatus == TrainingFreshnessStatus.Overdue
+            row.state == ActiveWorkoutMuscleRefreshState.Refreshed &&
+                wasPending &&
+                isFreshnessRelevant &&
+                announcedRefreshByKey[row.key] != true
+        }
+        muscleRefreshSummary.rows.forEach { row ->
+            previousRefreshStateByKey[row.key] = row.state
+        }
+        newlyRefreshed?.let { row ->
+            announcedRefreshByKey[row.key] = true
+            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+            snackbarHostState.showSnackbar(
+                message = "${row.label} refreshed.",
+                duration = SnackbarDuration.Short,
+            )
+        }
+    }
     val completionFraction = if (progressMetrics.totalSets == 0) {
         0f
     } else {
@@ -7830,6 +8121,23 @@ private fun ActiveSessionScreen(
                             onClearAll = {
                                 selectedEquipmentFilter = null
                                 selectedMuscleFilterKey = null
+                            },
+                        )
+                    }
+                }
+                freshnessAction?.let { action ->
+                    item {
+                        ActiveWorkoutFreshnessActionStrip(
+                            action = action,
+                            onAction = {
+                                when (action.type) {
+                                    ActiveWorkoutFreshnessActionType.OpenExercise -> {
+                                        action.exerciseIndex?.let(onOpenExercise)
+                                    }
+                                    ActiveWorkoutFreshnessActionType.OpenFilteredPicker -> {
+                                        onOpenFreshnessTargetPicker(action.muscleKey, action.muscleLabel)
+                                    }
+                                }
                             },
                         )
                     }
@@ -8030,6 +8338,113 @@ private fun ActiveSessionFilterBanner(
 
 private fun activeSessionFilterSummaryLabel(equipment: String?, muscle: String?): String? {
     return listOfNotNull(equipment, muscle).takeIf { it.isNotEmpty() }?.joinToString(" and ")
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ActiveWorkoutFreshnessActionStrip(
+    action: ActiveWorkoutFreshnessAction,
+    onAction: () -> Unit,
+) {
+    val accent = trainingFreshnessAccent(action.freshnessStatus)
+    val statusLabel = when (action.freshnessStatus) {
+        TrainingFreshnessStatus.Overdue -> "Past target"
+        TrainingFreshnessStatus.DueSoon -> "Due soon"
+        TrainingFreshnessStatus.Fresh -> "Fresh"
+        TrainingFreshnessStatus.Untracked -> "Tracking"
+    }
+    FeatureCard(
+        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.98f),
+        border = BorderStroke(1.dp, accent.start.copy(alpha = 0.28f)),
+        accentKey = "freshness gap ${action.muscleKey}",
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(
+                            accent.glow.copy(alpha = 0.72f),
+                            Color.Transparent,
+                        ),
+                    ),
+                ),
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .semantics(mergeDescendants = true) {
+                        contentDescription = "${action.title}. ${action.body}. ${action.ctaLabel}"
+                        stateDescription = statusLabel
+                    }
+                    .padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Surface(
+                        shape = RoundedCornerShape(9.dp),
+                        color = accent.start.copy(alpha = if (LocalToastLiftIsDarkTheme.current) 0.18f else 0.12f),
+                    ) {
+                        Box(
+                            modifier = Modifier.size(42.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Shield,
+                                contentDescription = null,
+                                tint = accent.start,
+                                modifier = Modifier.size(22.dp),
+                            )
+                        }
+                    }
+                    Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            MiniTag(
+                                text = "Freshness gap",
+                                accent = accent.start.copy(alpha = 0.16f),
+                            )
+                            MiniTag(
+                                text = statusLabel,
+                                accent = accent.start.copy(alpha = 0.16f),
+                            )
+                        }
+                        Text(
+                            action.title,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Black,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(
+                            action.body,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                Button(
+                    onClick = onAction,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = accent.start,
+                        contentColor = accent.textOnAccent,
+                    ),
+                ) {
+                    val icon = when (action.type) {
+                        ActiveWorkoutFreshnessActionType.OpenExercise -> Icons.Rounded.FitnessCenter
+                        ActiveWorkoutFreshnessActionType.OpenFilteredPicker -> Icons.Rounded.Search
+                    }
+                    Icon(imageVector = icon, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(action.ctaLabel, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+        }
+    }
 }
 
 @Composable

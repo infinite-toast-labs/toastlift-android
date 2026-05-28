@@ -4,6 +4,7 @@ import dev.toastlabs.toastlift.data.ActiveSession
 import dev.toastlabs.toastlift.data.ExerciseDetail
 import dev.toastlabs.toastlift.data.ExerciseSummary
 import dev.toastlabs.toastlift.data.HistoryReuseMode
+import dev.toastlabs.toastlift.data.LibraryFilters
 import dev.toastlabs.toastlift.data.RecommendationSource
 import dev.toastlabs.toastlift.data.SessionExercise
 import dev.toastlabs.toastlift.data.SessionSet
@@ -147,6 +148,74 @@ class ToastLiftViewModelTest {
                 remainingExerciseCount = 2,
             ),
         )
+    }
+
+    @Test
+    fun activeSessionFreshnessLibraryFilters_mapsLowerBackToCatalogFacets() {
+        val filters = activeSessionFreshnessLibraryFilters(
+            muscleKey = "erector_spinae",
+            muscleLabel = "Lower Back",
+        )
+
+        assertEquals(setOf("erector_spinae"), filters.freshnessMuscleKeys)
+        assertTrue(filters.targetMuscles.isEmpty())
+        assertTrue(filters.primeMovers.isEmpty())
+    }
+
+    @Test
+    fun activeSessionFreshnessLibraryFilters_mapsCoreToAbdominalsCatalogFacet() {
+        val filters = activeSessionFreshnessLibraryFilters(
+            muscleKey = "core",
+            muscleLabel = "Core",
+        )
+
+        assertEquals(setOf("core"), filters.freshnessMuscleKeys)
+        assertTrue(filters.targetMuscles.isEmpty())
+        assertTrue(filters.primeMovers.isEmpty())
+    }
+
+    @Test
+    fun activeSessionFreshnessLibraryFilters_usesDisplayLabelForCatalogMatchingMuscles() {
+        val filters = activeSessionFreshnessLibraryFilters(
+            muscleKey = "hamstrings",
+            muscleLabel = "Hamstrings",
+        )
+
+        assertEquals(setOf("hamstrings"), filters.freshnessMuscleKeys)
+        assertTrue(filters.targetMuscles.isEmpty())
+        assertTrue(filters.primeMovers.isEmpty())
+    }
+
+    @Test
+    fun libraryFreshnessMuscleFilterLabel_resolvesKnownFreshnessSlot() {
+        assertEquals("Lower Back", libraryFreshnessMuscleFilterLabel("erector_spinae"))
+    }
+
+    @Test
+    fun libraryFreshnessMuscleFilterLabels_deduplicatesResolvedAliases() {
+        val labels = libraryFreshnessMuscleFilterLabels(
+            LibraryFilters(
+                freshnessMuscleKeys = setOf("erector_spinae", "Lower Back"),
+            ),
+        )
+
+        assertEquals(listOf("Lower Back"), labels)
+    }
+
+    @Test
+    fun libraryFreshnessMuscleFilterKeys_normalizesKnownLabelsAndKeys() {
+        val keys = libraryFreshnessMuscleFilterKeys(
+            LibraryFilters(
+                freshnessMuscleKeys = setOf("Lower Back", "erector_spinae", "Hamstrings"),
+            ),
+        )
+
+        assertEquals(setOf("erector_spinae", "hamstrings"), keys)
+    }
+
+    @Test
+    fun libraryFreshnessMuscleFilterLabel_formatsUnknownKeys() {
+        assertEquals("Rear Delts", libraryFreshnessMuscleFilterLabel("rear_delts"))
     }
 
     @Test
