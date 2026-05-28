@@ -562,6 +562,54 @@ private fun activeSessionPickNextFilterLabel(equipment: String?, muscle: String?
     return listOfNotNull(equipment, muscle).takeIf { it.isNotEmpty() }?.joinToString(" and ")
 }
 
+internal fun activeSessionFreshnessLibraryFilters(
+    muscleKey: String,
+    muscleLabel: String,
+): LibraryFilters {
+    val normalizedKey = normalizeLibraryFreshnessMuscleKey(muscleKey)
+    val fallbackLabel = muscleLabel.trim().takeIf { it.isNotEmpty() } ?: muscleKey
+    return LibraryFilters(
+        freshnessMuscleKeys = setOf(normalizedKey ?: fallbackLabel),
+    )
+}
+
+internal fun libraryFreshnessMuscleFilterKeys(filters: LibraryFilters): Set<String> {
+    return filters.freshnessMuscleKeys
+        .mapNotNull(::normalizeLibraryFreshnessMuscleKey)
+        .toSet()
+}
+
+internal fun libraryFreshnessMuscleFilterLabels(filters: LibraryFilters): List<String> {
+    return libraryFreshnessMuscleFilterKeys(filters)
+        .map(::libraryFreshnessMuscleFilterLabel)
+        .filter { it.isNotBlank() }
+        .distinct()
+}
+
+internal fun libraryFreshnessMuscleFilterLabel(muscleKey: String): String {
+    val normalizedKey = normalizeLibraryFreshnessMuscleKey(muscleKey) ?: muscleKey.trim()
+    return resolveActiveSessionMuscleFilter(normalizedKey)?.label
+        ?: normalizedKey.toReadableFreshnessMuscleLabel()
+}
+
+private fun normalizeLibraryFreshnessMuscleKey(muscleKey: String): String? {
+    val trimmed = muscleKey.trim()
+    if (trimmed.isEmpty()) return null
+    return resolveActiveSessionMuscleFilter(trimmed)?.key ?: trimmed.lowercase()
+}
+
+private fun String.toReadableFreshnessMuscleLabel(): String {
+    return replace('_', ' ')
+        .replace('-', ' ')
+        .split(' ')
+        .filter { it.isNotBlank() }
+        .joinToString(" ") { word ->
+            word.replaceFirstChar { char ->
+                if (char.isLowerCase()) char.titlecase() else char.toString()
+            }
+        }
+}
+
 internal fun orderedSessionExercises(
     session: ActiveSession,
     equipmentFilter: String?,
@@ -2352,6 +2400,20 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
         refreshLibrary()
     }
 
+    fun toggleLibraryFreshnessMuscleFilter(muscleKey: String) {
+        val key = normalizeLibraryFreshnessMuscleKey(muscleKey) ?: return
+        val selectedKeys = libraryFreshnessMuscleFilterKeys(uiState.libraryFilters)
+        val updated = if (key in selectedKeys) {
+            selectedKeys - key
+        } else {
+            selectedKeys + key
+        }
+        uiState = uiState.copy(
+            libraryFilters = uiState.libraryFilters.copy(freshnessMuscleKeys = updated),
+        )
+        refreshLibrary()
+    }
+
     fun toggleLibraryRecommendationBiasFilter(bias: RecommendationBias) {
         if (bias == RecommendationBias.Neutral) return
         val updated = uiState.libraryFilters.recommendationBiases.toMutableSet().apply {
@@ -2374,6 +2436,15 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
 
     fun clearLibraryFilters() {
         uiState = uiState.copy(libraryFilters = LibraryFilters())
+        refreshLibrary()
+    }
+
+    fun clearLibraryFreshnessMuscleFilters() {
+        val filters = uiState.libraryFilters
+        if (filters.freshnessMuscleKeys.isEmpty()) return
+        uiState = uiState.copy(
+            libraryFilters = filters.copy(freshnessMuscleKeys = emptySet()),
+        )
         refreshLibrary()
     }
 
@@ -3514,6 +3585,31 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
             librarySearchVisible = false,
             libraryQuery = "",
             libraryFilters = LibraryFilters(),
+            message = null,
+        )
+        refreshLibrary()
+    }
+
+    fun openActiveSessionAddExerciseForFreshnessMuscle(muscleKey: String, muscleLabel: String) {
+        val targetMuscle = muscleLabel.trim().takeIf { it.isNotEmpty() }
+        if (targetMuscle == null) {
+            openActiveSessionAddExercise()
+            return
+        }
+        val freshnessFilters = activeSessionFreshnessLibraryFilters(
+            muscleKey = muscleKey,
+            muscleLabel = targetMuscle,
+        )
+        uiState = uiState.copy(
+            activeSessionAddExerciseVisible = true,
+            activeSessionAddExerciseMode = ActiveSessionAddExerciseMode.Manual,
+            activeSessionGeneratedExercise = ActiveSessionGeneratedExerciseState(),
+            customExerciseDraft = null,
+            customExerciseDestination = null,
+            pendingAddExercisePickerSelection = null,
+            librarySearchVisible = false,
+            libraryQuery = "",
+            libraryFilters = freshnessFilters,
             message = null,
         )
         refreshLibrary()

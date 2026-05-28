@@ -162,7 +162,7 @@ class CatalogRepository(private val database: ToastLiftDatabase) {
             )
             append('\n')
             append(clause.whereClause)
-            append("\nORDER BY COALESCE(p.is_favorite, 0) DESC, e.name ASC")
+            append("\nORDER BY ${librarySearchOrderBy(filters)}")
             if (limit != null) append("\nLIMIT ?")
         }
         val args = if (limit != null) clause.args + limit.toString() else clause.args
@@ -842,6 +842,8 @@ class CatalogRepository(private val database: ToastLiftDatabase) {
             args += filters.primeMovers.sorted()
         }
 
+        libraryFreshnessMuscleFilterClause(filters.freshnessMuscleKeys)?.let { clauses += it }
+
         if (excludeDimension != FacetDimension.RecommendationBias && filters.recommendationBiases.isNotEmpty()) {
             recommendationBiasFilterClause(filters.recommendationBiases)?.let { clauses += it }
         }
@@ -876,6 +878,68 @@ class CatalogRepository(private val database: ToastLiftDatabase) {
     private fun normalizeQuery(query: String): String =
         query.trim().lowercase().replace(Regex("[^a-z0-9]+"), " ").trim()
 }
+
+internal fun libraryFreshnessMuscleFilterClause(
+    muscleKeys: Set<String>,
+    tableAlias: String = "e",
+): String? {
+    val clauses = muscleKeys
+        .mapNotNull { key -> freshnessMuscleSqlTerms[key.trim().lowercase()] }
+        .map { terms -> freshnessMuscleTermsClause(terms, tableAlias) }
+        .distinct()
+    if (clauses.isEmpty()) return null
+    return clauses.joinToString(
+        prefix = "(",
+        separator = " OR ",
+        postfix = ")",
+    )
+}
+
+private fun freshnessMuscleTermsClause(
+    terms: List<String>,
+    tableAlias: String,
+): String {
+    val columns = listOf(
+        "$tableAlias.target_muscle_group",
+        "$tableAlias.prime_mover_muscle",
+        "$tableAlias.secondary_muscle",
+        "$tableAlias.tertiary_muscle",
+    )
+    val termClauses = terms.flatMap { term ->
+        columns.map { column -> "lower(COALESCE($column, '')) LIKE '%$term%'" }
+    }
+    return termClauses.joinToString(
+        prefix = "(",
+        separator = " OR ",
+        postfix = ")",
+    )
+}
+
+internal fun librarySearchOrderBy(filters: LibraryFilters): String {
+    val originalOrder = "COALESCE(p.is_favorite, 0) DESC, e.name ASC"
+    return if (filters.activeCount() > 0) {
+        "COALESCE(logged_history.logged_session_count, 0) DESC, $originalOrder"
+    } else {
+        originalOrder
+    }
+}
+
+private val freshnessMuscleSqlTerms = mapOf(
+    "chest" to listOf("pec", "chest"),
+    "back" to listOf("back", "lat", "trap", "rhomboid", "rear delt", "posterior delt"),
+    "shoulders" to listOf("shoulder", "delt"),
+    "triceps" to listOf("tricep"),
+    "biceps" to listOf("bicep", "brachialis", "brachioradialis"),
+    "forearms" to listOf("forearm"),
+    "quadriceps" to listOf("quad", "vastus", "rectus femoris"),
+    "hamstrings" to listOf("hamstring", "biceps femoris", "semitendinosus", "semimembranosus"),
+    "glutes" to listOf("glute"),
+    "calves" to listOf("calf", "gastrocnemius", "soleus"),
+    "adductors" to listOf("adductor"),
+    "abductors" to listOf("abductor"),
+    "core" to listOf("abdom", "oblique", "transverse abdominis"),
+    "erector_spinae" to listOf("erector", "lower back"),
+)
 
 internal fun recommendationBiasFilterClause(
     selectedBiases: Set<RecommendationBias>,
