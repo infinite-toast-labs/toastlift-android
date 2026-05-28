@@ -167,8 +167,10 @@ class ExerciseHistoryDetailTest {
         assertEquals(2, stats?.previousSessionSetsBySetNumber?.size)
         assertEquals(40.0, stats?.previousSessionSetsBySetNumber?.get(1)?.weight ?: 0.0, 0.001)
         assertEquals(8, stats?.previousSessionSetsBySetNumber?.get(1)?.reps)
+        assertEquals(1, stats?.previousSessionSetsBySetNumber?.get(1)?.repsInReserve)
         assertEquals(45.0, stats?.previousSessionSetsBySetNumber?.get(2)?.weight ?: 0.0, 0.001)
         assertEquals(7, stats?.previousSessionSetsBySetNumber?.get(2)?.reps)
+        assertEquals(1, stats?.previousSessionSetsBySetNumber?.get(2)?.repsInReserve)
     }
 
     private fun row(

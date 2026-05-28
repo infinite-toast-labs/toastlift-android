@@ -725,6 +725,7 @@ data class ExercisePreviousSetPerformance(
     val setNumber: Int,
     val weight: Double,
     val reps: Int,
+    val repsInReserve: Int? = null,
 )
 
 data class ExercisePerformanceStats(

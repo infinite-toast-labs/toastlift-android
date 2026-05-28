@@ -1,6 +1,7 @@
 package dev.toastlabs.toastlift.ui
 
 import dev.toastlabs.toastlift.data.ExerciseDetail
+import dev.toastlabs.toastlift.data.SessionExercise
 import dev.toastlabs.toastlift.data.UserProfile
 import dev.toastlabs.toastlift.data.WeeklyMuscleTargetWorkoutRow
 import dev.toastlabs.toastlift.data.normalizeTrainingFreshnessBucketExercises
@@ -12,7 +13,7 @@ import kotlin.math.roundToInt
 
 internal const val TRAINING_FRESHNESS_DUE_SOON_HOURS = 24
 private const val BUCKET_RESET_WEIGHTED_SETS = 2.0
-private const val MUSCLE_RESET_WEIGHTED_SETS = 1.0
+internal const val TRAINING_FRESHNESS_MUSCLE_RESET_WEIGHTED_SETS = 1.0
 
 internal data class TrainingFreshnessSummary(
     val thresholdDays: Int,
@@ -86,13 +87,13 @@ internal enum class TrainingFreshnessSort(val label: String) {
     Alphabetical("A-Z"),
 }
 
-private data class TrainingFreshnessSlot(
+internal data class TrainingFreshnessSlot(
     val key: String,
     val label: String,
     val family: TrainingFreshnessFamily,
 )
 
-private data class TrainingFreshnessContribution(
+internal data class TrainingFreshnessContribution(
     val key: String,
     val label: String,
     val family: TrainingFreshnessFamily,
@@ -129,6 +130,8 @@ private val trackedBuckets = listOf(
     TrainingFreshnessSlot("lower", "Lower", TrainingFreshnessFamily.Lower),
     TrainingFreshnessSlot("core", "Core", TrainingFreshnessFamily.Core),
 )
+
+internal fun trainingFreshnessMuscleSlots(): List<TrainingFreshnessSlot> = trackedMuscles
 
 internal fun buildTrainingFreshnessSummary(
     profile: UserProfile,
@@ -169,7 +172,7 @@ internal fun buildTrainingFreshnessSummary(
         val latest = latestQualifyingEvent(
             slotKey = slot.key,
             events = muscleEvents,
-            resetThreshold = MUSCLE_RESET_WEIGHTED_SETS,
+            resetThreshold = TRAINING_FRESHNESS_MUSCLE_RESET_WEIGHTED_SETS,
         )
         val status = freshnessStatus(latest?.first, nowUtc, thresholdHours)
         TrainingFreshnessMuscleRow(
@@ -315,7 +318,7 @@ internal fun trainingFreshnessProgressPercent(progress: Float): String {
     return "${(progress.coerceIn(0f, 1f) * 100).roundToInt()}%"
 }
 
-private fun resolveTrainingFreshnessContributions(
+internal fun resolveTrainingFreshnessContributions(
     detail: ExerciseDetail?,
 ): List<TrainingFreshnessContribution> {
     if (detail == null) return emptyList()
@@ -353,6 +356,28 @@ private fun resolveTrainingFreshnessContributions(
             exerciseName = detail.summary.name,
         )
     }
+}
+
+internal fun mapTrainingFreshnessMuscleSlot(muscleName: String): TrainingFreshnessSlot? =
+    mapTrainingFreshnessMuscle(muscleName)
+
+internal fun resolveTrainingFreshnessContributions(
+    exercise: SessionExercise,
+    detail: ExerciseDetail?,
+): List<TrainingFreshnessContribution> {
+    val detailContributions = resolveTrainingFreshnessContributions(detail)
+    if (detailContributions.isNotEmpty()) return detailContributions
+
+    val slot = mapTrainingFreshnessMuscle(exercise.targetMuscleGroup) ?: return emptyList()
+    return listOf(
+        TrainingFreshnessContribution(
+            key = slot.key,
+            label = slot.label,
+            family = slot.family,
+            weight = 1.0,
+            exerciseName = exercise.name,
+        ),
+    )
 }
 
 private fun fallbackTrainingFreshnessContributions(detail: ExerciseDetail): List<TrainingFreshnessSlot> {

@@ -1,6 +1,8 @@
 package dev.toastlabs.toastlift.ui
 
 import dev.toastlabs.toastlift.data.ActiveSession
+import dev.toastlabs.toastlift.data.ExerciseDetail
+import dev.toastlabs.toastlift.data.ExerciseSummary
 import dev.toastlabs.toastlift.data.SessionExercise
 import dev.toastlabs.toastlift.data.SessionSet
 import dev.toastlabs.toastlift.data.elapsedDurationSeconds
@@ -189,6 +191,83 @@ class ActiveSessionWorkoutDetailsTest {
         assertEquals(420, resumedSession.elapsedDurationSeconds(started.plusSeconds(720)))
     }
 
+    @Test
+    fun activeWorkoutMuscleRefreshSummary_usesTrainingFreshnessContributions() {
+        val session = session(
+            exercises = listOf(
+                exercise(
+                    "Bench Press",
+                    sets = listOf(
+                        SessionSet(setNumber = 1, targetReps = "8", completed = true),
+                        SessionSet(setNumber = 2, targetReps = "8"),
+                    ),
+                ),
+                exercise(
+                    "Cable Row",
+                    sets = listOf(
+                        SessionSet(setNumber = 1, targetReps = "10"),
+                        SessionSet(setNumber = 2, targetReps = "10"),
+                    ),
+                ),
+            ),
+        )
+        val details = mapOf(
+            "Bench Press".hashCode().toLong() to detail("Bench Press", target = "Chest", prime = "Chest", secondary = "Triceps"),
+            "Cable Row".hashCode().toLong() to detail("Cable Row", target = "Back", prime = "Back"),
+        )
+
+        val summary = buildActiveWorkoutMuscleRefreshSummary(
+            session = session,
+            exerciseDetailsById = details,
+            trainingFreshness = null,
+        )
+
+        val chest = summary.rows.first { it.key == "chest" }
+        val triceps = summary.rows.first { it.key == "triceps" }
+        val back = summary.rows.first { it.key == "back" }
+        val biceps = summary.rows.first { it.key == "biceps" }
+
+        assertEquals(ActiveWorkoutMuscleRefreshState.Refreshed, chest.state)
+        assertEquals(1.0f, chest.progressFraction, 0.001f)
+        assertEquals(ActiveWorkoutMuscleRefreshState.Pending, triceps.state)
+        assertEquals(0.5f, triceps.progressFraction, 0.001f)
+        assertEquals(ActiveWorkoutMuscleRefreshState.Pending, back.state)
+        assertEquals(ActiveWorkoutMuscleRefreshState.NotTargeted, biceps.state)
+    }
+
+    @Test
+    fun filterActiveWorkoutMuscleRefreshRows_keepsDueOverdueNotTargetedMuscles() {
+        val session = session(
+            exercises = listOf(
+                exercise(
+                    "Biceps Curl",
+                    sets = listOf(SessionSet(setNumber = 1, targetReps = "8")),
+                ),
+            ),
+        )
+        val summary = buildActiveWorkoutMuscleRefreshSummary(
+            session = session,
+            exerciseDetailsById = mapOf(
+                "Biceps Curl".hashCode().toLong() to detail("Biceps Curl", target = "Biceps", prime = "Biceps"),
+            ),
+            trainingFreshness = freshnessSummary(
+                mapOf(
+                    "chest" to TrainingFreshnessStatus.DueSoon,
+                    "biceps" to TrainingFreshnessStatus.DueSoon,
+                    "triceps" to TrainingFreshnessStatus.Overdue,
+                ),
+            ),
+        )
+
+        val dueRows = filterActiveWorkoutMuscleRefreshRows(summary.rows, TrainingFreshnessFilter.Due)
+        val overdueRows = filterActiveWorkoutMuscleRefreshRows(summary.rows, TrainingFreshnessFilter.Overdue)
+
+        assertEquals(listOf("biceps", "chest", "triceps"), dueRows.map { it.key })
+        assertEquals(ActiveWorkoutMuscleRefreshState.Pending, dueRows.first { it.key == "biceps" }.state)
+        assertEquals(ActiveWorkoutMuscleRefreshState.NotTargeted, dueRows.first { it.key == "chest" }.state)
+        assertEquals(listOf("triceps"), overdueRows.map { it.key })
+    }
+
     private fun session(
         focusKey: String? = "upper_body",
         exercises: List<SessionExercise>,
@@ -224,6 +303,66 @@ class ActiveSessionWorkoutDetailsTest {
             targetReps = "8",
             completed = true,
             completedAtUtc = completedAt.toString(),
+        )
+    }
+
+    private fun detail(
+        name: String,
+        target: String,
+        prime: String? = null,
+        secondary: String? = null,
+    ): ExerciseDetail {
+        return ExerciseDetail(
+            summary = ExerciseSummary(
+                id = name.hashCode().toLong(),
+                name = name,
+                difficulty = "Intermediate",
+                bodyRegion = "Upper Body",
+                targetMuscleGroup = target,
+                equipment = "Barbell",
+                secondaryEquipment = null,
+                mechanics = "Compound",
+                favorite = false,
+            ),
+            notes = null,
+            primeMover = prime,
+            secondaryMuscle = secondary,
+            tertiaryMuscle = null,
+            posture = "Standing",
+            laterality = "Bilateral",
+            classification = "Compound",
+            movementPatterns = emptyList(),
+            planesOfMotion = emptyList(),
+            demoUrl = null,
+            explanationUrl = null,
+            synonyms = emptyList(),
+        )
+    }
+
+    private fun freshnessSummary(statusByKey: Map<String, TrainingFreshnessStatus>): TrainingFreshnessSummary {
+        val now = Instant.parse("2026-03-23T10:00:00Z")
+        return TrainingFreshnessSummary(
+            thresholdDays = 3,
+            dueSoonHours = TRAINING_FRESHNESS_DUE_SOON_HOURS,
+            generatedAtUtc = now,
+            cardMode = TrainingFreshnessCardMode.DueSoon,
+            headline = "",
+            supportingText = "",
+            bucketRows = emptyList(),
+            muscleRows = trainingFreshnessMuscleSlots().map { slot ->
+                TrainingFreshnessMuscleRow(
+                    key = slot.key,
+                    label = slot.label,
+                    family = slot.family,
+                    status = statusByKey[slot.key] ?: TrainingFreshnessStatus.Fresh,
+                    lastStimulusAtUtc = now,
+                    hoursSinceStimulus = 0,
+                    hoursUntilThreshold = 72,
+                    progressFraction = 0f,
+                    weightedCompletedSets = 0.0,
+                    lastExerciseNames = emptyList(),
+                )
+            },
         )
     }
 }

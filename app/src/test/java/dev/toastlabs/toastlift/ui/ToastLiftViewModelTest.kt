@@ -246,6 +246,60 @@ class ToastLiftViewModelTest {
     }
 
     @Test
+    fun activeSessionMuscleFilterOptions_usesTrainingFreshnessMuscleCategories() {
+        val session = ActiveSession(
+            title = "Pull Day",
+            origin = "generated",
+            locationModeId = 2L,
+            startedAtUtc = "2026-03-20T10:00:00Z",
+            exercises = listOf(
+                sessionExercise(id = 101L, name = "Wrist Curl", completedSets = listOf(false), targetMuscleGroup = "Forearms"),
+                sessionExercise(id = 202L, name = "Cable Row", completedSets = listOf(false), targetMuscleGroup = "Back"),
+            ),
+        )
+        val details = mapOf(
+            101L to exerciseDetail(exercise = session.exercises[0], primeMover = "Forearms"),
+            202L to exerciseDetail(exercise = session.exercises[1], primeMover = "Latissimus Dorsi", secondaryMuscle = "Biceps"),
+        )
+
+        val options = activeSessionMuscleFilterOptions(session, details)
+
+        assertEquals(trainingFreshnessMuscleSlots().map { it.key }, options.map { it.key })
+        assertEquals(1, options.first { it.key == "forearms" }.matchingExerciseCount)
+        assertEquals(1, options.first { it.key == "back" }.matchingExerciseCount)
+        assertEquals(1, options.first { it.key == "biceps" }.matchingExerciseCount)
+        assertEquals(0, options.first { it.key == "triceps" }.matchingExerciseCount)
+    }
+
+    @Test
+    fun orderedSessionExercises_withMuscleFilter_keepsMatchingFreshnessMuscleExercises() {
+        val session = ActiveSession(
+            title = "Pull Day",
+            origin = "generated",
+            locationModeId = 2L,
+            startedAtUtc = "2026-03-20T10:00:00Z",
+            exercises = listOf(
+                sessionExercise(id = 101L, name = "Bench Press", completedSets = listOf(false), targetMuscleGroup = "Chest"),
+                sessionExercise(id = 202L, name = "Wrist Curl", completedSets = listOf(false), targetMuscleGroup = "Forearms"),
+                sessionExercise(id = 303L, name = "Cable Row", completedSets = listOf(false), targetMuscleGroup = "Back"),
+            ),
+        )
+        val details = mapOf(
+            202L to exerciseDetail(exercise = session.exercises[1], primeMover = "Forearms"),
+            303L to exerciseDetail(exercise = session.exercises[2], primeMover = "Latissimus Dorsi", secondaryMuscle = "Forearms"),
+        )
+
+        val orderedNames = orderedSessionExercises(
+            session = session,
+            equipmentFilter = null,
+            muscleFilterKey = "forearms",
+            exerciseDetailsById = details,
+        ).map { it.value.name }
+
+        assertEquals(listOf("Wrist Curl", "Cable Row"), orderedNames)
+    }
+
+    @Test
     fun reconcileSessionExerciseCompletionState_assignsSequenceOnlyWhenExerciseBecomesComplete() {
         val exercises = listOf(
             sessionExercise(id = 101L, name = "Bench Press", completedSets = listOf(true, true, true), activitySequence = 1, completionSequence = 1),

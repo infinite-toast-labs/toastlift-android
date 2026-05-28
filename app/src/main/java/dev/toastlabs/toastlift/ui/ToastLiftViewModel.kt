@@ -363,6 +363,7 @@ internal data class AppUiState(
     val selectedHistoryDetail: HistoryDetail? = null,
     val completionReceipt: CompletionReceiptUiState? = null,
     val activeSession: ActiveSession? = null,
+    val activeSessionExerciseDetailsById: Map<Long, ExerciseDetail> = emptyMap(),
     val activeSessionExerciseIndex: Int? = null,
     val activeExercisePerformanceStatsById: Map<Long, ExercisePerformanceStats> = emptyMap(),
     val restTimer: RestTimerUiState? = null,
@@ -498,6 +499,31 @@ internal fun activeSessionEquipmentOptions(session: ActiveSession): List<String>
     return equipmentSelectionOptions(session.exercises.map(SessionExercise::equipment))
 }
 
+internal data class ActiveSessionMuscleFilterOption(
+    val key: String,
+    val label: String,
+    val matchingExerciseCount: Int,
+)
+
+internal fun activeSessionMuscleFilterOptions(
+    session: ActiveSession,
+    exerciseDetailsById: Map<Long, ExerciseDetail>,
+): List<ActiveSessionMuscleFilterOption> {
+    return trainingFreshnessMuscleSlots().map { slot ->
+        ActiveSessionMuscleFilterOption(
+            key = slot.key,
+            label = slot.label,
+            matchingExerciseCount = session.exercises.count { exercise ->
+                activeSessionExerciseMatchesMuscleFilter(
+                    exercise = exercise,
+                    detail = exerciseDetailsById[exercise.exerciseId],
+                    muscleFilterKey = slot.key,
+                )
+            },
+        )
+    }
+}
+
 internal fun resolveActiveSessionEquipmentFilter(
     session: ActiveSession,
     equipmentFilter: String?,
@@ -507,16 +533,54 @@ internal fun resolveActiveSessionEquipmentFilter(
         .firstOrNull { option -> option.equals(normalizedFilter, ignoreCase = true) }
 }
 
+internal fun resolveActiveSessionMuscleFilter(muscleFilterKey: String?): TrainingFreshnessSlot? {
+    val normalizedFilter = muscleFilterKey
+        ?.trim()
+        ?.lowercase()
+        ?.takeIf(String::isNotEmpty)
+        ?: return null
+    return trainingFreshnessMuscleSlots()
+        .firstOrNull { slot ->
+            slot.key.equals(normalizedFilter, ignoreCase = true) ||
+                slot.label.lowercase() == normalizedFilter
+        }
+}
+
+internal fun activeSessionExerciseMatchesMuscleFilter(
+    exercise: SessionExercise,
+    detail: ExerciseDetail?,
+    muscleFilterKey: String?,
+): Boolean {
+    val slot = resolveActiveSessionMuscleFilter(muscleFilterKey) ?: return true
+    return resolveTrainingFreshnessContributions(
+        exercise = exercise,
+        detail = detail,
+    ).any { contribution -> contribution.key == slot.key }
+}
+
+private fun activeSessionPickNextFilterLabel(equipment: String?, muscle: String?): String? {
+    return listOfNotNull(equipment, muscle).takeIf { it.isNotEmpty() }?.joinToString(" and ")
+}
+
 internal fun orderedSessionExercises(
     session: ActiveSession,
     equipmentFilter: String?,
+    muscleFilterKey: String? = null,
+    exerciseDetailsById: Map<Long, ExerciseDetail> = emptyMap(),
 ): List<IndexedValue<SessionExercise>> {
     val resolvedFilter = resolveActiveSessionEquipmentFilter(
         session = session,
         equipmentFilter = equipmentFilter,
     )
+    val resolvedMuscleFilterKey = resolveActiveSessionMuscleFilter(muscleFilterKey)?.key
     return orderedSessionExercises(session).filter { indexedExercise ->
-        resolvedFilter == null || indexedExercise.value.equipment.equals(resolvedFilter, ignoreCase = true)
+        val exercise = indexedExercise.value
+        (resolvedFilter == null || exercise.equipment.equals(resolvedFilter, ignoreCase = true)) &&
+            activeSessionExerciseMatchesMuscleFilter(
+                exercise = exercise,
+                detail = exerciseDetailsById[exercise.exerciseId],
+                muscleFilterKey = resolvedMuscleFilterKey,
+            )
     }
 }
 
@@ -532,6 +596,7 @@ internal fun pickNextSessionExerciseIndex(
     session: ActiveSession,
     random: Random = Random.Default,
     equipmentFilter: String? = null,
+    muscleFilterKey: String? = null,
 ): Int? {
     return pickNextSessionExerciseIndex(
         session = session,
@@ -539,6 +604,7 @@ internal fun pickNextSessionExerciseIndex(
         exerciseDetailsById = emptyMap(),
         random = random,
         equipmentFilter = equipmentFilter,
+        muscleFilterKey = muscleFilterKey,
     )
 }
 
@@ -548,6 +614,7 @@ internal fun pickNextSessionExerciseIndex(
     exerciseDetailsById: Map<Long, ExerciseDetail>,
     random: Random = Random.Default,
     equipmentFilter: String? = null,
+    muscleFilterKey: String? = null,
 ): Int? {
     val normalizedEquipmentFilter = equipmentFilter?.trim()?.takeIf(String::isNotEmpty)
     val resolvedEquipmentFilter = normalizedEquipmentFilter?.let { filter ->
@@ -556,11 +623,19 @@ internal fun pickNextSessionExerciseIndex(
             equipmentFilter = filter,
         ) ?: filter
     }
+    val resolvedMuscleFilterKey = resolveActiveSessionMuscleFilter(muscleFilterKey)?.key
     val unstartedExercises = session.exercises
         .withIndex()
         .filter { (_, exercise) -> exercise.isNotStartedInActiveWorkout() }
         .filter { (_, exercise) ->
             resolvedEquipmentFilter == null || exercise.equipment.equals(resolvedEquipmentFilter, ignoreCase = true)
+        }
+        .filter { (_, exercise) ->
+            activeSessionExerciseMatchesMuscleFilter(
+                exercise = exercise,
+                detail = exerciseDetailsById[exercise.exerciseId],
+                muscleFilterKey = resolvedMuscleFilterKey,
+            )
         }
     if (unstartedExercises.isEmpty()) return null
     val normalizedTarget = normalizeMuscleToken(smartTargetMuscle)
@@ -1662,6 +1737,14 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
             .toMap()
     }
 
+    private fun loadActiveSessionExerciseDetails(session: ActiveSession?): Map<Long, ExerciseDetail> {
+        return session
+            ?.exercises
+            ?.map(SessionExercise::exerciseId)
+            ?.let(::loadExerciseDetailsById)
+            .orEmpty()
+    }
+
     private fun projectedAnalyticsFor(workout: WorkoutPlan?): ProjectedAnalytics {
         if (workout == null) {
             return ProjectedAnalytics(
@@ -1783,6 +1866,7 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
             }
             val effectiveActiveSession = uiState.activeSession ?: restoredActiveSession?.session
             val effectiveActiveSessionExerciseIndex = uiState.activeSessionExerciseIndex ?: restoredActiveSession?.selectedExerciseIndex
+            val activeSessionExerciseDetailsById = loadActiveSessionExerciseDetails(effectiveActiveSession)
             val activeExercisePerformanceStatsById = effectiveActiveSession
                 ?.exercises
                 ?.getOrNull(effectiveActiveSessionExerciseIndex ?: -1)
@@ -1832,6 +1916,7 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
                 todayWorkoutCompletion = todayWorkoutCompletion,
                 todayReceiptRecap = todayReceiptRecap,
                 activeSession = effectiveActiveSession,
+                activeSessionExerciseDetailsById = activeSessionExerciseDetailsById,
                 activeSessionExerciseIndex = effectiveActiveSessionExerciseIndex,
                 activeExercisePerformanceStatsById = activeExercisePerformanceStatsById,
                 selectedHistoryDetail = if (selectedHistoryDetail != null) {
@@ -2773,8 +2858,10 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
             container.workoutRepository.saveActiveSession(session, null)
             syncActiveWorkoutNotification(session)
             refreshAll()
+            val activeSessionExerciseDetailsById = loadActiveSessionExerciseDetails(session)
             uiState = uiState.copy(
                 activeSession = session,
+                activeSessionExerciseDetailsById = activeSessionExerciseDetailsById,
                 activeSessionExerciseIndex = null,
                 activeSessionAddExerciseVisible = false,
                 skippedExerciseFeedbackPrompt = null,
@@ -2804,8 +2891,10 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
             container.workoutRepository.saveActiveSession(session, null)
             syncActiveWorkoutNotification(session)
             refreshAll()
+            val activeSessionExerciseDetailsById = loadActiveSessionExerciseDetails(session)
             uiState = uiState.copy(
                 activeSession = session,
+                activeSessionExerciseDetailsById = activeSessionExerciseDetailsById,
                 activeSessionExerciseIndex = null,
                 activeSessionAddExerciseVisible = false,
                 skippedExerciseFeedbackPrompt = null,
@@ -2827,8 +2916,10 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
             container.workoutRepository.saveActiveSession(session, null)
             syncActiveWorkoutNotification(session)
             refreshAll()
+            val activeSessionExerciseDetailsById = loadActiveSessionExerciseDetails(session)
             uiState = uiState.copy(
                 activeSession = session,
+                activeSessionExerciseDetailsById = activeSessionExerciseDetailsById,
                 activeSessionExerciseIndex = null,
                 activeSessionAddExerciseVisible = false,
                 skippedExerciseFeedbackPrompt = null,
@@ -2943,12 +3034,14 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
             container.workoutRepository.saveActiveSession(session, null)
             syncActiveWorkoutNotification(session)
             refreshAll()
+            val activeSessionExerciseDetailsById = loadActiveSessionExerciseDetails(session)
             uiState = uiState.copy(
                 todayEditingTemplateId = null,
                 todayEditingTemplateOrigin = null,
                 todayEditingTemplateName = "",
                 todayEditingTemplateItems = emptyList(),
                 activeSession = session,
+                activeSessionExerciseDetailsById = activeSessionExerciseDetailsById,
                 activeSessionExerciseIndex = null,
                 activeSessionAddExerciseVisible = false,
                 skippedExerciseFeedbackPrompt = null,
@@ -3031,13 +3124,17 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
         persistActiveSessionState(selectedExerciseIndex = null)
     }
 
-    fun pickNextSessionExercise(equipmentFilter: String? = null) {
+    fun pickNextSessionExercise(
+        equipmentFilter: String? = null,
+        muscleFilterKey: String? = null,
+    ) {
         val session = uiState.activeSession ?: return
         val smartTargetMuscle = uiState.profile?.smartPickerTargetMuscle
         val resolvedEquipmentFilter = resolveActiveSessionEquipmentFilter(
             session = session,
             equipmentFilter = equipmentFilter,
         )
+        val resolvedMuscleFilter = resolveActiveSessionMuscleFilter(muscleFilterKey)
         viewModelScope.launch(Dispatchers.IO) {
             val untouchedExerciseIds = session.exercises
                 .filter(SessionExercise::isNotStartedInActiveWorkout)
@@ -3051,12 +3148,17 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
                 smartTargetMuscle = smartTargetMuscle,
                 exerciseDetailsById = exerciseDetailsById,
                 equipmentFilter = resolvedEquipmentFilter,
+                muscleFilterKey = resolvedMuscleFilter?.key,
             ) ?: run {
+                val filterLabel = activeSessionPickNextFilterLabel(
+                    equipment = resolvedEquipmentFilter,
+                    muscle = resolvedMuscleFilter?.label,
+                )
                 uiState = uiState.copy(
-                    message = if (resolvedEquipmentFilter == null) {
+                    message = if (filterLabel == null) {
                         "No untouched exercises left. Pick an exercise already in progress."
                     } else {
-                        "No untouched $resolvedEquipmentFilter exercises left. Clear the equipment filter or pick an exercise already in progress."
+                        "No untouched exercises match $filterLabel. Clear filters or pick an exercise already in progress."
                     },
                 )
                 return@launch
@@ -3240,6 +3342,7 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
         exerciseIndex: Int,
         pickNextAfterRemoval: Boolean = false,
         equipmentFilter: String? = null,
+        muscleFilterKey: String? = null,
     ) {
         val session = uiState.activeSession ?: return
         val removedExercise = session.exercises.getOrNull(exerciseIndex) ?: return
@@ -3251,6 +3354,7 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
                 session = session,
                 equipmentFilter = equipmentFilter,
             ) ?: equipmentFilter?.trim()?.takeIf(String::isNotEmpty)
+            val resolvedMuscleFilter = resolveActiveSessionMuscleFilter(muscleFilterKey)
             viewModelScope.launch(Dispatchers.IO) {
                 val untouchedExerciseIds = updatedSession.exercises
                     .filter(SessionExercise::isNotStartedInActiveWorkout)
@@ -3264,6 +3368,7 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
                     smartTargetMuscle = smartTargetMuscle,
                     exerciseDetailsById = exerciseDetailsById,
                     equipmentFilter = resolvedEquipmentFilter,
+                    muscleFilterKey = resolvedMuscleFilter?.key,
                 )
                 val pickedExercise = pickedExerciseIndex?.let(updatedSession.exercises::getOrNull)
                 uiState = uiState.copy(
@@ -3753,6 +3858,7 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
 
             uiState = uiState.copy(
                 activeSession = null,
+                activeSessionExerciseDetailsById = emptyMap(),
                 activeSessionExerciseIndex = null,
                 activeSessionAddExerciseVisible = false,
                 skippedExerciseFeedbackPrompt = null,
@@ -4234,6 +4340,7 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
             debugReceiptLaunch = launch,
             selectedHistoryDetail = null,
             activeSession = null,
+            activeSessionExerciseDetailsById = emptyMap(),
             activeSessionExerciseIndex = null,
             skippedExerciseFeedbackPrompt = null,
             showSfrDebrief = false,
@@ -4757,6 +4864,7 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
             refreshAll()
             uiState = uiState.copy(
                 activeSession = null,
+                activeSessionExerciseDetailsById = emptyMap(),
                 activeSessionExerciseIndex = null,
                 activeSessionAddExerciseVisible = false,
                 skippedExerciseFeedbackPrompt = null,
@@ -4774,8 +4882,10 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
             container.workoutRepository.saveActiveSession(restoredSession, null)
             syncActiveWorkoutNotification(restoredSession)
             refreshAll()
+            val activeSessionExerciseDetailsById = loadActiveSessionExerciseDetails(restoredSession)
             uiState = uiState.copy(
                 activeSession = restoredSession,
+                activeSessionExerciseDetailsById = activeSessionExerciseDetailsById,
                 activeSessionExerciseIndex = null,
                 activeSessionAddExerciseVisible = false,
                 skippedExerciseFeedbackPrompt = null,
@@ -4983,9 +5093,11 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
             container.workoutRepository.clearAbandonedWorkout()
             container.workoutRepository.saveActiveSession(activeSession, null)
             syncActiveWorkoutNotification(activeSession)
+            val activeSessionExerciseDetailsById = loadActiveSessionExerciseDetails(activeSession)
 
             uiState = uiState.copy(
                 activeSession = activeSession,
+                activeSessionExerciseDetailsById = activeSessionExerciseDetailsById,
                 activeSessionExerciseIndex = null,
                 activeSessionAddExerciseVisible = false,
                 customExerciseDraft = null,
@@ -5551,7 +5663,12 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
             val updatedSession = ensureSessionFruitIcons(
                 session.copy(exercises = session.exercises + additions),
             )
-            uiState = uiState.copy(activeSession = updatedSession, activeSessionExerciseIndex = null)
+            val activeSessionExerciseDetailsById = loadActiveSessionExerciseDetails(updatedSession)
+            uiState = uiState.copy(
+                activeSession = updatedSession,
+                activeSessionExerciseDetailsById = activeSessionExerciseDetailsById,
+                activeSessionExerciseIndex = null,
+            )
             persistActiveSessionState(session = updatedSession, selectedExerciseIndex = null)
             if (session.origin == "generated") {
                 additions.forEach { addedExercise ->

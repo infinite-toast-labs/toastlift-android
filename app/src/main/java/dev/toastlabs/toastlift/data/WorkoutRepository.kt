@@ -151,6 +151,7 @@ internal fun buildExercisePerformanceStats(
                         setNumber = setNumber,
                         weight = bestRow.weight ?: 0.0,
                         reps = bestRow.reps ?: 0,
+                        repsInReserve = bestRow.lastSetRepsInReserve,
                     )
                 }
         }

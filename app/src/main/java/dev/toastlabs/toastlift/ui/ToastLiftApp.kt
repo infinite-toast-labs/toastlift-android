@@ -6,6 +6,7 @@ import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
 import android.util.Log
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
@@ -93,6 +94,7 @@ import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.QueryStats
 import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Shield
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.StarOutline
 import androidx.compose.material.icons.rounded.WorkspacePremium
@@ -812,6 +814,8 @@ fun ToastLiftApp(
                 state.activeSession != null -> ActiveSessionScreen(
                     state = state,
                     session = requireNotNull(state.activeSession),
+                    exerciseDetailsById = state.activeSessionExerciseDetailsById,
+                    trainingFreshness = state.trainingFreshness,
                     snackbarHostState = snackbars,
                     selectedExerciseIndex = state.activeSessionExerciseIndex,
                     activeSessionAddExerciseVisible = state.activeSessionAddExerciseVisible,
@@ -7597,6 +7601,8 @@ private fun ActiveSessionAddExerciseScreen(
 private fun ActiveSessionScreen(
     state: AppUiState,
     session: ActiveSession,
+    exerciseDetailsById: Map<Long, ExerciseDetail>,
+    trainingFreshness: TrainingFreshnessSummary?,
     snackbarHostState: SnackbarHostState,
     selectedExerciseIndex: Int?,
     activeSessionAddExerciseVisible: Boolean,
@@ -7604,7 +7610,7 @@ private fun ActiveSessionScreen(
     onOpenExercise: (Int) -> Unit,
     onShowExerciseDetail: (Long) -> Unit,
     onCloseExercise: () -> Unit,
-    onPickNextExercise: (String?) -> Unit,
+    onPickNextExercise: (String?, String?) -> Unit,
     onOpenAddExercise: () -> Unit,
     onOpenManualAddExercise: () -> Unit,
     onOpenGeneratedAddExercise: () -> Unit,
@@ -7636,7 +7642,7 @@ private fun ActiveSessionScreen(
     onToggleComplete: (Int, Int) -> Unit,
     onAddSet: (Int) -> Unit,
     onDeleteSet: (Int, Int) -> Unit,
-    onDeleteExercise: (Int, Boolean, String?) -> Unit,
+    onDeleteExercise: (Int, Boolean, String?, String?) -> Unit,
     onLogSet: (Int) -> Unit,
     onLogAllSets: (Int) -> Unit,
     onCancelRestTimer: () -> Unit,
@@ -7650,15 +7656,20 @@ private fun ActiveSessionScreen(
     var showDiscardDialog by remember { mutableStateOf(false) }
     var showFinishConfirmDialog by remember { mutableStateOf(false) }
     var showWorkoutDetailsSheet by remember { mutableStateOf(false) }
-    var showEquipmentFilterSheet by rememberSaveable(session.startedAtUtc) { mutableStateOf(false) }
+    var showExerciseFilterSheet by rememberSaveable(session.startedAtUtc) { mutableStateOf(false) }
     var pendingExerciseDeletionIndex by remember { mutableStateOf<Int?>(null) }
     var selectedEquipmentFilter by rememberSaveable(session.startedAtUtc) { mutableStateOf<String?>(null) }
+    var selectedMuscleFilterKey by rememberSaveable(session.startedAtUtc) { mutableStateOf<String?>(null) }
     val equipmentOptions = remember(session.exercises) { activeSessionEquipmentOptions(session) }
-    LaunchedEffect(session, selectedEquipmentFilter) {
+    val muscleFilterOptions = remember(session.exercises, exerciseDetailsById) {
+        activeSessionMuscleFilterOptions(session, exerciseDetailsById)
+    }
+    LaunchedEffect(session, selectedEquipmentFilter, selectedMuscleFilterKey) {
         selectedEquipmentFilter = resolveActiveSessionEquipmentFilter(
             session = session,
             equipmentFilter = selectedEquipmentFilter,
         )
+        selectedMuscleFilterKey = resolveActiveSessionMuscleFilter(selectedMuscleFilterKey)?.key
     }
     if (customExerciseDraft != null && !activeSessionAddExerciseVisible) {
         CustomExerciseEditorScreen(
@@ -7717,7 +7728,7 @@ private fun ActiveSessionScreen(
             onAddSet = onAddSet,
             onDeleteSet = onDeleteSet,
             onDeleteExercise = { exerciseIndexToDelete ->
-                onDeleteExercise(exerciseIndexToDelete, true, selectedEquipmentFilter)
+                onDeleteExercise(exerciseIndexToDelete, true, selectedEquipmentFilter, selectedMuscleFilterKey)
             },
             snackbarHostState = snackbarHostState,
             onLogSet = onLogSet,
@@ -7750,7 +7761,13 @@ private fun ActiveSessionScreen(
     } else {
         progressMetrics.completedSets / progressMetrics.totalSets.toFloat()
     }
-    val orderedExercises = orderedSessionExercises(session, selectedEquipmentFilter)
+    val selectedMuscleFilterLabel = resolveActiveSessionMuscleFilter(selectedMuscleFilterKey)?.label
+    val orderedExercises = orderedSessionExercises(
+        session = session,
+        equipmentFilter = selectedEquipmentFilter,
+        muscleFilterKey = selectedMuscleFilterKey,
+        exerciseDetailsById = exerciseDetailsById,
+    )
     val shouldShowPickNextExercise = state.profile?.devPickNextExerciseEnabled == true
     val shouldShowFruitWorkoutBadges = state.profile?.devFruitExerciseIconsEnabled == true
     val untouchedExerciseCount = orderedExercises.count { (_, exercise) -> exercise.sets.none(SessionSet::completed) }
@@ -7793,20 +7810,40 @@ private fun ActiveSessionScreen(
                 onExitWorkout = { showDiscardDialog = true },
                 onOpenWorkoutDetails = { showWorkoutDetailsSheet = true },
                 equipmentFilterLabel = selectedEquipmentFilter,
-                onOpenEquipmentFilter = { showEquipmentFilterSheet = true },
+                muscleFilterLabel = selectedMuscleFilterLabel,
+                onOpenFilters = { showExerciseFilterSheet = true },
             )
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 val activeEquipmentFilter = selectedEquipmentFilter
-                if (activeEquipmentFilter != null) {
+                val activeMuscleFilterLabel = selectedMuscleFilterLabel
+                if (activeEquipmentFilter != null || activeMuscleFilterLabel != null) {
                     item {
-                        ActiveSessionEquipmentFilterBanner(
+                        ActiveSessionFilterBanner(
                             equipment = activeEquipmentFilter,
+                            muscle = activeMuscleFilterLabel,
                             matchingExerciseCount = orderedExercises.size,
-                            onClear = { selectedEquipmentFilter = null },
+                            onClearEquipment = { selectedEquipmentFilter = null },
+                            onClearMuscle = { selectedMuscleFilterKey = null },
+                            onClearAll = {
+                                selectedEquipmentFilter = null
+                                selectedMuscleFilterKey = null
+                            },
                         )
+                    }
+                }
+                if (orderedExercises.isEmpty() && (activeEquipmentFilter != null || activeMuscleFilterLabel != null)) {
+                    item {
+                        FeatureCard(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f)) {
+                            Text(
+                                "No exercises match the current filters.",
+                                modifier = Modifier.padding(16.dp),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                     }
                 }
                 items(
@@ -7832,7 +7869,7 @@ private fun ActiveSessionScreen(
                         PickNextExerciseCallToAction(
                             untouchedExerciseCount = untouchedExerciseCount,
                             smartTargetMuscle = state.profile?.smartPickerTargetMuscle,
-                            onPickNextExercise = { onPickNextExercise(selectedEquipmentFilter) },
+                            onPickNextExercise = { onPickNextExercise(selectedEquipmentFilter, selectedMuscleFilterKey) },
                         )
                     }
                 }
@@ -7876,6 +7913,8 @@ private fun ActiveSessionScreen(
     if (showWorkoutDetailsSheet) {
         ActiveWorkoutDetailsSheet(
             session = session,
+            exerciseDetailsById = exerciseDetailsById,
+            trainingFreshness = trainingFreshness,
             splitName = splitName,
             elapsed = elapsed,
             isPaused = session.isPaused,
@@ -7884,11 +7923,13 @@ private fun ActiveSessionScreen(
         )
     }
 
-    if (showEquipmentFilterSheet) {
-        ActiveSessionEquipmentFilterSheet(
+    if (showExerciseFilterSheet) {
+        ActiveSessionFiltersSheet(
             selectedEquipment = selectedEquipmentFilter,
             equipmentOptions = equipmentOptions,
-            onDismiss = { showEquipmentFilterSheet = false },
+            selectedMuscleKey = selectedMuscleFilterKey,
+            muscleOptions = muscleFilterOptions,
+            onDismiss = { showExerciseFilterSheet = false },
             onSelectEquipment = { equipment ->
                 selectedEquipmentFilter = if (selectedEquipmentFilter.equals(equipment, ignoreCase = true)) {
                     null
@@ -7897,6 +7938,18 @@ private fun ActiveSessionScreen(
                 }
             },
             onClear = { selectedEquipmentFilter = null },
+            onSelectMuscle = { muscleKey ->
+                selectedMuscleFilterKey = if (selectedMuscleFilterKey.equals(muscleKey, ignoreCase = true)) {
+                    null
+                } else {
+                    muscleKey
+                }
+            },
+            onClearMuscle = { selectedMuscleFilterKey = null },
+            onClearAll = {
+                selectedEquipmentFilter = null
+                selectedMuscleFilterKey = null
+            },
         )
     }
 
@@ -7915,18 +7968,22 @@ private fun ActiveSessionScreen(
                 onDismiss = { pendingExerciseDeletionIndex = null },
                 onConfirm = {
                     pendingExerciseDeletionIndex = null
-                    onDeleteExercise(exerciseIndex, false, null)
+                    onDeleteExercise(exerciseIndex, false, null, null)
                 },
             )
         }
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun ActiveSessionEquipmentFilterBanner(
-    equipment: String,
+private fun ActiveSessionFilterBanner(
+    equipment: String?,
+    muscle: String?,
     matchingExerciseCount: Int,
-    onClear: () -> Unit,
+    onClearEquipment: () -> Unit,
+    onClearMuscle: () -> Unit,
+    onClearAll: () -> Unit,
 ) {
     FeatureCard(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f)) {
         Row(
@@ -7936,19 +7993,43 @@ private fun ActiveSessionEquipmentFilterBanner(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text("Showing $equipment only", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Filtered exercises", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    equipment?.let {
+                        MiniTag("Equipment: $it")
+                    }
+                    muscle?.let {
+                        MiniTag("Muscle: $it")
+                    }
+                }
                 Text(
-                    "$matchingExerciseCount exercise${if (matchingExerciseCount == 1) "" else "s"} match this equipment.",
+                    "$matchingExerciseCount exercise${if (matchingExerciseCount == 1) "" else "s"} match.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    equipment?.let {
+                        TextButton(onClick = onClearEquipment, modifier = Modifier.height(32.dp)) {
+                            Text("Clear equipment")
+                        }
+                    }
+                    muscle?.let {
+                        TextButton(onClick = onClearMuscle, modifier = Modifier.height(32.dp)) {
+                            Text("Clear muscle")
+                        }
+                    }
+                }
             }
-            TextButton(onClick = onClear) {
+            TextButton(onClick = onClearAll) {
                 Text("Show all")
             }
         }
     }
+}
+
+private fun activeSessionFilterSummaryLabel(equipment: String?, muscle: String?): String? {
+    return listOfNotNull(equipment, muscle).takeIf { it.isNotEmpty() }?.joinToString(" and ")
 }
 
 @Composable
@@ -8321,8 +8402,13 @@ private fun SessionMomentumHeader(
     onExitWorkout: () -> Unit,
     onOpenWorkoutDetails: () -> Unit,
     equipmentFilterLabel: String?,
-    onOpenEquipmentFilter: () -> Unit,
+    muscleFilterLabel: String?,
+    onOpenFilters: () -> Unit,
 ) {
+    val activeFilterLabel = activeSessionFilterSummaryLabel(
+        equipment = equipmentFilterLabel,
+        muscle = muscleFilterLabel,
+    )
     FeatureCard(
         modifier = modifier
             .semantics {
@@ -8345,15 +8431,15 @@ private fun SessionMomentumHeader(
                 horizontalArrangement = Arrangement.End,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                IconButton(onClick = onOpenEquipmentFilter) {
+                IconButton(onClick = onOpenFilters) {
                     Icon(
                         imageVector = Icons.Rounded.FilterList,
-                        contentDescription = if (equipmentFilterLabel == null) {
-                            "Filter exercises by equipment"
+                        contentDescription = if (activeFilterLabel == null) {
+                            "Filter exercises"
                         } else {
-                            "Filter exercises by equipment, currently $equipmentFilterLabel"
+                            "Filter exercises, currently $activeFilterLabel"
                         },
-                        tint = if (equipmentFilterLabel == null) {
+                        tint = if (activeFilterLabel == null) {
                             MaterialTheme.colorScheme.onSurfaceVariant
                         } else {
                             MaterialTheme.colorScheme.primary
@@ -8406,13 +8492,19 @@ private fun SessionMomentumHeader(
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-private fun ActiveSessionEquipmentFilterSheet(
+private fun ActiveSessionFiltersSheet(
     selectedEquipment: String?,
     equipmentOptions: List<String>,
+    selectedMuscleKey: String?,
+    muscleOptions: List<ActiveSessionMuscleFilterOption>,
     onDismiss: () -> Unit,
     onSelectEquipment: (String) -> Unit,
     onClear: () -> Unit,
+    onSelectMuscle: (String) -> Unit,
+    onClearMuscle: () -> Unit,
+    onClearAll: () -> Unit,
 ) {
+    val selectedMuscle = resolveActiveSessionMuscleFilter(selectedMuscleKey)
     ToastLiftModalBottomSheet(onDismissRequest = onDismiss) {
         LazyColumn(
             modifier = Modifier
@@ -8425,15 +8517,15 @@ private fun ActiveSessionEquipmentFilterSheet(
                     modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
-                    Text("Equipment filter", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                    Text("Exercise filters", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
                     Text(
-                        "Only equipment already used in this workout is shown here.",
+                        "Filter the active workout list by equipment or Training Freshness muscle.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    if (selectedEquipment != null) {
+                    if (selectedEquipment != null || selectedMuscle != null) {
                         TextButton(
-                            onClick = onClear,
+                            onClick = onClearAll,
                             modifier = Modifier.align(Alignment.Start),
                         ) {
                             Text("Show all exercises")
@@ -8442,15 +8534,44 @@ private fun ActiveSessionEquipmentFilterSheet(
                 }
             }
             item {
+                Text("Equipment", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
                 FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
+                    ToastLiftFilterChip(
+                        selected = selectedEquipment == null,
+                        onClick = onClear,
+                        label = { Text("All") },
+                    )
                     equipmentOptions.forEach { equipment ->
                         ToastLiftFilterChip(
                             selected = selectedEquipment.equals(equipment, ignoreCase = true),
                             onClick = { onSelectEquipment(equipment) },
                             label = { Text(equipment) },
+                        )
+                    }
+                }
+            }
+            item {
+                Divider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.18f))
+            }
+            item {
+                Text("Freshness muscle", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    ToastLiftFilterChip(
+                        selected = selectedMuscle == null,
+                        onClick = onClearMuscle,
+                        label = { Text("All") },
+                    )
+                    muscleOptions.forEach { option ->
+                        ToastLiftFilterChip(
+                            selected = selectedMuscle?.key == option.key,
+                            onClick = { onSelectMuscle(option.key) },
+                            label = { Text("${option.label} ${option.matchingExerciseCount}") },
                         )
                     }
                 }
@@ -8466,6 +8587,8 @@ private fun ActiveSessionEquipmentFilterSheet(
 @Composable
 private fun ActiveWorkoutDetailsSheet(
     session: ActiveSession,
+    exerciseDetailsById: Map<Long, ExerciseDetail>,
+    trainingFreshness: TrainingFreshnessSummary?,
     splitName: String?,
     elapsed: String,
     isPaused: Boolean,
@@ -8473,14 +8596,13 @@ private fun ActiveWorkoutDetailsSheet(
     onDismiss: () -> Unit,
 ) {
     val expectedVolume = activeSessionExpectedLoadVolume(session)
-    val targetMuscles = session.exercises
-        .map(SessionExercise::targetMuscleGroup)
-        .filter { it.isNotBlank() }
-        .distinct()
-    val bodyRegions = session.exercises
-        .map(SessionExercise::bodyRegion)
-        .filter { it.isNotBlank() }
-        .distinct()
+    val muscleRefreshSummary = remember(session, exerciseDetailsById, trainingFreshness) {
+        buildActiveWorkoutMuscleRefreshSummary(
+            session = session,
+            exerciseDetailsById = exerciseDetailsById,
+            trainingFreshness = trainingFreshness,
+        )
+    }
     val focusLabel = session.focusKey?.let { generatedWorkoutFocusDisplayName(it) }
     val splitDay = focusLabel?.let { label ->
         listOfNotNull(splitName, label).joinToString(" • ")
@@ -8546,39 +8668,364 @@ private fun ActiveWorkoutDetailsSheet(
                 }
             }
 
-            if (targetMuscles.isNotEmpty() || bodyRegions.isNotEmpty()) {
-                FeatureCard(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.82f)) {
-                    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Text("Coverage", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                        if (targetMuscles.isNotEmpty()) {
-                            Text(
-                                "Primary targets",
-                                style = MaterialTheme.typography.labelLarge,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                targetMuscles.take(8).forEach { muscle -> MiniTag(muscle) }
-                            }
-                        }
-                        if (bodyRegions.isNotEmpty()) {
-                            Text(
-                                "Body regions",
-                                style = MaterialTheme.typography.labelLarge,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                bodyRegions.forEach { region -> MiniTag(region) }
-                            }
-                        }
-                    }
-                }
-            }
+            ActiveWorkoutMuscleRefreshCard(summary = muscleRefreshSummary)
 
             Button(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) {
                 Text("Close")
             }
             Spacer(modifier = Modifier.height(24.dp))
         }
+    }
+}
+
+internal enum class ActiveWorkoutMuscleRefreshState {
+    NotTargeted,
+    Pending,
+    Refreshed,
+}
+
+internal data class ActiveWorkoutMuscleRefreshRow(
+    val key: String,
+    val label: String,
+    val family: TrainingFreshnessFamily,
+    val expectedWeightedSets: Double,
+    val completedWeightedSets: Double,
+    val progressFraction: Float,
+    val state: ActiveWorkoutMuscleRefreshState,
+    val freshnessStatus: TrainingFreshnessStatus,
+)
+
+internal data class ActiveWorkoutMuscleRefreshSummary(
+    val rows: List<ActiveWorkoutMuscleRefreshRow>,
+) {
+    val expectedCount: Int = rows.count { it.state != ActiveWorkoutMuscleRefreshState.NotTargeted }
+    val refreshedCount: Int = rows.count { it.state == ActiveWorkoutMuscleRefreshState.Refreshed }
+}
+
+private data class ActiveWorkoutMuscleRefreshAccumulator(
+    var expectedWeightedSets: Double = 0.0,
+    var completedWeightedSets: Double = 0.0,
+)
+
+internal fun buildActiveWorkoutMuscleRefreshSummary(
+    session: ActiveSession,
+    exerciseDetailsById: Map<Long, ExerciseDetail>,
+    trainingFreshness: TrainingFreshnessSummary?,
+): ActiveWorkoutMuscleRefreshSummary {
+    val accumulators = trainingFreshnessMuscleSlots()
+        .associate { slot -> slot.key to ActiveWorkoutMuscleRefreshAccumulator() }
+        .toMutableMap()
+
+    session.exercises.forEach { exercise ->
+        val expectedSetCount = exercise.sets.size
+        val completedSetCount = exercise.sets.count(SessionSet::completed)
+        val contributions = resolveTrainingFreshnessContributions(
+            exercise = exercise,
+            detail = exerciseDetailsById[exercise.exerciseId],
+        )
+        contributions.forEach { contribution ->
+            accumulators[contribution.key]?.let { accumulator ->
+                accumulator.expectedWeightedSets += expectedSetCount * contribution.weight
+                accumulator.completedWeightedSets += completedSetCount * contribution.weight
+            }
+        }
+    }
+
+    val freshnessStatusByKey = trainingFreshness
+        ?.muscleRows
+        ?.associate { row -> row.key to row.status }
+        .orEmpty()
+
+    return ActiveWorkoutMuscleRefreshSummary(
+        rows = trainingFreshnessMuscleSlots().map { slot ->
+            val accumulator = accumulators.getValue(slot.key)
+            val state = when {
+                accumulator.expectedWeightedSets <= 0.0 -> ActiveWorkoutMuscleRefreshState.NotTargeted
+                accumulator.completedWeightedSets >= TRAINING_FRESHNESS_MUSCLE_RESET_WEIGHTED_SETS -> ActiveWorkoutMuscleRefreshState.Refreshed
+                else -> ActiveWorkoutMuscleRefreshState.Pending
+            }
+            ActiveWorkoutMuscleRefreshRow(
+                key = slot.key,
+                label = slot.label,
+                family = slot.family,
+                expectedWeightedSets = accumulator.expectedWeightedSets,
+                completedWeightedSets = accumulator.completedWeightedSets,
+                progressFraction = if (accumulator.expectedWeightedSets <= 0.0) {
+                    0f
+                } else {
+                    (accumulator.completedWeightedSets / TRAINING_FRESHNESS_MUSCLE_RESET_WEIGHTED_SETS)
+                        .toFloat()
+                        .coerceIn(0f, 1f)
+                },
+                state = state,
+                freshnessStatus = freshnessStatusByKey[slot.key] ?: TrainingFreshnessStatus.Untracked,
+            )
+        },
+    )
+}
+
+internal fun filterActiveWorkoutMuscleRefreshRows(
+    rows: List<ActiveWorkoutMuscleRefreshRow>,
+    filter: TrainingFreshnessFilter,
+): List<ActiveWorkoutMuscleRefreshRow> {
+    return rows.filter { row ->
+        when (filter) {
+            TrainingFreshnessFilter.All -> true
+            TrainingFreshnessFilter.Upper -> row.family == TrainingFreshnessFamily.Upper
+            TrainingFreshnessFilter.Lower -> row.family == TrainingFreshnessFamily.Lower
+            TrainingFreshnessFilter.Core -> row.family == TrainingFreshnessFamily.Core
+            TrainingFreshnessFilter.Due -> row.freshnessStatus == TrainingFreshnessStatus.DueSoon ||
+                row.freshnessStatus == TrainingFreshnessStatus.Overdue
+            TrainingFreshnessFilter.Overdue -> row.freshnessStatus == TrainingFreshnessStatus.Overdue
+        }
+    }.sortedBy { row -> row.state == ActiveWorkoutMuscleRefreshState.NotTargeted }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ActiveWorkoutMuscleRefreshCard(summary: ActiveWorkoutMuscleRefreshSummary) {
+    var selectedFilterName by rememberSaveable { mutableStateOf(TrainingFreshnessFilter.All.name) }
+    val selectedFilter = TrainingFreshnessFilter.entries.firstOrNull { it.name == selectedFilterName }
+        ?: TrainingFreshnessFilter.All
+    val filteredRows = remember(summary, selectedFilter) {
+        filterActiveWorkoutMuscleRefreshRows(summary.rows, selectedFilter)
+    }
+
+    FeatureCard(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.82f)) {
+        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text("Muscle Refresh", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text(
+                        "Training Freshness projection",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                MiniTag("${summary.refreshedCount}/${summary.expectedCount}")
+            }
+
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                TrainingFreshnessFilter.entries.forEach { option ->
+                    ToastLiftFilterChip(
+                        selected = selectedFilter == option,
+                        onClick = { selectedFilterName = option.name },
+                        label = { Text(option.label) },
+                    )
+                }
+            }
+
+            if (filteredRows.isEmpty()) {
+                Text(
+                    "No muscles match this filter.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    filteredRows.forEach { row ->
+                        ActiveWorkoutMuscleRefreshBarRow(row = row)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ActiveWorkoutMuscleRefreshBarRow(row: ActiveWorkoutMuscleRefreshRow) {
+    val progress by animateFloatAsState(
+        targetValue = row.progressFraction.coerceIn(0f, 1f),
+        label = "activeWorkoutMuscleRefreshProgress",
+    )
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        ActiveWorkoutMuscleRefreshBar(
+            row = row,
+            progress = progress,
+            modifier = Modifier.weight(1f),
+        )
+        ActiveWorkoutFreshnessShield(row = row, modifier = Modifier.width(30.dp))
+    }
+}
+
+@Composable
+private fun ActiveWorkoutMuscleRefreshBar(
+    row: ActiveWorkoutMuscleRefreshRow,
+    progress: Float,
+    modifier: Modifier = Modifier,
+) {
+    val shape = RoundedCornerShape(5.dp)
+    val trackColor = activeWorkoutMuscleRefreshTrackColor(row.state)
+    val fillColor = activeWorkoutMuscleRefreshFillColor(row.state)
+    val borderColor = activeWorkoutMuscleRefreshBorderColor(row.state)
+    val trailingText = activeWorkoutMuscleRefreshTrailingText(row)
+
+    Box(
+        modifier = modifier
+            .height(28.dp)
+            .clip(shape)
+            .background(trackColor)
+            .border(1.dp, borderColor, shape),
+    ) {
+        if (progress > 0f) {
+            Box(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .fillMaxWidth(progress)
+                    .background(fillColor),
+            )
+        }
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 10.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                row.label,
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = activeWorkoutMuscleRefreshTextColor(row.state),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                trailingText,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold,
+                color = activeWorkoutMuscleRefreshTextColor(row.state),
+                maxLines = 1,
+                softWrap = false,
+            )
+            if (row.state == ActiveWorkoutMuscleRefreshState.Refreshed) {
+                Icon(
+                    imageVector = Icons.Rounded.Check,
+                    contentDescription = null,
+                    tint = activeWorkoutMuscleRefreshTextColor(row.state),
+                    modifier = Modifier.size(15.dp),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ActiveWorkoutFreshnessShield(
+    row: ActiveWorkoutMuscleRefreshRow,
+    modifier: Modifier = Modifier,
+) {
+    val shieldLabel = activeWorkoutFreshnessShieldLabel(row.freshnessStatus)
+    val context = LocalContext.current
+    val shieldModifier = if (shieldLabel == null) {
+        modifier.height(28.dp)
+    } else {
+        modifier
+            .height(28.dp)
+            .semantics {
+                role = Role.Button
+                contentDescription = "${row.label} $shieldLabel"
+            }
+            .clickable {
+                Toast.makeText(context, "${row.label}: $shieldLabel", Toast.LENGTH_SHORT).show()
+            }
+    }
+    Box(
+        modifier = shieldModifier,
+        contentAlignment = Alignment.Center,
+    ) {
+        if (shieldLabel != null) {
+            Icon(
+                imageVector = Icons.Rounded.Shield,
+                contentDescription = null,
+                tint = activeWorkoutFreshnessShieldColor(row),
+                modifier = Modifier.size(22.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun activeWorkoutMuscleRefreshTrackColor(state: ActiveWorkoutMuscleRefreshState): Color {
+    return when (state) {
+        ActiveWorkoutMuscleRefreshState.NotTargeted -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.46f)
+        ActiveWorkoutMuscleRefreshState.Pending -> orangeAccent.glow.copy(alpha = 0.42f)
+        ActiveWorkoutMuscleRefreshState.Refreshed -> surgeAccent.glow.copy(alpha = 0.48f)
+    }
+}
+
+@Composable
+private fun activeWorkoutMuscleRefreshFillColor(state: ActiveWorkoutMuscleRefreshState): Color {
+    return when (state) {
+        ActiveWorkoutMuscleRefreshState.NotTargeted -> Color.Transparent
+        ActiveWorkoutMuscleRefreshState.Pending -> orangeAccent.start.copy(alpha = if (LocalToastLiftIsDarkTheme.current) 0.72f else 0.58f)
+        ActiveWorkoutMuscleRefreshState.Refreshed -> surgeAccent.start.copy(alpha = if (LocalToastLiftIsDarkTheme.current) 0.82f else 0.64f)
+    }
+}
+
+@Composable
+private fun activeWorkoutMuscleRefreshBorderColor(state: ActiveWorkoutMuscleRefreshState): Color {
+    return when (state) {
+        ActiveWorkoutMuscleRefreshState.NotTargeted -> MaterialTheme.colorScheme.outline.copy(alpha = 0.24f)
+        ActiveWorkoutMuscleRefreshState.Pending -> orangeAccent.start.copy(alpha = 0.34f)
+        ActiveWorkoutMuscleRefreshState.Refreshed -> surgeAccent.start.copy(alpha = 0.38f)
+    }
+}
+
+@Composable
+private fun activeWorkoutMuscleRefreshTextColor(state: ActiveWorkoutMuscleRefreshState): Color {
+    return when (state) {
+        ActiveWorkoutMuscleRefreshState.NotTargeted -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.78f)
+        ActiveWorkoutMuscleRefreshState.Pending,
+        ActiveWorkoutMuscleRefreshState.Refreshed,
+        -> MaterialTheme.colorScheme.onSurface
+    }
+}
+
+@Composable
+private fun activeWorkoutFreshnessShieldColor(row: ActiveWorkoutMuscleRefreshRow): Color {
+    val isExpected = row.state != ActiveWorkoutMuscleRefreshState.NotTargeted
+    return when (row.freshnessStatus) {
+        TrainingFreshnessStatus.DueSoon -> if (isExpected) {
+            emberAccent.start.copy(alpha = 0.78f)
+        } else {
+            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.54f)
+        }
+        TrainingFreshnessStatus.Overdue -> if (isExpected) {
+            emberAccent.start
+        } else {
+            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.76f)
+        }
+        TrainingFreshnessStatus.Fresh,
+        TrainingFreshnessStatus.Untracked,
+        -> Color.Transparent
+    }
+}
+
+private fun activeWorkoutFreshnessShieldLabel(status: TrainingFreshnessStatus): String? {
+    return when (status) {
+        TrainingFreshnessStatus.DueSoon -> "Due"
+        TrainingFreshnessStatus.Overdue -> "Late"
+        TrainingFreshnessStatus.Fresh,
+        TrainingFreshnessStatus.Untracked,
+        -> null
+    }
+}
+
+private fun activeWorkoutMuscleRefreshTrailingText(row: ActiveWorkoutMuscleRefreshRow): String {
+    return when (row.state) {
+        ActiveWorkoutMuscleRefreshState.NotTargeted -> "--"
+        ActiveWorkoutMuscleRefreshState.Pending -> "${(row.progressFraction.coerceIn(0f, 1f) * 100).roundToInt()}%"
+        ActiveWorkoutMuscleRefreshState.Refreshed -> ""
     }
 }
 
@@ -9600,8 +10047,15 @@ private fun DismissibleSessionSetRow(
                             )
                         }
                         previousSetPerformance?.let { previous ->
+                            val lastPerformanceText = buildString {
+                                append("Last: ${formatExercisePerformanceWeight(previous.weight)} x ${previous.reps}")
+                                previous.repsInReserve?.let {
+                                    append(" • RIR ")
+                                    append(formatRirLabel(it))
+                                }
+                            }
                             Text(
-                                "Last: ${formatExercisePerformanceWeight(previous.weight)} x ${previous.reps}",
+                                lastPerformanceText,
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
