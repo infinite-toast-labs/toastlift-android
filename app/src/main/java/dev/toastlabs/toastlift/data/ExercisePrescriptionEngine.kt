@@ -9,6 +9,7 @@ data class ExercisePrescriptionRequest(
     val profile: UserProfile?,
     val history: List<HistoricalExerciseSet>,
     val plannedLoadTarget: Double? = null,
+    val plannedLoadSource: RecommendationSource = RecommendationSource.GENERATED_PLAN,
     val plannedSetCount: Int? = null,
 )
 
@@ -118,7 +119,7 @@ class ExercisePrescriptionEngine {
                 units = request.profile?.units ?: "imperial",
             ),
             setCount = request.plannedSetCount ?: request.workoutExercise.sets,
-            source = RecommendationSource.DIRECT_HISTORY,
+            source = request.plannedLoadSource,
             confidence = if (directHistory.isNotEmpty()) 0.92 else 0.72,
             rationale = listOf("Used the generated workout load target without applying progression again."),
         )

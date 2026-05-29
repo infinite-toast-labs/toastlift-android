@@ -1,6 +1,7 @@
 package dev.toastlabs.toastlift.data
 
 import java.time.Instant
+import kotlin.math.ceil
 import kotlin.math.max
 
 class GeneratorRepository(
@@ -84,23 +85,37 @@ class GeneratorRepository(
             val fallbackExercises = fallbackPool
                 .take(fallbackExerciseCount(profile.durationMinutes))
                 .mapIndexed { index, exercise ->
+                    val workUnitDefaults = defaultWorkUnitValues(exercise.workUnits).takeIf { exercise.workUnits.isNotEmpty() }
+                    val startingSets = workUnitDefaults?.let { values ->
+                        listOf(
+                            WorkoutExerciseSetDraft(
+                                setNumber = 1,
+                                targetReps = "",
+                                workUnitValues = values,
+                                recommendationSource = RecommendationSource.GENERATED_PLAN,
+                                recommendationConfidence = 0.5,
+                            ),
+                        )
+                    }.orEmpty()
                     WorkoutExercise(
                         exerciseId = exercise.id,
                         name = exercise.name,
                         bodyRegion = exercise.bodyRegion,
                         targetMuscleGroup = exercise.targetMuscleGroup,
                         equipment = exercise.equipment,
-                        sets = if (index < 2) 4 else 3,
-                        repRange = defaultRepRange(profile.goal),
-                        restSeconds = defaultRestSeconds(profile.goal),
+                        sets = startingSets.size.takeIf { it > 0 } ?: if (index < 2) 4 else 3,
+                        repRange = workUnitTargetLabel(exercise.workUnits, workUnitDefaults.orEmpty())
+                            ?: defaultRepRange(profile.goal),
+                        restSeconds = if (startingSets.isNotEmpty()) 0 else defaultRestSeconds(profile.goal),
                         rationale = "Fallback selection because the filtered candidate pool was empty.",
+                        startingSets = startingSets,
                     )
                 }
             return WorkoutPlan(
                 title = "$locationName ${generatedWorkoutFocusDisplayName(persistedFocus)}",
                 subtitle = "${splitProgram.name} • ${profile.goal} • ${profile.durationMinutes} min",
                 locationModeId = locationModeId,
-                estimatedMinutes = max(profile.durationMinutes, fallbackExercises.sumOf { it.sets * 3 }),
+                estimatedMinutes = max(profile.durationMinutes, fallbackExercises.sumOf(::fallbackEstimatedMinutes)),
                 origin = "generated",
                 focusKey = persistedFocus,
                 exercises = fallbackExercises,
@@ -108,19 +123,29 @@ class GeneratorRepository(
         }
 
         val workoutExercises = generated.exercises.map { exercise ->
+            val startingSets = exercise.workUnitValuesBySet.mapIndexed { index, values ->
+                WorkoutExerciseSetDraft(
+                    setNumber = index + 1,
+                    targetReps = "",
+                    workUnitValues = values,
+                    recommendationSource = RecommendationSource.GENERATED_PLAN,
+                    recommendationConfidence = 0.82,
+                )
+            }
             WorkoutExercise(
                 exerciseId = exercise.exerciseId,
                 name = exercise.name,
                 bodyRegion = exercise.bodyRegion,
                 targetMuscleGroup = exercise.targetMuscleGroup,
                 equipment = exercise.equipment,
-                sets = exercise.setCount,
+                sets = startingSets.size.takeIf { it > 0 } ?: exercise.setCount,
                 repRange = exercise.repRange,
                 restSeconds = exercise.restSeconds,
                 rationale = exercise.rationale,
                 suggestedWeight = exercise.suggestedWeight,
                 overloadStrategy = exercise.overloadStrategy,
                 decisionTrace = exercise.decisionTrace,
+                startingSets = startingSets,
             )
         }
 
@@ -319,8 +344,83 @@ class GeneratorRepository(
                 candidates = candidates,
                 biasPlan = gymEquipmentBiasPlan,
                 maxCount = 240,
-            )
+            ).withCatalogWorkUnits()
         }
+    }
+
+    private fun List<GeneratorCatalogExercise>.withCatalogWorkUnits(): List<GeneratorCatalogExercise> {
+        if (isEmpty()) return this
+        val workUnitsByExerciseId = loadWorkUnitsByExerciseIds(map(GeneratorCatalogExercise::id))
+        if (workUnitsByExerciseId.isEmpty()) return this
+        return map { exercise ->
+            exercise.copy(workUnits = workUnitsByExerciseId[exercise.id].orEmpty())
+        }
+    }
+
+    private fun loadWorkUnitsByExerciseIds(exerciseIds: Collection<Long>): Map<Long, List<WorkUnitDefinition>> {
+        val distinctIds = exerciseIds.distinct()
+        if (distinctIds.isEmpty()) return emptyMap()
+        val db = database.open()
+        val placeholders = distinctIds.joinToString(",") { "?" }
+        return db.rawQuery(
+            """
+            SELECT
+                exercise_id,
+                unit_key,
+                display_label,
+                value_type,
+                unit_label,
+                default_value,
+                min_value,
+                max_value,
+                step_value,
+                is_primary,
+                is_required,
+                tracks_effort
+            FROM exercise_work_units
+            WHERE exercise_id IN ($placeholders)
+            ORDER BY exercise_id, sequence_no
+            """.trimIndent(),
+            distinctIds.map(Long::toString).toTypedArray(),
+        ).use { cursor ->
+            val grouped = linkedMapOf<Long, MutableList<WorkUnitDefinition>>()
+            while (cursor.moveToNext()) {
+                grouped.getOrPut(cursor.getLong(0)) { mutableListOf() } += WorkUnitDefinition(
+                    key = cursor.getString(1),
+                    label = cursor.getString(2),
+                    valueType = cursor.getString(3),
+                    unitLabel = cursor.getStringOrNull(4),
+                    defaultValue = cursor.getStringOrNull(5),
+                    minValue = if (cursor.isNull(6)) null else cursor.getDouble(6),
+                    maxValue = if (cursor.isNull(7)) null else cursor.getDouble(7),
+                    stepValue = if (cursor.isNull(8)) null else cursor.getDouble(8),
+                    isPrimary = cursor.getInt(9) == 1,
+                    isRequired = cursor.getInt(10) == 1,
+                    tracksEffort = cursor.getInt(11) == 1,
+                )
+            }
+            grouped
+        }
+    }
+
+    private fun workUnitTargetLabel(
+        workUnits: List<WorkUnitDefinition>,
+        values: Map<String, String>,
+    ): String? {
+        val primary = workUnits.firstOrNull { it.isPrimary } ?: workUnits.firstOrNull() ?: return null
+        val value = values[primary.key]?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+        val unit = primary.unitLabel?.trim()?.takeIf { it.isNotEmpty() }
+        return listOfNotNull(value, unit).joinToString(" ")
+    }
+
+    private fun fallbackEstimatedMinutes(exercise: WorkoutExercise): Int {
+        val workUnitMinutes = exercise.startingSets
+            .mapNotNull { draft -> draft.workUnitValues["duration_min"]?.toDoubleOrNull() }
+            .sum()
+        return workUnitMinutes
+            .takeIf { it > 0.0 }
+            ?.let { ceil(it).toInt() }
+            ?: (exercise.sets * 3)
     }
 
     private fun loadHistoricalSets(): List<HistoricalExerciseSet> {

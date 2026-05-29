@@ -1190,6 +1190,15 @@ internal fun sessionSetFromHistoryReuseDraft(
     draft: WorkoutExerciseSetDraft,
     fallbackTargetReps: String,
 ): SessionSet {
+    if (draft.workUnitValues.isNotEmpty()) {
+        return SessionSet(
+            setNumber = draft.setNumber,
+            targetReps = "",
+            workUnitValues = draft.workUnitValues,
+            recommendationSource = draft.recommendationSource,
+            recommendationConfidence = draft.recommendationConfidence,
+        )
+    }
     val targetReps = draft.targetReps.ifBlank { fallbackTargetReps }
     val recommendedReps = draft.recommendedReps ?: draft.reps
     return SessionSet(

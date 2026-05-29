@@ -43,6 +43,7 @@ enum class RecommendationSource {
     SIMILAR_EXERCISE_HISTORY,
     COLD_START_HEURISTIC,
     BODYWEIGHT,
+    GENERATED_PLAN,
     NONE,
 }
 

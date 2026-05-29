@@ -67,7 +67,7 @@ class ExercisePrescriptionEngineTest {
             ),
         )
 
-        assertEquals(RecommendationSource.DIRECT_HISTORY, prescription.source)
+        assertEquals(RecommendationSource.GENERATED_PLAN, prescription.source)
         assertEquals(105.0, prescription.recommendedWeight ?: 0.0, 0.001)
         assertEquals(4, prescription.setCount)
     }

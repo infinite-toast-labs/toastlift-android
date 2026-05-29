@@ -144,6 +144,7 @@ data class GeneratorCatalogExercise(
     val classification: String,
     val movementPatterns: List<String>,
     val planesOfMotion: List<String>,
+    val workUnits: List<WorkUnitDefinition> = emptyList(),
 )
 
 data class HistoricalExerciseSet(
@@ -256,6 +257,7 @@ data class GeneratedWorkoutExercise(
     val overloadStrategy: String,
     val rationale: String,
     val decisionTrace: List<String>,
+    val workUnitValuesBySet: List<Map<String, String>> = emptyList(),
 )
 
 data class GeneratorAlgorithmConfig(
@@ -574,6 +576,14 @@ private data class PrescribedExercise(
     val rationale: String,
     val decisionTrace: List<String>,
     val selectionScore: Double,
+    val workUnitValuesBySet: List<Map<String, String>>,
+    val workUnitTargetLabel: String?,
+)
+
+private data class WorkUnitPrescription(
+    val valuesBySet: List<Map<String, String>>,
+    val targetLabel: String?,
+    val sourceLabel: String,
 )
 
 class WorkoutGenerationFacade(
@@ -688,12 +698,13 @@ class WorkoutGenerationFacade(
                     targetMuscleGroup = exercise.exercise.targetMuscleGroup,
                     equipment = exercise.exercise.equipment,
                     setCount = exercise.setCount,
-                    repRange = "${exercise.repRange.first}-${exercise.repRange.last}",
+                    repRange = exercise.workUnitTargetLabel ?: "${exercise.repRange.first}-${exercise.repRange.last}",
                     restSeconds = exercise.restSeconds,
                     suggestedWeight = exercise.suggestedWeight,
                     overloadStrategy = exercise.overloadStrategy,
                     rationale = exercise.rationale,
                     decisionTrace = exercise.decisionTrace,
+                    workUnitValuesBySet = exercise.workUnitValuesBySet,
                 )
             },
             muscleInsights = musclesForUi,
@@ -1102,6 +1113,8 @@ class WorkoutGenerationFacade(
         muscleState: MuscleState,
     ): PrescribedExercise {
         val goalProfile = config.goalProfiles[request.profile.goal] ?: config.goalProfiles.getValue("General Fitness")
+        val workUnitPrescription = prescribeWorkUnits(evaluation.exercise, request.history)
+        val isWorkUnitExercise = workUnitPrescription != null
         val progression = decideProgression(
             performance = evaluation.performance,
             muscleState = muscleState,
@@ -1117,7 +1130,7 @@ class WorkoutGenerationFacade(
             restSeconds = resolveRest(goalProfile, evaluation.slotKind, evaluation.exercise),
             slotKind = evaluation.slotKind,
             intent = request.intensityIntent,
-        )
+        ).takeUnless { isWorkUnitExercise } ?: 0
         val baseSets = when (evaluation.slotKind) {
             SlotKind.PRIMARY -> 4
             SlotKind.SECONDARY -> 3
@@ -1141,18 +1154,23 @@ class WorkoutGenerationFacade(
             slotKind = evaluation.slotKind,
             muscleState = muscleState,
         )
-        val setCount = clampInt(
-            baseSets + setAdjustment + intensitySetAdjustment + frequencySetAdjustment,
-            if (evaluation.slotKind == SlotKind.CORE) 2 else 2,
-            5,
-        )
-        val rawSuggestedWeight = suggestWeight(
-            request = request,
-            candidate = evaluation.exercise,
-            performance = evaluation.performance,
-            progression = progression,
-            repRange = repRange,
-        )
+        val setCount = workUnitPrescription?.valuesBySet?.size?.coerceAtLeast(1)
+            ?: clampInt(
+                baseSets + setAdjustment + intensitySetAdjustment + frequencySetAdjustment,
+                if (evaluation.slotKind == SlotKind.CORE) 2 else 2,
+                5,
+            )
+        val rawSuggestedWeight = if (isWorkUnitExercise) {
+            null
+        } else {
+            suggestWeight(
+                request = request,
+                candidate = evaluation.exercise,
+                performance = evaluation.performance,
+                progression = progression,
+                repRange = repRange,
+            )
+        }
         val suggestedWeight = if (rawSuggestedWeight != null && request.programContext != null) {
             roundToIncrement(
                 value = rawSuggestedWeight * request.programContext.loadMultiplier,
@@ -1193,6 +1211,12 @@ class WorkoutGenerationFacade(
             if (request.intensityIntent != IntensityPrescriptionIntent.STANDARD) {
                 add("intensity=${request.intensityIntent.name.lowercase()}")
             }
+            if (workUnitPrescription != null) {
+                add("work_units=${workUnitPrescription.sourceLabel}")
+                workUnitPrescription.targetLabel?.let { label ->
+                    add("work_unit_target=${label.replace(' ', '_')}")
+                }
+            }
         }
 
         return PrescribedExercise(
@@ -1206,6 +1230,8 @@ class WorkoutGenerationFacade(
             rationale = rationale,
             decisionTrace = decisionTrace,
             selectionScore = evaluation.selectionScore,
+            workUnitValuesBySet = workUnitPrescription?.valuesBySet.orEmpty(),
+            workUnitTargetLabel = workUnitPrescription?.targetLabel,
         )
     }
 
@@ -1791,9 +1817,78 @@ class WorkoutGenerationFacade(
             val repTarget = (exercise.repRange.first + exercise.repRange.last) / 2.0
             val workSeconds = round((repTarget * config.secondsPerRep) + config.activeSecondsPerSet).toInt()
             val warmupSeconds = if (exercise.slotKind in setOf(SlotKind.PRIMARY, SlotKind.SECONDARY)) config.warmupSecondsPerPrimary else 0
-            warmupSeconds + config.setupSeconds + config.transitionSeconds + (exercise.setCount * (workSeconds + exercise.restSeconds))
+            val activeSeconds = workUnitActiveSeconds(exercise) ?: exercise.setCount * workSeconds
+            val restSeconds = if (exercise.workUnitValuesBySet.isNotEmpty()) {
+                (exercise.setCount - 1).coerceAtLeast(0) * exercise.restSeconds
+            } else {
+                exercise.setCount * exercise.restSeconds
+            }
+            warmupSeconds + config.setupSeconds + config.transitionSeconds + activeSeconds + restSeconds
         }
         return ceil(totalSeconds / 60.0).toInt()
+    }
+
+    private fun prescribeWorkUnits(
+        candidate: GeneratorCatalogExercise,
+        history: List<HistoricalExerciseSet>,
+    ): WorkUnitPrescription? {
+        if (candidate.workUnits.isEmpty()) return null
+        val directHistoryValues = history
+            .filter { it.exerciseId == candidate.id && it.hasLoggedWorkUnitSignal() }
+            .maxByOrNull(HistoricalExerciseSet::completedAtUtc)
+            ?.workUnitValues
+            .orEmpty()
+        val defaults = defaultWorkUnitValues(candidate.workUnits)
+        val values = candidate.workUnits.associate { unit ->
+            val historicalValue = directHistoryValues[unit.key]?.trim()?.takeIf { it.isNotEmpty() }
+            unit.key to (historicalValue ?: defaults[unit.key].orEmpty())
+        }
+        val sourceLabel = if (directHistoryValues.isNotEmpty()) "direct_history" else "catalog_default"
+        return WorkUnitPrescription(
+            valuesBySet = listOf(values),
+            targetLabel = workUnitTargetLabel(candidate.workUnits, values),
+            sourceLabel = sourceLabel,
+        )
+    }
+
+    private fun workUnitActiveSeconds(exercise: PrescribedExercise): Int? {
+        if (exercise.workUnitValuesBySet.isEmpty()) return null
+        val activeSecondsBySet = exercise.workUnitValuesBySet.mapNotNull { values ->
+            workUnitSetActiveSeconds(exercise.exercise.workUnits, values)
+        }
+        return activeSecondsBySet
+            .takeIf { it.size == exercise.workUnitValuesBySet.size }
+            ?.sum()
+    }
+
+    private fun workUnitSetActiveSeconds(
+        workUnits: List<WorkUnitDefinition>,
+        values: Map<String, String>,
+    ): Int? {
+        val durationUnit = workUnits.firstOrNull { normalizeValue(it.valueType) == "duration" }
+            ?: workUnits.firstOrNull { normalizeValue(it.key).contains("duration") }
+            ?: return null
+        val rawValue = values[durationUnit.key]?.trim()?.takeIf { it.isNotEmpty() }
+            ?: durationUnit.defaultValue?.trim()?.takeIf { it.isNotEmpty() }
+            ?: return null
+        val amount = rawValue.toDoubleOrNull()?.takeIf { it > 0.0 } ?: return null
+        val normalizedUnit = normalizeValue(durationUnit.unitLabel ?: durationUnit.key)
+        val seconds = if (normalizedUnit.contains("sec") || durationUnit.key.endsWith("_sec")) {
+            amount
+        } else {
+            amount * 60.0
+        }
+        return round(seconds).toInt()
+    }
+
+    private fun workUnitTargetLabel(
+        workUnits: List<WorkUnitDefinition>,
+        values: Map<String, String>,
+    ): String? {
+        val primary = workUnits.firstOrNull { it.isPrimary } ?: workUnits.firstOrNull() ?: return null
+        val value = values[primary.key]?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+        val unit = primary.unitLabel?.trim()?.takeIf { it.isNotEmpty() }
+        return listOfNotNull(value, unit).joinToString(" ")
     }
 
     private fun roundToIncrement(

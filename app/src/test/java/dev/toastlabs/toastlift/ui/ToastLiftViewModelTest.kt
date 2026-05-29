@@ -719,6 +719,27 @@ class ToastLiftViewModelTest {
     }
 
     @Test
+    fun sessionSetFromHistoryReuseDraft_preservesWorkUnitValuesWithoutRepPrefill() {
+        val set = sessionSetFromHistoryReuseDraft(
+            draft = WorkoutExerciseSetDraft(
+                setNumber = 1,
+                targetReps = "",
+                workUnitValues = mapOf("duration_min" to "20", "speed_mph" to "5.0"),
+                recommendationSource = RecommendationSource.GENERATED_PLAN,
+                recommendationConfidence = 0.82,
+            ),
+            fallbackTargetReps = "20 min",
+        )
+
+        assertEquals(1, set.setNumber)
+        assertEquals("", set.targetReps)
+        assertEquals("", set.reps)
+        assertEquals("", set.weight)
+        assertEquals(mapOf("duration_min" to "20", "speed_mph" to "5.0"), set.workUnitValues)
+        assertEquals(RecommendationSource.GENERATED_PLAN, set.recommendationSource)
+    }
+
+    @Test
     fun generatedSessionSetNumbers_preservesPlannedVolumeForWorkUnitExercises() {
         assertEquals(listOf(1, 2, 3), generatedSessionSetNumbers(3).toList())
         assertEquals(listOf(1), generatedSessionSetNumbers(0).toList())

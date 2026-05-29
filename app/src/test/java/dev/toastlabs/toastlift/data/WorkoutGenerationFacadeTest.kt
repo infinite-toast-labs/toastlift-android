@@ -799,6 +799,70 @@ class WorkoutGenerationFacadeTest {
         assertFalse(result.movementInsights.any { it.label == "Loaded Carry" })
     }
 
+    @Test
+    fun generateCarriesWorkUnitTargetsIntoTimeFitAndGeneratedSets() {
+        val treadmill = candidate(
+            id = 903L,
+            name = "Running/Treadmill",
+            targetMuscle = "Cardio",
+            equipment = "Machine",
+            classification = "Cardio",
+            bodyRegion = "Full Body",
+            movementPatterns = listOf("Locomotion"),
+            workUnits = cardioWorkUnits(),
+        )
+
+        val result = facade.generate(
+            WorkoutGenerationRequest(
+                profile = profile(goal = "Conditioning", durationMinutes = 35),
+                splitProgramName = "Full Body",
+                focus = "full_body",
+                locationName = "Gym",
+                availableEquipment = setOf("Machine"),
+                candidates = listOf(treadmill),
+                history = listOf(
+                    HistoricalExerciseSet(
+                        completedAtUtc = Instant.parse("2026-03-16T12:00:00Z"),
+                        exerciseId = treadmill.id,
+                        exerciseName = treadmill.name,
+                        targetReps = "",
+                        actualReps = null,
+                        weight = null,
+                        completed = true,
+                        lastSetRir = null,
+                        lastSetRpe = null,
+                        targetMuscleGroup = "Cardio",
+                        primeMover = "Cardio",
+                        secondaryMuscle = null,
+                        tertiaryMuscle = null,
+                        mechanics = "Cardio",
+                        laterality = "Bilateral",
+                        classification = "Cardio",
+                        movementPatterns = listOf("Locomotion"),
+                        planesOfMotion = listOf("Sagittal Plane"),
+                        equipment = "Machine",
+                        setNumber = 1,
+                        workUnitValues = mapOf("duration_min" to "28", "speed_mph" to "6.5"),
+                    ),
+                ),
+                restrictions = emptyList(),
+                preferences = emptyMap(),
+                previousExerciseIds = emptySet(),
+                variationSeed = 903L,
+                nowUtc = now,
+            ),
+        )
+
+        val exercise = result.exercises.single()
+        assertEquals(1, exercise.setCount)
+        assertEquals("28 min", exercise.repRange)
+        assertEquals(0, exercise.restSeconds)
+        assertEquals("28", exercise.workUnitValuesBySet.single()["duration_min"])
+        assertEquals("6.5", exercise.workUnitValuesBySet.single()["speed_mph"])
+        assertTrue(result.estimatedMinutes >= 28)
+        assertTrue(exercise.decisionTrace.contains("work_units=direct_history"))
+    }
+
     private fun profile(
         goal: String = "General Fitness",
         durationMinutes: Int = 45,
@@ -830,12 +894,14 @@ class WorkoutGenerationFacadeTest {
         laterality: String = "Bilateral",
         favorite: Boolean = false,
         preferenceScoreDelta: Double = 0.0,
+        bodyRegion: String? = null,
+        workUnits: List<WorkUnitDefinition> = emptyList(),
     ): GeneratorCatalogExercise {
         return GeneratorCatalogExercise(
             id = id,
             name = name,
             difficulty = "Intermediate",
-            bodyRegion = when (targetMuscle) {
+            bodyRegion = bodyRegion ?: when (targetMuscle) {
                 "Quadriceps", "Hamstrings", "Glutes", "Calves" -> "Lower Body"
                 "Abdominals" -> "Core"
                 else -> "Upper Body"
@@ -854,8 +920,38 @@ class WorkoutGenerationFacadeTest {
             classification = classification,
             movementPatterns = movementPatterns,
             planesOfMotion = listOf("Sagittal Plane"),
+            workUnits = workUnits,
         )
     }
+
+    private fun cardioWorkUnits(): List<WorkUnitDefinition> = listOf(
+        WorkUnitDefinition(
+            key = "duration_min",
+            label = "Duration",
+            valueType = "duration",
+            unitLabel = "min",
+            defaultValue = "20",
+            minValue = 0.0,
+            maxValue = 300.0,
+            stepValue = 1.0,
+            isPrimary = true,
+            isRequired = true,
+            tracksEffort = true,
+        ),
+        WorkUnitDefinition(
+            key = "speed_mph",
+            label = "Speed",
+            valueType = "decimal",
+            unitLabel = "mph",
+            defaultValue = "5.0",
+            minValue = 0.0,
+            maxValue = 20.0,
+            stepValue = 0.1,
+            isPrimary = false,
+            isRequired = false,
+            tracksEffort = true,
+        ),
+    )
 
     private fun historySet(
         exerciseId: Long,
