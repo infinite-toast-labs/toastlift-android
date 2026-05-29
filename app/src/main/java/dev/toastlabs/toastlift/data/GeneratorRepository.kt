@@ -328,6 +328,7 @@ class GeneratorRepository(
         return db.rawQuery(
             """
             SELECT
+                pe.performed_exercise_id,
                 pw.completed_at_utc,
                 pe.exercise_id,
                 pe.exercise_name,
@@ -344,6 +345,8 @@ class GeneratorRepository(
                 e.mechanics,
                 e.laterality,
                 e.primary_exercise_classification,
+                COALESCE(e.primary_equipment, ''),
+                ps.set_number,
                 (
                     SELECT group_concat(mp.movement_pattern, '|')
                     FROM exercise_movement_patterns mp
@@ -363,32 +366,88 @@ class GeneratorRepository(
             """.trimIndent(),
             null,
         ).use { cursor ->
-            buildList {
+            data class HistoryRow(
+                val performedExerciseId: Long,
+                val completedAtUtc: Instant,
+                val exerciseId: Long,
+                val exerciseName: String,
+                val targetReps: String,
+                val actualReps: Int?,
+                val weight: Double?,
+                val completed: Boolean,
+                val lastSetRir: Int?,
+                val lastSetRpe: Double?,
+                val targetMuscleGroup: String?,
+                val primeMover: String?,
+                val secondaryMuscle: String?,
+                val tertiaryMuscle: String?,
+                val mechanics: String?,
+                val laterality: String?,
+                val classification: String?,
+                val equipment: String?,
+                val setNumber: Int,
+                val movementPatterns: List<String>,
+                val planesOfMotion: List<String>,
+            )
+
+            val rows = buildList {
                 while (cursor.moveToNext()) {
-                    val completedAt = cursor.getString(0)?.let(Instant::parse) ?: continue
+                    val completedAt = cursor.getString(1)?.let(Instant::parse) ?: continue
                     add(
-                        HistoricalExerciseSet(
+                        HistoryRow(
+                            performedExerciseId = cursor.getLong(0),
                             completedAtUtc = completedAt,
-                            exerciseId = cursor.getLong(1),
-                            exerciseName = cursor.getString(2),
-                            targetReps = cursor.getString(3),
-                            actualReps = if (cursor.isNull(4)) null else cursor.getInt(4),
-                            weight = if (cursor.isNull(5)) null else cursor.getDouble(5),
-                            completed = cursor.getInt(6) == 1,
-                            lastSetRir = if (cursor.isNull(7)) null else cursor.getInt(7),
-                            lastSetRpe = if (cursor.isNull(8)) null else cursor.getDouble(8),
-                            targetMuscleGroup = cursor.getStringOrNull(9),
-                            primeMover = cursor.getStringOrNull(10),
-                            secondaryMuscle = cursor.getStringOrNull(11),
-                            tertiaryMuscle = cursor.getStringOrNull(12),
-                            mechanics = cursor.getStringOrNull(13),
-                            laterality = cursor.getStringOrNull(14),
-                            classification = cursor.getStringOrNull(15),
-                            movementPatterns = cursor.getStringOrNull(16).splitPipe(),
-                            planesOfMotion = cursor.getStringOrNull(17).splitPipe(),
+                            exerciseId = cursor.getLong(2),
+                            exerciseName = cursor.getString(3),
+                            targetReps = cursor.getString(4),
+                            actualReps = if (cursor.isNull(5)) null else cursor.getInt(5),
+                            weight = if (cursor.isNull(6)) null else cursor.getDouble(6),
+                            completed = cursor.getInt(7) == 1,
+                            lastSetRir = if (cursor.isNull(8)) null else cursor.getInt(8),
+                            lastSetRpe = if (cursor.isNull(9)) null else cursor.getDouble(9),
+                            targetMuscleGroup = cursor.getStringOrNull(10),
+                            primeMover = cursor.getStringOrNull(11),
+                            secondaryMuscle = cursor.getStringOrNull(12),
+                            tertiaryMuscle = cursor.getStringOrNull(13),
+                            mechanics = cursor.getStringOrNull(14),
+                            laterality = cursor.getStringOrNull(15),
+                            classification = cursor.getStringOrNull(16),
+                            equipment = cursor.getStringOrNull(17),
+                            setNumber = cursor.getInt(18),
+                            movementPatterns = cursor.getStringOrNull(19).splitPipe(),
+                            planesOfMotion = cursor.getStringOrNull(20).splitPipe(),
                         ),
                     )
                 }
+            }
+            val maxLoggedSetByExerciseSession = rows
+                .groupBy { row -> row.performedExerciseId }
+                .mapValues { (_, groupedRows) -> groupedRows.maxOf { it.setNumber } }
+
+            rows.map { row ->
+                HistoricalExerciseSet(
+                    completedAtUtc = row.completedAtUtc,
+                    exerciseId = row.exerciseId,
+                    exerciseName = row.exerciseName,
+                    targetReps = row.targetReps,
+                    actualReps = row.actualReps,
+                    weight = row.weight,
+                    completed = row.completed,
+                    lastSetRir = row.lastSetRir,
+                    lastSetRpe = row.lastSetRpe,
+                    targetMuscleGroup = row.targetMuscleGroup,
+                    primeMover = row.primeMover,
+                    secondaryMuscle = row.secondaryMuscle,
+                    tertiaryMuscle = row.tertiaryMuscle,
+                    mechanics = row.mechanics,
+                    laterality = row.laterality,
+                    classification = row.classification,
+                    movementPatterns = row.movementPatterns,
+                    planesOfMotion = row.planesOfMotion,
+                    equipment = row.equipment,
+                    setNumber = row.setNumber,
+                    effortAppliesToSet = row.setNumber == maxLoggedSetByExerciseSession[row.performedExerciseId],
+                )
             }
         }
     }

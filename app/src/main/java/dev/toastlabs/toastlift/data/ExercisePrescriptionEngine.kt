@@ -49,6 +49,15 @@ class ExercisePrescriptionEngine {
             )
         }
 
+        val plannedLoadRecommendation = recommendFromPlannedLoadTarget(
+            request = request,
+            recommendedReps = recommendedReps,
+            directHistory = directHistory,
+        )
+        if (plannedLoadRecommendation != null) {
+            return plannedLoadRecommendation
+        }
+
         val directRecommendation = recommendFromDirectHistory(
             request = request,
             repRange = repRange,
@@ -72,6 +81,31 @@ class ExercisePrescriptionEngine {
             request = request,
             repRange = repRange,
             recommendedReps = recommendedReps,
+        )
+    }
+
+    private fun recommendFromPlannedLoadTarget(
+        request: ExercisePrescriptionRequest,
+        recommendedReps: Int?,
+        directHistory: List<HistoricalExerciseSet>,
+    ): ExercisePrescription? {
+        val plannedLoadTarget = request.plannedLoadTarget ?: return null
+        val latestMinReps = directHistory
+            .takeWhile { it.completedAtUtc == directHistory.firstOrNull()?.completedAtUtc }
+            .mapNotNull(HistoricalExerciseSet::actualReps)
+            .minOrNull()
+        return ExercisePrescription(
+            repRange = request.workoutExercise.repRange,
+            recommendedRepCount = recommendedReps ?: latestMinReps,
+            recommendedWeight = roundToEquipmentIncrement(
+                value = plannedLoadTarget,
+                equipment = request.workoutExercise.equipment,
+                units = request.profile?.units ?: "imperial",
+            ),
+            setCount = request.plannedSetCount ?: request.workoutExercise.sets,
+            source = RecommendationSource.DIRECT_HISTORY,
+            confidence = if (directHistory.isNotEmpty()) 0.92 else 0.72,
+            rationale = listOf("Used the generated workout load target without applying progression again."),
         )
     }
 
@@ -112,7 +146,7 @@ class ExercisePrescriptionEngine {
             ?: directHistory.mapNotNull(HistoricalExerciseSet::weight).maxOrNull()
             ?: request.workoutExercise.suggestedWeight
             ?: return null
-        val baseWeight = request.plannedLoadTarget ?: request.workoutExercise.suggestedWeight ?: latestWeight
+        val baseWeight = request.workoutExercise.suggestedWeight ?: latestWeight
         val adjustedWeight = when (request.workoutExercise.overloadStrategy) {
             "INCREASE_LOAD" -> baseWeight * 1.025
             "REGRESS_LOAD" -> baseWeight * 0.9
@@ -258,7 +292,7 @@ class ExercisePrescriptionEngine {
     }
 
     private fun HistoricalExerciseSet.equipmentClass(): String? {
-        return equipmentGuessFromName(exerciseName)
+        return equipment?.takeIf { it.isNotBlank() } ?: equipmentGuessFromName(exerciseName)
     }
 
     private fun equipmentGuessFromName(name: String): String {

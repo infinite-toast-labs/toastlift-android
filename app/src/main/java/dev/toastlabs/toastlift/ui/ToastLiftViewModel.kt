@@ -5898,7 +5898,10 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
         profile: UserProfile?,
         history: List<dev.toastlabs.toastlift.data.HistoricalExerciseSet>,
     ): WorkoutExercise {
-        val baseExercise = exercise.copy(startingSets = emptyList())
+        val baseExercise = exercise.copy(
+            startingSets = emptyList(),
+            suggestedWeight = null,
+        )
         val prescription = prescribeExercise(
             exercise = baseExercise,
             profile = profile,
@@ -5924,6 +5927,8 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
                 exerciseDetail = detail,
                 profile = profile,
                 history = history,
+                plannedLoadTarget = exercise.suggestedWeight,
+                plannedSetCount = exercise.sets,
             ),
         )
     }

@@ -1,0 +1,602 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ToastLift Workout Engine Post-Enhancement Audit</title>
+  <style>
+    :root {
+      --ink: #162027;
+      --muted: #5d6b76;
+      --line: #d7e1e8;
+      --panel: #ffffff;
+      --bg: #f5f8fa;
+      --green: #0f766e;
+      --blue: #2563eb;
+      --amber: #b7791f;
+      --red: #b42318;
+      --shadow: 0 18px 45px rgba(22, 32, 39, .10);
+      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      --sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      overflow-x: hidden;
+      background: linear-gradient(180deg, #fbfdfe 0%, var(--bg) 58%, #eef4f7 100%);
+      color: var(--ink);
+      font-family: var(--sans);
+      line-height: 1.45;
+    }
+
+    a { color: #155e75; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    .page {
+      width: min(1180px, calc(100vw - 32px));
+      max-width: calc(100vw - 12px);
+      margin: 0 auto;
+      padding: 34px 0 56px;
+    }
+
+    .hero, .panel, .metric, .finding, .step {
+      min-width: 0;
+      background: rgba(255, 255, 255, .94);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+    }
+
+    .hero {
+      display: grid;
+      grid-template-columns: minmax(0, 1.35fr) 360px;
+      gap: 20px;
+      padding: 26px;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .hero:after {
+      content: "";
+      position: absolute;
+      right: -110px;
+      bottom: -150px;
+      width: 410px;
+      height: 410px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(15, 118, 110, .18), transparent 66%);
+      pointer-events: none;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 12px;
+      font-size: 12px;
+      font-weight: 850;
+      letter-spacing: 0;
+      color: var(--green);
+      text-transform: uppercase;
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--green);
+      box-shadow: 0 0 0 5px rgba(15, 118, 110, .12);
+    }
+
+    h1 {
+      margin: 0;
+      max-width: 760px;
+      font-size: clamp(32px, 5vw, 58px);
+      line-height: .98;
+      letter-spacing: 0;
+      overflow-wrap: anywhere;
+    }
+
+    h2 {
+      margin: 0 0 14px;
+      font-size: 24px;
+      line-height: 1.12;
+      letter-spacing: 0;
+    }
+
+    h3 {
+      margin: 0 0 8px;
+      font-size: 16px;
+      letter-spacing: 0;
+    }
+
+    p {
+      margin: 0 0 12px;
+      color: var(--muted);
+      overflow-wrap: break-word;
+    }
+
+    .lede {
+      max-width: 760px;
+      margin-top: 18px;
+      font-size: 18px;
+    }
+
+    .hero-side {
+      display: grid;
+      gap: 12px;
+      z-index: 1;
+    }
+
+    .metric {
+      box-shadow: none;
+      padding: 16px;
+      background: #fbfdfd;
+    }
+
+    .metric strong {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      letter-spacing: 0;
+      text-transform: uppercase;
+    }
+
+    .metric .value {
+      margin-top: 6px;
+      font-size: 26px;
+      font-weight: 900;
+      line-height: 1.05;
+    }
+
+    .metric p {
+      margin-top: 7px;
+      margin-bottom: 0;
+      font-size: 13px;
+    }
+
+    .grid {
+      display: grid;
+      gap: 18px;
+      margin-top: 18px;
+    }
+
+    .grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .grid.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+
+    .panel {
+      padding: 22px;
+      overflow: hidden;
+    }
+
+    .pill-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 14px;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      min-height: 28px;
+      padding: 5px 9px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: #f8fafc;
+      color: #344554;
+      font-size: 12px;
+      font-weight: 750;
+      overflow-wrap: anywhere;
+    }
+
+    .status-grid {
+      display: grid;
+      grid-template-columns: 140px 1fr 1fr;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    .status-grid div {
+      padding: 12px;
+      border-right: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+      min-height: 62px;
+      background: #fff;
+    }
+
+    .status-grid div:nth-child(3n) { border-right: 0; }
+    .status-grid .head {
+      background: #eef4f7;
+      color: #25333d;
+      font-size: 12px;
+      font-weight: 900;
+      text-transform: uppercase;
+    }
+
+    .ok { background: #ecfdf5 !important; }
+    .watch { background: #fff8e6 !important; }
+    .mono {
+      font-family: var(--mono);
+      font-size: 12px;
+      overflow-wrap: anywhere;
+    }
+
+    .flow {
+      width: 100%;
+      height: auto;
+      display: block;
+      margin-top: 8px;
+    }
+
+    .svg-box { fill: #fff; stroke: #c7d6df; stroke-width: 1.2; rx: 8; }
+    .svg-box-ok { fill: #f0fdfa; stroke: #5eead4; stroke-width: 1.3; rx: 8; }
+    .svg-line { stroke: #8da2ae; stroke-width: 1.6; fill: none; marker-end: url(#arrow); }
+    .svg-text { font: 800 12px var(--sans); fill: #1f2a33; }
+    .svg-note { font: 500 10px var(--sans); fill: #657581; }
+
+    .findings {
+      display: grid;
+      gap: 12px;
+    }
+
+    .finding {
+      box-shadow: none;
+      display: grid;
+      grid-template-columns: 116px minmax(0, 1fr);
+      gap: 14px;
+      padding: 16px;
+      background: #fff;
+    }
+
+    .badge {
+      align-self: start;
+      padding: 8px;
+      border-radius: 8px;
+      text-align: center;
+      font-size: 12px;
+      font-weight: 900;
+      text-transform: uppercase;
+    }
+
+    .badge.fixed { background: #dcfce7; color: #166534; }
+    .badge.watch { background: #fef3c7; color: var(--amber); }
+
+    .refs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 8px;
+    }
+
+    .ref {
+      max-width: 100%;
+      padding: 4px 7px;
+      border-radius: 6px;
+      background: #f1f6f8;
+      border: 1px solid #dce6ec;
+      color: #38515e;
+      font-family: var(--mono);
+      font-size: 11px;
+      overflow-wrap: anywhere;
+    }
+
+    .roadmap {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .step {
+      box-shadow: none;
+      padding: 14px;
+      min-height: 142px;
+    }
+
+    .step .num {
+      width: 28px;
+      height: 28px;
+      display: inline-grid;
+      place-items: center;
+      border-radius: 50%;
+      margin-bottom: 10px;
+      background: #e7f7f5;
+      color: var(--green);
+      font-weight: 900;
+    }
+
+    .sources {
+      columns: 2;
+      column-gap: 26px;
+      padding-left: 18px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .sources li {
+      break-inside: avoid;
+      margin-bottom: 8px;
+    }
+
+    @media (max-width: 980px) {
+      .hero, .grid.two, .grid.three, .roadmap { grid-template-columns: 1fr; }
+      .hero-side { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .status-grid { grid-template-columns: 1fr; }
+      .status-grid div, .status-grid div:nth-child(3n) { border-right: 0; }
+      .finding { grid-template-columns: 1fr; }
+      .sources { columns: 1; }
+    }
+
+    @media (max-width: 640px) {
+      .page { width: calc(100vw - 12px); padding-top: 18px; }
+      .hero, .panel { padding: 18px; }
+      .hero-side { grid-template-columns: 1fr; }
+      h1 { font-size: 30px; }
+      .lede { font-size: 16px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <section class="hero">
+      <div>
+        <div class="eyebrow"><span class="dot"></span>Post-enhancement audit, 2026-05-30 UTC</div>
+        <h1>Workout Engine Enhancements Audit</h1>
+        <p class="lede">
+          The high and medium findings from the initial prescription-engine audit have been addressed in code.
+          The generator now has a clearer prescription boundary, better historical metadata, frequency-aware set
+          adjustments, and time-decayed movement balance.
+        </p>
+        <div class="pill-row">
+          <span class="pill">High: fixed</span>
+          <span class="pill">Mediums: fixed or mitigated</span>
+          <span class="pill">Tests: full debug unit suite passing</span>
+          <span class="pill">Scope: non-program generated workouts</span>
+        </div>
+      </div>
+      <aside class="hero-side">
+        <div class="metric">
+          <strong>Open Highs</strong>
+          <div class="value">0</div>
+          <p>Double load progression has a single-owner path.</p>
+        </div>
+        <div class="metric">
+          <strong>Open Mediums</strong>
+          <div class="value">0</div>
+          <p>All medium audit items received targeted code changes.</p>
+        </div>
+        <div class="metric">
+          <strong>Residual Risk</strong>
+          <div class="value">Low</div>
+          <p>Remaining limitations are product-model choices, not regressions.</p>
+        </div>
+      </aside>
+    </section>
+
+    <section class="grid two">
+      <div class="panel">
+        <h2>Updated Flow</h2>
+        <p>
+          The generated workout's load target is now authoritative when the active session is materialized.
+          If the plan has a load target, <span class="mono">ExercisePrescriptionEngine</span> rounds and applies it
+          directly instead of applying the overload strategy a second time.
+        </p>
+        <svg class="flow" viewBox="0 0 760 255" role="img" aria-labelledby="flow-title flow-desc">
+          <title id="flow-title">Post-enhancement prescription flow</title>
+          <desc id="flow-desc">The generator owns progression and the session builder materializes the planned target without progressing it again.</desc>
+          <defs>
+            <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="3.5" orient="auto">
+              <polygon points="0 0, 8 3.5, 0 7" fill="#8da2ae"></polygon>
+            </marker>
+          </defs>
+          <rect class="svg-box-ok" x="32" y="42" width="180" height="82"></rect>
+          <text class="svg-text" x="52" y="72">Generator</text>
+          <text class="svg-note" x="52" y="94">decides progression</text>
+          <text class="svg-note" x="52" y="112">sets target load</text>
+          <path class="svg-line" d="M212 84 H280"></path>
+          <rect class="svg-box" x="280" y="42" width="180" height="82"></rect>
+          <text class="svg-text" x="300" y="72">WorkoutPlan</text>
+          <text class="svg-note" x="300" y="94">suggestedWeight</text>
+          <text class="svg-note" x="300" y="112">overloadStrategy</text>
+          <path class="svg-line" d="M460 84 H528"></path>
+          <rect class="svg-box-ok" x="528" y="42" width="198" height="82"></rect>
+          <text class="svg-text" x="548" y="72">Active session</text>
+          <text class="svg-note" x="548" y="94">plannedLoadTarget</text>
+          <text class="svg-note" x="548" y="112">no duplicate progress</text>
+
+          <rect class="svg-box-ok" x="160" y="168" width="438" height="58"></rect>
+          <text class="svg-text" x="180" y="196">Fallback path remains direct, similar, then cold-start history</text>
+          <text class="svg-note" x="180" y="214">Used only when no generated plan target is present.</text>
+        </svg>
+      </div>
+
+      <div class="panel">
+        <h2>Status Matrix</h2>
+        <div class="status-grid">
+          <div class="head">Original finding</div>
+          <div class="head">New behavior</div>
+          <div class="head">Verification</div>
+
+          <div class="ok">Double load progression</div>
+          <div>Planned load target returns before direct-history progression.</div>
+          <div>Regression test asserts 105 stays 105, not 110.</div>
+
+          <div class="ok">Weekly frequency ignored</div>
+          <div>Weekly targets and set counts now react to profile frequency.</div>
+          <div>Low-frequency total sets exceed high-frequency total sets.</div>
+
+          <div class="ok">Movement history never decays</div>
+          <div>Movement exposure uses a 45-day half-life and 120-day lookback.</div>
+          <div>Recent exposure suppresses a pattern; stale exposure no longer does.</div>
+
+          <div class="ok">Last-set effort applied to all sets</div>
+          <div>History rows mark only the last logged set as effort-bearing.</div>
+          <div>Stimulus test confirms non-last sets use unknown-effort weight.</div>
+
+          <div class="ok">Equipment guessed from names</div>
+          <div>Historical rows carry catalog equipment into similar matching.</div>
+          <div>Machine history with no machine word still anchors similarity.</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Finding Review</h2>
+      <div class="findings">
+        <article class="finding">
+          <div class="badge fixed">Fixed</div>
+          <div>
+            <h3>High: duplicate progression/regression</h3>
+            <p>
+              <span class="mono">ToastLiftViewModel</span> now passes the generated
+              <span class="mono">suggestedWeight</span> as <span class="mono">plannedLoadTarget</span>.
+              The prescription engine resolves that target before direct-history progression, preserving the
+              generated plan's single load decision.
+            </p>
+            <div class="refs">
+              <span class="ref">ExercisePrescriptionEngine.kt:52-109</span>
+              <span class="ref">ToastLiftViewModel.kt:5918-5932</span>
+              <span class="ref">ExercisePrescriptionEngineTest.kt:41-72</span>
+            </div>
+          </div>
+        </article>
+
+        <article class="finding">
+          <div class="badge fixed">Fixed</div>
+          <div>
+            <h3>Medium: frequency-aware no-program volume</h3>
+            <p>
+              Muscle target thresholds now include a weekly-frequency factor, and exercise set counts add volume for
+              very low-frequency users while trimming accessory/core volume for high-frequency users. This keeps the
+              no-program generator from treating two and six weekly sessions identically.
+            </p>
+            <div class="refs">
+              <span class="ref">WorkoutGenerationEngine.kt:732-735</span>
+              <span class="ref">WorkoutGenerationEngine.kt:1126-1135</span>
+              <span class="ref">WorkoutGenerationEngine.kt:1569-1588</span>
+              <span class="ref">WorkoutGenerationFacadeTest.kt:599-631</span>
+            </div>
+          </div>
+        </article>
+
+        <article class="finding">
+          <div class="badge fixed">Fixed</div>
+          <div>
+            <h3>Medium: stale movement-balance history</h3>
+            <p>
+              Movement pattern, plane, and laterality exposure now decay by age and ignore history older than the
+              lookback window. This protects current exercise selection from long-retired training phases.
+            </p>
+            <div class="refs">
+              <span class="ref">WorkoutGenerationEngine.kt:767-785</span>
+              <span class="ref">WorkoutGenerationEngine.kt:1702-1704</span>
+              <span class="ref">WorkoutGenerationFacadeTest.kt:633-675</span>
+            </div>
+          </div>
+        </article>
+
+        <article class="finding">
+          <div class="badge fixed">Fixed</div>
+          <div>
+            <h3>Medium: exercise-level effort over-applied to set stimulus</h3>
+            <p>
+              Historical rows now include <span class="mono">setNumber</span> and
+              <span class="mono">effortAppliesToSet</span>. Repository loading marks only the final logged set in each
+              performed exercise as last-set-effort-bearing; earlier sets use the existing unknown-effort weight.
+            </p>
+            <div class="refs">
+              <span class="ref">WorkoutGenerationEngine.kt:138-160</span>
+              <span class="ref">GeneratorRepository.kt:369-449</span>
+              <span class="ref">WorkoutGenerationEngine.kt:1674-1684</span>
+              <span class="ref">WorkoutGenerationFacadeTest.kt:677-733</span>
+            </div>
+          </div>
+        </article>
+
+        <article class="finding">
+          <div class="badge fixed">Fixed</div>
+          <div>
+            <h3>Medium: similar load estimates used name-guessed equipment</h3>
+            <p>
+              Historical sets now carry catalog equipment. Similar-exercise matching uses that field first, then falls
+              back to the old name guess only when catalog equipment is unavailable.
+            </p>
+            <div class="refs">
+              <span class="ref">GeneratorRepository.kt:330-349</span>
+              <span class="ref">ExercisePrescriptionEngine.kt:294-295</span>
+              <span class="ref">ExercisePrescriptionEngineTest.kt:104-130</span>
+            </div>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="grid two">
+      <div class="panel">
+        <h2>Remaining Constraints</h2>
+        <p>
+          The generator is still a session generator. It now handles the audited high/medium issues, but it still does
+          not replace a periodized program: no mesocycle targets, planned deloads, or future-session reservation unless
+          the app uses <span class="mono">ProgramSessionContext</span>.
+        </p>
+        <p>
+          Work-unit-only conditioning history remains protected from strength prescriptions. A future improvement would
+          add a separate conditioning stimulus channel rather than mixing duration or distance work into rep-based load logic.
+        </p>
+      </div>
+
+      <div class="panel">
+        <h2>Verification</h2>
+        <p>
+          Targeted tests were added for planned load ownership, historical equipment matching, weekly-frequency volume,
+          stale movement decay, and last-set effort handling.
+        </p>
+        <div class="pill-row">
+          <span class="pill">./gradlew testDebugUnitTest --tests ExercisePrescriptionEngineTest --tests WorkoutGenerationFacadeTest</span>
+          <span class="pill">./gradlew testDebugUnitTest</span>
+        </div>
+        <p style="margin-top:12px" class="mono">Result: BUILD SUCCESSFUL</p>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Next Useful Work</h2>
+      <div class="roadmap">
+        <div class="step">
+          <div class="num">1</div>
+          <h3>Conditioning stimulus</h3>
+          <p>Add a separate work-unit history channel for duration, distance, pace, and interval work.</p>
+        </div>
+        <div class="step">
+          <div class="num">2</div>
+          <h3>Per-set effort</h3>
+          <p>Persist RIR/RPE at set level once the workout UI supports that granularity.</p>
+        </div>
+        <div class="step">
+          <div class="num">3</div>
+          <h3>Public explainability</h3>
+          <p>Expose why a generated workout changed sets, load, or exercise choice in the plan UI.</p>
+        </div>
+        <div class="step">
+          <div class="num">4</div>
+          <h3>Calibration pass</h3>
+          <p>Compare frequency and movement-decay constants against real usage data after release.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Evidence Benchmarks</h2>
+      <ul class="sources">
+        <li><a href="https://pubmed.ncbi.nlm.nih.gov/19204579/">ACSM progression models in resistance training for healthy adults</a>, used for overload, volume, frequency, rest, and order principles.</li>
+        <li><a href="https://pubmed.ncbi.nlm.nih.gov/27433992/">Schoenfeld et al. resistance-training volume dose-response meta-analysis</a>, used for weekly volume relevance.</li>
+        <li><a href="https://pubmed.ncbi.nlm.nih.gov/41843416/">ACSM overview of resistance training prescription evidence</a>, used for current prescription benchmarks.</li>
+        <li><a href="https://pmc.ncbi.nlm.nih.gov/articles/PMC4961270/">RIR-based RPE application in resistance training</a>, used for effort-aware autoregulation framing.</li>
+      </ul>
+      <p class="mono" style="margin-bottom:0">Report generated after code changes on branch workout-engine-prescription-enhancements.</p>
+    </section>
+  </main>
+</body>
+</html>

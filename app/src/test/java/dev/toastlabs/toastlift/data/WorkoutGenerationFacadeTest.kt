@@ -596,17 +596,136 @@ class WorkoutGenerationFacadeTest {
         assertTrue(second.exercises.count { isMachineOrCableEquipment(it.equipment) } >= 3)
     }
 
+    @Test
+    fun generateAdjustsPerSessionSetsForWeeklyFrequency() {
+        val lowFrequency = facade.generate(
+            WorkoutGenerationRequest(
+                profile = profile(durationMinutes = 120, weeklyFrequency = 2),
+                splitProgramName = "Full Body",
+                focus = "full_body",
+                locationName = "Gym",
+                availableEquipment = setOf("Barbell", "Dumbbell", "Cable", "Machine", "Bodyweight"),
+                candidates = longDurationCandidates(),
+                history = emptyList(),
+                restrictions = emptyList(),
+                preferences = emptyMap(),
+                previousExerciseIds = emptySet(),
+                variationSeed = 411L,
+                nowUtc = now,
+            ),
+        )
+        val highFrequency = facade.generate(
+            WorkoutGenerationRequest(
+                profile = profile(durationMinutes = 120, weeklyFrequency = 6),
+                splitProgramName = "Full Body",
+                focus = "full_body",
+                locationName = "Gym",
+                availableEquipment = setOf("Barbell", "Dumbbell", "Cable", "Machine", "Bodyweight"),
+                candidates = longDurationCandidates(),
+                history = emptyList(),
+                restrictions = emptyList(),
+                preferences = emptyMap(),
+                previousExerciseIds = emptySet(),
+                variationSeed = 411L,
+                nowUtc = now,
+            ),
+        )
+
+        assertTrue(lowFrequency.exercises.sumOf { it.setCount } > highFrequency.exercises.sumOf { it.setCount })
+    }
+
+    @Test
+    fun generateDecaysStaleMovementBalanceHistory() {
+        fun generateForHistory(completedAtUtc: String) = facade.generate(
+            WorkoutGenerationRequest(
+                profile = profile(durationMinutes = 30),
+                splitProgramName = "Full Body",
+                focus = "full_body",
+                locationName = "Gym",
+                availableEquipment = setOf("Barbell"),
+                candidates = emptyList(),
+                history = listOf(
+                    historySet(
+                        exerciseId = 701L,
+                        completedAtUtc = completedAtUtc,
+                        targetMuscle = "Chest",
+                        movementPatterns = listOf("Horizontal Push"),
+                        actualReps = 10,
+                        weight = 100.0,
+                    ),
+                ),
+                restrictions = emptyList(),
+                preferences = emptyMap(),
+                previousExerciseIds = emptySet(),
+                variationSeed = 421L,
+                nowUtc = now,
+            ),
+        )
+
+        val recent = generateForHistory("2026-03-16T12:00:00Z")
+        val stale = generateForHistory("2025-09-01T12:00:00Z")
+
+        assertFalse(recent.movementInsights.any { it.label == "Horizontal Push" })
+        assertTrue(stale.movementInsights.any { it.label == "Horizontal Push" })
+    }
+
+    @Test
+    fun generateAppliesLastSetEffortOnlyToLastHistoricalSetStimulus() {
+        val result = facade.generate(
+            WorkoutGenerationRequest(
+                profile = profile(durationMinutes = 30),
+                splitProgramName = "Full Body",
+                focus = "full_body",
+                locationName = "Gym",
+                availableEquipment = setOf("Barbell"),
+                candidates = emptyList(),
+                history = listOf(
+                    historySet(
+                        exerciseId = 801L,
+                        completedAtUtc = "2026-03-16T12:00:00Z",
+                        targetMuscle = "Chest",
+                        movementPatterns = listOf("Horizontal Push"),
+                        actualReps = 10,
+                        weight = 100.0,
+                        lastSetRir = 5,
+                        effortAppliesToSet = false,
+                    ),
+                    historySet(
+                        exerciseId = 801L,
+                        completedAtUtc = "2026-03-16T12:00:00Z",
+                        targetMuscle = "Chest",
+                        movementPatterns = listOf("Horizontal Push"),
+                        actualReps = 10,
+                        weight = 100.0,
+                        lastSetRir = 5,
+                        effortAppliesToSet = true,
+                    ),
+                ),
+                restrictions = emptyList(),
+                preferences = emptyMap(),
+                previousExerciseIds = emptySet(),
+                variationSeed = 431L,
+                nowUtc = now,
+            ),
+        )
+
+        val chestStimulus = result.muscleInsights.first { it.muscle == "Chest" }.weeklyStimulus
+        assertTrue(chestStimulus > 1.3)
+        assertTrue(chestStimulus < 1.5)
+    }
+
     private fun profile(
         goal: String = "General Fitness",
         durationMinutes: Int = 45,
         units: String = "imperial",
         splitProgramId: Long = 1L,
+        weeklyFrequency: Int = 4,
     ): UserProfile {
         return UserProfile(
             goal = goal,
             experience = "Intermediate",
             durationMinutes = durationMinutes,
-            weeklyFrequency = 4,
+            weeklyFrequency = weeklyFrequency,
             splitProgramId = splitProgramId,
             units = units,
             activeLocationModeId = 2L,
@@ -664,6 +783,7 @@ class WorkoutGenerationFacadeTest {
         targetReps: String = "8-12",
         lastSetRir: Int = 2,
         equipmentClass: String = "Compound",
+        effortAppliesToSet: Boolean = true,
     ): HistoricalExerciseSet {
         return HistoricalExerciseSet(
             completedAtUtc = Instant.parse(completedAtUtc),
@@ -684,6 +804,7 @@ class WorkoutGenerationFacadeTest {
             classification = equipmentClass,
             movementPatterns = movementPatterns,
             planesOfMotion = listOf("Sagittal Plane"),
+            effortAppliesToSet = effortAppliesToSet,
         )
     }
 

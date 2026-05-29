@@ -39,6 +39,40 @@ class ExercisePrescriptionEngineTest {
     }
 
     @Test
+    fun prescribe_usesPlannedLoadTargetWithoutDoubleProgression() {
+        val exercise = workoutExercise(
+            exerciseId = 1L,
+            equipment = "Barbell",
+            repRange = "6-8",
+            suggestedWeight = 105.0,
+        )
+        val detail = detail(exerciseId = 1L, equipment = "Barbell", targetMuscle = "Chest", classification = "Compound")
+
+        val prescription = engine.prescribe(
+            ExercisePrescriptionRequest(
+                workoutExercise = exercise,
+                exerciseDetail = detail,
+                profile = profile(goal = "Strength"),
+                history = listOf(
+                    historySet(
+                        exerciseId = 1L,
+                        exerciseName = "Barbell Bench Press",
+                        targetMuscle = "Chest",
+                        weight = 100.0,
+                        actualReps = 8,
+                    ),
+                ),
+                plannedLoadTarget = 105.0,
+                plannedSetCount = 4,
+            ),
+        )
+
+        assertEquals(RecommendationSource.DIRECT_HISTORY, prescription.source)
+        assertEquals(105.0, prescription.recommendedWeight ?: 0.0, 0.001)
+        assertEquals(4, prescription.setCount)
+    }
+
+    @Test
     fun prescribe_fallsBackToSimilarHistoryForFirstTimeExercise() {
         val exercise = workoutExercise(exerciseId = 10L, equipment = "Dumbbell", repRange = "8-12")
         val detail = detail(exerciseId = 10L, equipment = "Dumbbell", targetMuscle = "Shoulders", classification = "Compound")
@@ -65,6 +99,34 @@ class ExercisePrescriptionEngineTest {
         assertNotNull(prescription.recommendedWeight)
         assertTrue((prescription.recommendedWeight ?: 0.0) < 35.0)
         assertEquals(10, prescription.recommendedRepCount)
+    }
+
+    @Test
+    fun prescribe_usesHistoricalEquipmentForSimilarExerciseMatching() {
+        val exercise = workoutExercise(exerciseId = 11L, equipment = "Machine", repRange = "8-12")
+        val detail = detail(exerciseId = 11L, equipment = "Machine", targetMuscle = "Chest", classification = "Compound")
+
+        val prescription = engine.prescribe(
+            ExercisePrescriptionRequest(
+                workoutExercise = exercise,
+                exerciseDetail = detail,
+                profile = profile(),
+                history = listOf(
+                    historySet(
+                        exerciseId = 2L,
+                        exerciseName = "Selectorized Row",
+                        targetMuscle = "Back",
+                        weight = 95.0,
+                        actualReps = 10,
+                        movementPatterns = listOf("Horizontal Pull"),
+                        equipment = "Machine",
+                    ),
+                ),
+            ),
+        )
+
+        assertEquals(RecommendationSource.SIMILAR_EXERCISE_HISTORY, prescription.source)
+        assertNotNull(prescription.recommendedWeight)
     }
 
     @Test
@@ -206,6 +268,7 @@ class ExercisePrescriptionEngineTest {
         weight: Double,
         actualReps: Int,
         movementPatterns: List<String> = listOf("Horizontal Push"),
+        equipment: String? = null,
     ): HistoricalExerciseSet {
         return HistoricalExerciseSet(
             completedAtUtc = Instant.parse("2026-03-16T12:00:00Z"),
@@ -226,6 +289,7 @@ class ExercisePrescriptionEngineTest {
             classification = "Compound",
             movementPatterns = movementPatterns,
             planesOfMotion = listOf("Sagittal Plane"),
+            equipment = equipment,
         )
     }
 }
