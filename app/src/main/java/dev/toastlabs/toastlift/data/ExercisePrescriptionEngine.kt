@@ -16,9 +16,13 @@ class ExercisePrescriptionEngine {
     fun prescribe(request: ExercisePrescriptionRequest): ExercisePrescription {
         val repRange = parseRepRange(request.workoutExercise.repRange)
         val plannedSetCount = request.plannedSetCount ?: request.workoutExercise.sets
-        val loggedHistory = request.history.filter { it.hasLoggedRepSignal() }
-        val directHistory = request.history
-            .filter { it.exerciseId == request.workoutExercise.exerciseId && it.hasLoggedRepSignal() }
+        val trainingHistory = request.history.filter { it.hasHistoricalTrainingSignal() }
+        val loggedHistory = trainingHistory.filter { it.hasLoggedRepSignal() }
+        val directTrainingHistory = trainingHistory
+            .filter { it.exerciseId == request.workoutExercise.exerciseId }
+            .sortedByDescending { it.completedAtUtc }
+        val directHistory = directTrainingHistory
+            .filter { it.hasLoggedRepSignal() }
             .sortedByDescending { it.completedAtUtc }
         val similarityAnchors = loggedHistory
             .filter { it.exerciseId != request.workoutExercise.exerciseId && it.weight != null }
@@ -34,18 +38,29 @@ class ExercisePrescriptionEngine {
         )
 
         if (!supportsNumericWeight(request.exerciseDetail, request.workoutExercise)) {
+            val hasDirectTrainingHistory = directTrainingHistory.isNotEmpty()
             return ExercisePrescription(
                 repRange = request.workoutExercise.repRange,
                 recommendedRepCount = recommendedReps,
                 recommendedWeight = null,
                 setCount = plannedSetCount,
-                source = if (request.workoutExercise.equipment.equals("Bodyweight", ignoreCase = true)) {
-                    RecommendationSource.BODYWEIGHT
-                } else {
-                    RecommendationSource.NONE
+                source = when {
+                    hasDirectTrainingHistory -> RecommendationSource.DIRECT_HISTORY
+                    request.workoutExercise.equipment.equals("Bodyweight", ignoreCase = true) -> RecommendationSource.BODYWEIGHT
+                    else -> RecommendationSource.NONE
                 },
-                confidence = if (request.workoutExercise.equipment.equals("Bodyweight", ignoreCase = true)) 1.0 else 0.0,
-                rationale = listOf("Numeric external load is not meaningful for this movement in the current model."),
+                confidence = when {
+                    hasDirectTrainingHistory -> 0.55
+                    request.workoutExercise.equipment.equals("Bodyweight", ignoreCase = true) -> 1.0
+                    else -> 0.0
+                },
+                rationale = listOf(
+                    if (hasDirectTrainingHistory) {
+                        "Recognized direct non-load training history; numeric external load is not meaningful for this movement in the current model."
+                    } else {
+                        "Numeric external load is not meaningful for this movement in the current model."
+                    },
+                ),
             )
         }
 

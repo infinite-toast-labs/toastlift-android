@@ -11,3 +11,9 @@ internal fun loggedRepSignalClause(setAlias: String = "ps"): String =
 
 internal fun HistoricalExerciseSet.hasLoggedRepSignal(): Boolean =
     completed && (actualReps ?: 0) > 0
+
+internal fun HistoricalExerciseSet.hasLoggedWorkUnitSignal(): Boolean =
+    completed && encodeWorkUnitValues(workUnitValues) != null
+
+internal fun HistoricalExerciseSet.hasHistoricalTrainingSignal(): Boolean =
+    hasLoggedRepSignal() || hasLoggedWorkUnitSignal()

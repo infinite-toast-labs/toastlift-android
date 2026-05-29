@@ -16,6 +16,17 @@ private const val MAX_RECOMMENDATION_DELTA_FOR_SCORING = 2.5
 internal const val GYM_LOCATION_MODE_ID = 2L
 private const val GYM_MACHINE_CABLE_TARGET_SHARE = 2.0 / 3.0
 private val GYM_MACHINE_CABLE_EQUIPMENT = setOf("machine", "cable")
+internal val ADAPTIVE_NO_PROGRAM_FOCUS_KEYS = setOf(
+    "upper_body",
+    "lower_body",
+    "push_day",
+    "pull_day",
+    "legs_day",
+    "chest_day",
+    "back_day",
+    "shoulders_arms_day",
+    "full_body",
+)
 
 internal data class GymEquipmentBiasPlan(
     val desiredCount: Int,
@@ -157,6 +168,7 @@ data class HistoricalExerciseSet(
     val equipment: String? = null,
     val setNumber: Int? = null,
     val effortAppliesToSet: Boolean = true,
+    val workUnitValues: Map<String, String> = emptyMap(),
 )
 
 enum class IntensityPrescriptionIntent {
@@ -572,14 +584,15 @@ class WorkoutGenerationFacade(
         history: List<HistoricalExerciseSet>,
         nowUtc: Instant,
     ): String {
-        val loggedHistory = history.filter { it.hasLoggedRepSignal() }
+        val signalHistory = history.filter { it.hasHistoricalTrainingSignal() }
         val muscleIndex = buildMuscleIndex(
-            history = loggedHistory,
+            history = signalHistory,
             profile = profile,
             focus = "full_body",
             nowUtc = nowUtc,
         )
         val scores = config.focusTargets
+            .filterKeys { it in ADAPTIVE_NO_PROGRAM_FOCUS_KEYS }
             .mapValues { (_, muscles) ->
                 val priorities = muscles.map { muscle ->
                     val state = muscleIndex[muscle]
@@ -601,7 +614,7 @@ class WorkoutGenerationFacade(
     }
 
     fun generate(request: WorkoutGenerationRequest): GeneratedWorkoutResult {
-        val signalRequest = request.copy(history = request.history.filter { it.hasLoggedRepSignal() })
+        val signalRequest = request.copy(history = request.history.filter { it.hasHistoricalTrainingSignal() })
         val targetDurationMinutes = request.programContext?.timeBudgetMinutes ?: request.profile.durationMinutes
         val desiredExerciseCount = targetExerciseCount(targetDurationMinutes)
         val gymEquipmentBiasPlan = buildGymEquipmentBiasPlan(
@@ -707,7 +720,7 @@ class WorkoutGenerationFacade(
         nowUtc: Instant,
     ): Map<String, MuscleState> {
         val muscles = linkedMapOf<String, MutableMuscleAccumulator>()
-        history.filter { it.hasLoggedRepSignal() }.forEach { set ->
+        history.filter { it.hasHistoricalTrainingSignal() }.forEach { set ->
             val stimulus = computeSetStimulus(set)
             if (stimulus <= 0.0) return@forEach
             val contributions = listOfNotNull(
@@ -773,7 +786,7 @@ class WorkoutGenerationFacade(
         var unilateralExposure = 0.0
         var totalLateralityExposure = 0.0
 
-        history.filter { it.hasLoggedRepSignal() }.forEach { set ->
+        history.filter { it.hasHistoricalTrainingSignal() }.forEach { set ->
             val ageDays = Duration.between(set.completedAtUtc, nowUtc).toHours().toDouble() / 24.0
             if (ageDays > config.movementBalanceLookbackDays) return@forEach
             val stimulus = computeSetStimulus(set) * movementBalanceDecayFactor(ageDays)
@@ -1657,7 +1670,7 @@ class WorkoutGenerationFacade(
     ): Double {
         var penalty = if (exerciseId in previousExerciseIds) 75.0 else 0.0
         val latestAt = history
-            .filter { it.exerciseId == exerciseId && it.hasLoggedRepSignal() }
+            .filter { it.exerciseId == exerciseId && it.hasHistoricalTrainingSignal() }
             .maxOfOrNull { it.completedAtUtc }
         if (latestAt != null) {
             val daysAgo = Duration.between(latestAt, nowUtc).toDays()
@@ -1672,16 +1685,16 @@ class WorkoutGenerationFacade(
     }
 
     private fun computeSetStimulus(set: HistoricalExerciseSet): Double {
-        if (!set.hasLoggedRepSignal()) return 0.0
-        val reps = set.actualReps ?: return 0.0
-        val repWeight = repStimulusWeight(reps)
+        if (!set.hasHistoricalTrainingSignal()) return 0.0
+        val stimulusWeight = set.actualReps?.let(::repStimulusWeight)
+            ?: if (set.hasLoggedWorkUnitSignal()) config.defaultUnknownEffortWeight else return 0.0
         val effortWeight = if (set.effortAppliesToSet) {
             resolveEffortWeight(set.lastSetRir)
         } else {
             config.defaultUnknownEffortWeight
         }
         val compoundBonus = if (normalizeValue(set.classification).contains("compound")) config.compoundStimulusBonus else 1.0
-        return repWeight * effortWeight * compoundBonus
+        return stimulusWeight * effortWeight * compoundBonus
     }
 
     private fun resolveEffortWeight(rir: Int?): Double {

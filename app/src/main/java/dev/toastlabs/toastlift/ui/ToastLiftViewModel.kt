@@ -1207,6 +1207,9 @@ internal fun sessionSetFromHistoryReuseDraft(
     )
 }
 
+internal fun generatedSessionSetNumbers(plannedSetCount: Int): IntRange =
+    1..plannedSetCount.coerceAtLeast(1)
+
 internal fun firstSkippedExerciseFeedbackPrompt(session: ActiveSession): SkippedExerciseFeedbackPrompt? {
     val skippedExercise = session.exercises.firstOrNull { exercise -> exercise.sets.none(SessionSet::completed) } ?: return null
     return SkippedExerciseFeedbackPrompt(
@@ -5873,7 +5876,7 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
             equipment = exercise.equipment,
             restSeconds = exercise.restSeconds,
             workUnits = workUnits,
-            sets = (1..if (workUnits.isNotEmpty()) 1 else exercise.sets).map { setNo ->
+            sets = generatedSessionSetNumbers(exercise.sets).map { setNo ->
                 val initialWeight = dev.toastlabs.toastlift.data.formatRecommendedWeight(prescription.recommendedWeight)
                 SessionSet(
                     setNumber = setNo,

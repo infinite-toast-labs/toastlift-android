@@ -43,6 +43,28 @@ class WorkoutGenerationFacadeTest {
     }
 
     @Test
+    fun resolveAdaptiveFocusIgnoresFormulaSpecificFocusKeys() {
+        val config = GeneratorAlgorithmConfig.default()
+        val facade = WorkoutGenerationFacade(
+            config.copy(
+                focusTargets = linkedMapOf(
+                    FORMULA_A_UPPER_PUSH_STRENGTH_FOCUS_KEY to listOf("Chest"),
+                    FORMULA_B_UPPER_CHEST_HIGH_REPS_FOCUS_KEY to listOf("Chest"),
+                ) + config.focusTargets,
+            ),
+        )
+
+        val focus = facade.resolveAdaptiveFocus(
+            profile = profile(splitProgramId = 5),
+            history = emptyList(),
+            nowUtc = now,
+        )
+
+        assertTrue(focus in ADAPTIVE_NO_PROGRAM_FOCUS_KEYS)
+        assertEquals(IntensityPrescriptionIntent.STANDARD, intensityPrescriptionIntentForFocusKey(focus))
+    }
+
+    @Test
     fun generateRespectsHardMovementRestrictions() {
         val profile = profile(goal = "Strength", durationMinutes = 45)
         val restrictedPress = candidate(
@@ -712,6 +734,69 @@ class WorkoutGenerationFacadeTest {
         val chestStimulus = result.muscleInsights.first { it.muscle == "Chest" }.weeklyStimulus
         assertTrue(chestStimulus > 1.3)
         assertTrue(chestStimulus < 1.5)
+    }
+
+    @Test
+    fun generateUsesWorkUnitHistoryForMuscleReadinessAndMovementBalance() {
+        val result = facade.generate(
+            WorkoutGenerationRequest(
+                profile = profile(goal = "Conditioning"),
+                splitProgramName = "Full Body",
+                focus = "full_body",
+                locationName = "Gym",
+                availableEquipment = setOf("Sled", "Cable"),
+                candidates = listOf(
+                    candidate(
+                        id = 901L,
+                        name = "Sled Push",
+                        targetMuscle = "Glutes",
+                        equipment = "Sled",
+                        movementPatterns = listOf("Loaded Carry"),
+                    ),
+                    candidate(
+                        id = 902L,
+                        name = "Cable Row",
+                        targetMuscle = "Back",
+                        equipment = "Cable",
+                        movementPatterns = listOf("Horizontal Pull"),
+                    ),
+                ),
+                history = listOf(
+                    HistoricalExerciseSet(
+                        completedAtUtc = Instant.parse("2026-03-16T12:00:00Z"),
+                        exerciseId = 901L,
+                        exerciseName = "Sled Push",
+                        targetReps = "",
+                        actualReps = null,
+                        weight = null,
+                        completed = true,
+                        lastSetRir = null,
+                        lastSetRpe = null,
+                        targetMuscleGroup = "Glutes",
+                        primeMover = "Glutes",
+                        secondaryMuscle = null,
+                        tertiaryMuscle = null,
+                        mechanics = "Conditioning",
+                        laterality = "Bilateral",
+                        classification = "Carry",
+                        movementPatterns = listOf("Loaded Carry"),
+                        planesOfMotion = listOf("Sagittal Plane"),
+                        equipment = "Sled",
+                        setNumber = 1,
+                        workUnitValues = mapOf("distance" to "20", "seconds" to "45"),
+                    ),
+                ),
+                restrictions = emptyList(),
+                preferences = emptyMap(),
+                previousExerciseIds = emptySet(),
+                variationSeed = 901L,
+                nowUtc = now,
+            ),
+        )
+
+        val glutes = result.muscleInsights.first { it.muscle == "Glutes" }
+        assertTrue(glutes.weeklyStimulus > 0.0)
+        assertFalse(result.movementInsights.any { it.label == "Loaded Carry" })
     }
 
     private fun profile(

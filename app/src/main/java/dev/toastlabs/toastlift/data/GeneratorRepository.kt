@@ -347,6 +347,7 @@ class GeneratorRepository(
                 e.primary_exercise_classification,
                 COALESCE(e.primary_equipment, ''),
                 ps.set_number,
+                ps.work_unit_values_json,
                 (
                     SELECT group_concat(mp.movement_pattern, '|')
                     FROM exercise_movement_patterns mp
@@ -386,6 +387,7 @@ class GeneratorRepository(
                 val classification: String?,
                 val equipment: String?,
                 val setNumber: Int,
+                val workUnitValues: Map<String, String>,
                 val movementPatterns: List<String>,
                 val planesOfMotion: List<String>,
             )
@@ -414,8 +416,9 @@ class GeneratorRepository(
                             classification = cursor.getStringOrNull(16),
                             equipment = cursor.getStringOrNull(17),
                             setNumber = cursor.getInt(18),
-                            movementPatterns = cursor.getStringOrNull(19).splitPipe(),
-                            planesOfMotion = cursor.getStringOrNull(20).splitPipe(),
+                            workUnitValues = decodeWorkUnitValues(cursor.getStringOrNull(19)),
+                            movementPatterns = cursor.getStringOrNull(20).splitPipe(),
+                            planesOfMotion = cursor.getStringOrNull(21).splitPipe(),
                         ),
                     )
                 }
@@ -447,6 +450,7 @@ class GeneratorRepository(
                     equipment = row.equipment,
                     setNumber = row.setNumber,
                     effortAppliesToSet = row.setNumber == maxLoggedSetByExerciseSession[row.performedExerciseId],
+                    workUnitValues = row.workUnitValues,
                 )
             }
         }

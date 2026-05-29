@@ -719,6 +719,12 @@ class ToastLiftViewModelTest {
     }
 
     @Test
+    fun generatedSessionSetNumbers_preservesPlannedVolumeForWorkUnitExercises() {
+        assertEquals(listOf(1, 2, 3), generatedSessionSetNumbers(3).toList())
+        assertEquals(listOf(1), generatedSessionSetNumbers(0).toList())
+    }
+
+    @Test
     fun reorderActiveSessionSets_movesNewlyCompletedSetToFront_andRenumbersSequentially() {
         val setOne = SessionSet(id = 11L, setNumber = 1, targetReps = "8-10")
         val setTwo = SessionSet(id = 22L, setNumber = 2, targetReps = "8-10")

@@ -193,6 +193,48 @@ class ExercisePrescriptionEngineTest {
         assertEquals(12, prescription.recommendedRepCount)
     }
 
+    @Test
+    fun prescribe_recognizesDirectWorkUnitHistoryForNonLoadMovement() {
+        val exercise = workoutExercise(exerciseId = 40L, equipment = "Bodyweight", repRange = "")
+        val detail = detail(exerciseId = 40L, equipment = "Bodyweight", targetMuscle = "Abdominals", classification = "Pose")
+
+        val prescription = engine.prescribe(
+            ExercisePrescriptionRequest(
+                workoutExercise = exercise,
+                exerciseDetail = detail,
+                profile = profile(goal = "Conditioning"),
+                history = listOf(
+                    HistoricalExerciseSet(
+                        completedAtUtc = Instant.parse("2026-03-16T12:00:00Z"),
+                        exerciseId = 40L,
+                        exerciseName = "Hollow Hold",
+                        targetReps = "",
+                        actualReps = null,
+                        weight = null,
+                        completed = true,
+                        lastSetRir = null,
+                        lastSetRpe = null,
+                        targetMuscleGroup = "Abdominals",
+                        primeMover = "Abdominals",
+                        secondaryMuscle = null,
+                        tertiaryMuscle = null,
+                        mechanics = "Isometric",
+                        laterality = "Bilateral",
+                        classification = "Pose",
+                        movementPatterns = listOf("Anti-Extension"),
+                        planesOfMotion = listOf("Sagittal Plane"),
+                        equipment = "Bodyweight",
+                        workUnitValues = mapOf("seconds" to "45"),
+                    ),
+                ),
+            ),
+        )
+
+        assertEquals(RecommendationSource.DIRECT_HISTORY, prescription.source)
+        assertNull(prescription.recommendedWeight)
+        assertEquals(0.55, prescription.confidence, 0.0001)
+    }
+
     private fun profile(goal: String = "Hypertrophy"): UserProfile {
         return UserProfile(
             goal = goal,
