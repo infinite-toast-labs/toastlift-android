@@ -369,6 +369,81 @@ class ToastLiftViewModelTest {
     }
 
     @Test
+    fun orderedSessionExercises_withMuscleTargetBucket_keepsMatchingPushExercises() {
+        val session = ActiveSession(
+            title = "Upper Day",
+            origin = "generated",
+            locationModeId = 2L,
+            startedAtUtc = "2026-03-20T10:00:00Z",
+            exercises = listOf(
+                sessionExercise(id = 101L, name = "Bench Press", completedSets = listOf(false), targetMuscleGroup = "Chest"),
+                sessionExercise(id = 202L, name = "Cable Row", completedSets = listOf(false), targetMuscleGroup = "Back"),
+                sessionExercise(id = 303L, name = "Triceps Pressdown", completedSets = listOf(false), targetMuscleGroup = "Triceps"),
+            ),
+        )
+
+        val orderedNames = orderedSessionExercises(
+            session = session,
+            equipmentFilter = null,
+            muscleTargetBucketKey = "push",
+        ).map { it.value.name }
+
+        assertEquals(listOf("Bench Press", "Triceps Pressdown"), orderedNames)
+    }
+
+    @Test
+    fun orderedSessionExercises_withMuscleTargetSubcategoryTreatsRearDeltsAsPull() {
+        val session = ActiveSession(
+            title = "Upper Day",
+            origin = "generated",
+            locationModeId = 2L,
+            startedAtUtc = "2026-03-20T10:00:00Z",
+            exercises = listOf(
+                sessionExercise(id = 101L, name = "Reverse Fly", completedSets = listOf(false), targetMuscleGroup = "Shoulders"),
+                sessionExercise(id = 202L, name = "Lateral Raise", completedSets = listOf(false), targetMuscleGroup = "Shoulders"),
+            ),
+        )
+        val details = mapOf(
+            101L to exerciseDetail(exercise = session.exercises[0], primeMover = "Rear Delts"),
+            202L to exerciseDetail(exercise = session.exercises[1], primeMover = "Side Delts"),
+        )
+
+        val orderedNames = orderedSessionExercises(
+            session = session,
+            equipmentFilter = null,
+            muscleTargetSubcategoryKey = "rear_delts",
+            exerciseDetailsById = details,
+        ).map { it.value.name }
+
+        assertEquals(listOf("Reverse Fly"), orderedNames)
+    }
+
+    @Test
+    fun pickNextSessionExerciseIndex_prioritizesSelectedMuscleTargetSubcategory() {
+        val session = ActiveSession(
+            title = "Leg Day",
+            origin = "generated",
+            locationModeId = 2L,
+            startedAtUtc = "2026-03-20T10:00:00Z",
+            exercises = listOf(
+                sessionExercise(id = 101L, name = "Leg Extension", completedSets = listOf(false), targetMuscleGroup = "Quadriceps"),
+                sessionExercise(id = 202L, name = "Hip Thrust", completedSets = listOf(false), targetMuscleGroup = "Glutes"),
+                sessionExercise(id = 303L, name = "Leg Curl", completedSets = listOf(false), targetMuscleGroup = "Hamstrings"),
+            ),
+        )
+
+        val pickedIndex = pickNextSessionExerciseIndex(
+            session = session,
+            smartTargetMuscle = "Quadriceps",
+            exerciseDetailsById = emptyMap(),
+            muscleTargetSubcategoryKey = "hamstrings",
+            random = Random(0),
+        )
+
+        assertEquals(2, pickedIndex)
+    }
+
+    @Test
     fun reconcileSessionExerciseCompletionState_assignsSequenceOnlyWhenExerciseBecomesComplete() {
         val exercises = listOf(
             sessionExercise(id = 101L, name = "Bench Press", completedSets = listOf(true, true, true), activitySequence = 1, completionSequence = 1),
@@ -716,6 +791,33 @@ class ToastLiftViewModelTest {
         assertEquals("10", set.reps)
         assertEquals("60", set.weight)
         assertEquals("60", set.recommendedWeight)
+    }
+
+    @Test
+    fun sessionSetFromHistoryReuseDraft_preservesWorkUnitValuesWithoutRepPrefill() {
+        val set = sessionSetFromHistoryReuseDraft(
+            draft = WorkoutExerciseSetDraft(
+                setNumber = 1,
+                targetReps = "",
+                workUnitValues = mapOf("duration_min" to "20", "speed_mph" to "5.0"),
+                recommendationSource = RecommendationSource.GENERATED_PLAN,
+                recommendationConfidence = 0.82,
+            ),
+            fallbackTargetReps = "20 min",
+        )
+
+        assertEquals(1, set.setNumber)
+        assertEquals("", set.targetReps)
+        assertEquals("", set.reps)
+        assertEquals("", set.weight)
+        assertEquals(mapOf("duration_min" to "20", "speed_mph" to "5.0"), set.workUnitValues)
+        assertEquals(RecommendationSource.GENERATED_PLAN, set.recommendationSource)
+    }
+
+    @Test
+    fun generatedSessionSetNumbers_preservesPlannedVolumeForWorkUnitExercises() {
+        assertEquals(listOf(1, 2, 3), generatedSessionSetNumbers(3).toList())
+        assertEquals(listOf(1), generatedSessionSetNumbers(0).toList())
     }
 
     @Test

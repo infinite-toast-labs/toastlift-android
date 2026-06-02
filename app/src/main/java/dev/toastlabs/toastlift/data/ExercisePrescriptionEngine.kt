@@ -9,6 +9,7 @@ data class ExercisePrescriptionRequest(
     val profile: UserProfile?,
     val history: List<HistoricalExerciseSet>,
     val plannedLoadTarget: Double? = null,
+    val plannedLoadSource: RecommendationSource = RecommendationSource.GENERATED_PLAN,
     val plannedSetCount: Int? = null,
 )
 
@@ -16,9 +17,13 @@ class ExercisePrescriptionEngine {
     fun prescribe(request: ExercisePrescriptionRequest): ExercisePrescription {
         val repRange = parseRepRange(request.workoutExercise.repRange)
         val plannedSetCount = request.plannedSetCount ?: request.workoutExercise.sets
-        val loggedHistory = request.history.filter { it.hasLoggedRepSignal() }
-        val directHistory = request.history
-            .filter { it.exerciseId == request.workoutExercise.exerciseId && it.hasLoggedRepSignal() }
+        val trainingHistory = request.history.filter { it.hasHistoricalTrainingSignal() }
+        val loggedHistory = trainingHistory.filter { it.hasLoggedRepSignal() }
+        val directTrainingHistory = trainingHistory
+            .filter { it.exerciseId == request.workoutExercise.exerciseId }
+            .sortedByDescending { it.completedAtUtc }
+        val directHistory = directTrainingHistory
+            .filter { it.hasLoggedRepSignal() }
             .sortedByDescending { it.completedAtUtc }
         val similarityAnchors = loggedHistory
             .filter { it.exerciseId != request.workoutExercise.exerciseId && it.weight != null }
@@ -34,19 +39,39 @@ class ExercisePrescriptionEngine {
         )
 
         if (!supportsNumericWeight(request.exerciseDetail, request.workoutExercise)) {
+            val hasDirectTrainingHistory = directTrainingHistory.isNotEmpty()
             return ExercisePrescription(
                 repRange = request.workoutExercise.repRange,
                 recommendedRepCount = recommendedReps,
                 recommendedWeight = null,
                 setCount = plannedSetCount,
-                source = if (request.workoutExercise.equipment.equals("Bodyweight", ignoreCase = true)) {
-                    RecommendationSource.BODYWEIGHT
-                } else {
-                    RecommendationSource.NONE
+                source = when {
+                    hasDirectTrainingHistory -> RecommendationSource.DIRECT_HISTORY
+                    request.workoutExercise.equipment.equals("Bodyweight", ignoreCase = true) -> RecommendationSource.BODYWEIGHT
+                    else -> RecommendationSource.NONE
                 },
-                confidence = if (request.workoutExercise.equipment.equals("Bodyweight", ignoreCase = true)) 1.0 else 0.0,
-                rationale = listOf("Numeric external load is not meaningful for this movement in the current model."),
+                confidence = when {
+                    hasDirectTrainingHistory -> 0.55
+                    request.workoutExercise.equipment.equals("Bodyweight", ignoreCase = true) -> 1.0
+                    else -> 0.0
+                },
+                rationale = listOf(
+                    if (hasDirectTrainingHistory) {
+                        "Recognized direct non-load training history; numeric external load is not meaningful for this movement in the current model."
+                    } else {
+                        "Numeric external load is not meaningful for this movement in the current model."
+                    },
+                ),
             )
+        }
+
+        val plannedLoadRecommendation = recommendFromPlannedLoadTarget(
+            request = request,
+            recommendedReps = recommendedReps,
+            directHistory = directHistory,
+        )
+        if (plannedLoadRecommendation != null) {
+            return plannedLoadRecommendation
         }
 
         val directRecommendation = recommendFromDirectHistory(
@@ -72,6 +97,31 @@ class ExercisePrescriptionEngine {
             request = request,
             repRange = repRange,
             recommendedReps = recommendedReps,
+        )
+    }
+
+    private fun recommendFromPlannedLoadTarget(
+        request: ExercisePrescriptionRequest,
+        recommendedReps: Int?,
+        directHistory: List<HistoricalExerciseSet>,
+    ): ExercisePrescription? {
+        val plannedLoadTarget = request.plannedLoadTarget ?: return null
+        val latestMinReps = directHistory
+            .takeWhile { it.completedAtUtc == directHistory.firstOrNull()?.completedAtUtc }
+            .mapNotNull(HistoricalExerciseSet::actualReps)
+            .minOrNull()
+        return ExercisePrescription(
+            repRange = request.workoutExercise.repRange,
+            recommendedRepCount = recommendedReps ?: latestMinReps,
+            recommendedWeight = roundToEquipmentIncrement(
+                value = plannedLoadTarget,
+                equipment = request.workoutExercise.equipment,
+                units = request.profile?.units ?: "imperial",
+            ),
+            setCount = request.plannedSetCount ?: request.workoutExercise.sets,
+            source = request.plannedLoadSource,
+            confidence = if (directHistory.isNotEmpty()) 0.92 else 0.72,
+            rationale = listOf("Used the generated workout load target without applying progression again."),
         )
     }
 
@@ -112,7 +162,7 @@ class ExercisePrescriptionEngine {
             ?: directHistory.mapNotNull(HistoricalExerciseSet::weight).maxOrNull()
             ?: request.workoutExercise.suggestedWeight
             ?: return null
-        val baseWeight = request.plannedLoadTarget ?: request.workoutExercise.suggestedWeight ?: latestWeight
+        val baseWeight = request.workoutExercise.suggestedWeight ?: latestWeight
         val adjustedWeight = when (request.workoutExercise.overloadStrategy) {
             "INCREASE_LOAD" -> baseWeight * 1.025
             "REGRESS_LOAD" -> baseWeight * 0.9
@@ -258,7 +308,7 @@ class ExercisePrescriptionEngine {
     }
 
     private fun HistoricalExerciseSet.equipmentClass(): String? {
-        return equipmentGuessFromName(exerciseName)
+        return equipment?.takeIf { it.isNotBlank() } ?: equipmentGuessFromName(exerciseName)
     }
 
     private fun equipmentGuessFromName(name: String): String {

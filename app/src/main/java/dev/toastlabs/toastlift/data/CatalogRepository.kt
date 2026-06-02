@@ -843,6 +843,10 @@ class CatalogRepository(private val database: ToastLiftDatabase) {
         }
 
         libraryFreshnessMuscleFilterClause(filters.freshnessMuscleKeys)?.let { clauses += it }
+        libraryMuscleTargetFilterClause(
+            bucketKeys = filters.muscleTargetBucketKeys,
+            subcategoryKeys = filters.muscleTargetSubcategoryKeys,
+        )?.let { clauses += it }
 
         if (excludeDimension != FacetDimension.RecommendationBias && filters.recommendationBiases.isNotEmpty()) {
             recommendationBiasFilterClause(filters.recommendationBiases)?.let { clauses += it }
@@ -917,11 +921,89 @@ private fun freshnessMuscleTermsClause(
 
 internal fun librarySearchOrderBy(filters: LibraryFilters): String {
     val originalOrder = "COALESCE(p.is_favorite, 0) DESC, e.name ASC"
+    val targetOrder = libraryMuscleTargetOrderBy(filters)
     return if (filters.activeCount() > 0) {
-        "COALESCE(logged_history.logged_session_count, 0) DESC, $originalOrder"
+        listOfNotNull(
+            targetOrder,
+            "COALESCE(logged_history.logged_session_count, 0) DESC",
+            originalOrder,
+        ).joinToString(", ")
     } else {
         originalOrder
     }
+}
+
+internal fun libraryMuscleTargetFilterClause(
+    bucketKeys: Set<String>,
+    subcategoryKeys: Set<String>,
+    tableAlias: String = "e",
+): String? {
+    val clauses = selectedMuscleTargetSqlTermGroups(bucketKeys, subcategoryKeys)
+        .map { terms -> muscleTargetTermsClause(terms, tableAlias) }
+        .distinct()
+    if (clauses.isEmpty()) return null
+    return clauses.joinToString(
+        prefix = "(",
+        separator = " OR ",
+        postfix = ")",
+    )
+}
+
+private fun libraryMuscleTargetOrderBy(filters: LibraryFilters): String? {
+    val terms = selectedMuscleTargetSqlTermGroups(
+        bucketKeys = filters.muscleTargetBucketKeys,
+        subcategoryKeys = filters.muscleTargetSubcategoryKeys,
+    ).flatten().distinct()
+    if (terms.isEmpty()) return null
+
+    fun columnsClause(columns: List<String>): String {
+        return terms.flatMap { term ->
+            columns.map { column -> "lower(COALESCE($column, '')) LIKE '%$term%'" }
+        }.joinToString(prefix = "(", separator = " OR ", postfix = ")")
+    }
+
+    val prime = columnsClause(listOf("e.prime_mover_muscle"))
+    val target = columnsClause(listOf("e.target_muscle_group"))
+    val secondary = columnsClause(listOf("e.secondary_muscle"))
+    val tertiary = columnsClause(listOf("e.tertiary_muscle"))
+    return """
+        CASE
+            WHEN $prime THEN 0
+            WHEN $target THEN 1
+            WHEN $secondary THEN 2
+            WHEN $tertiary THEN 3
+            ELSE 4
+        END ASC
+    """.trimIndent().replace("\n", " ")
+}
+
+private fun selectedMuscleTargetSqlTermGroups(
+    bucketKeys: Set<String>,
+    subcategoryKeys: Set<String>,
+): List<List<String>> {
+    return muscleTargetBucketSubcategoryKeys(bucketKeys, subcategoryKeys)
+        .mapNotNull { key -> muscleTargetSubcategory(key)?.sqlTerms }
+        .filter { it.isNotEmpty() }
+}
+
+private fun muscleTargetTermsClause(
+    terms: List<String>,
+    tableAlias: String,
+): String {
+    val columns = listOf(
+        "$tableAlias.target_muscle_group",
+        "$tableAlias.prime_mover_muscle",
+        "$tableAlias.secondary_muscle",
+        "$tableAlias.tertiary_muscle",
+    )
+    val termClauses = terms.flatMap { term ->
+        columns.map { column -> "lower(COALESCE($column, '')) LIKE '%$term%'" }
+    }
+    return termClauses.joinToString(
+        prefix = "(",
+        separator = " OR ",
+        postfix = ")",
+    )
 }
 
 private val freshnessMuscleSqlTerms = mapOf(

@@ -1,6 +1,7 @@
 package dev.toastlabs.toastlift.data
 
 import java.time.Instant
+import kotlin.math.ceil
 import kotlin.math.max
 
 class GeneratorRepository(
@@ -84,23 +85,37 @@ class GeneratorRepository(
             val fallbackExercises = fallbackPool
                 .take(fallbackExerciseCount(profile.durationMinutes))
                 .mapIndexed { index, exercise ->
+                    val workUnitDefaults = defaultWorkUnitValues(exercise.workUnits).takeIf { exercise.workUnits.isNotEmpty() }
+                    val startingSets = workUnitDefaults?.let { values ->
+                        listOf(
+                            WorkoutExerciseSetDraft(
+                                setNumber = 1,
+                                targetReps = "",
+                                workUnitValues = values,
+                                recommendationSource = RecommendationSource.GENERATED_PLAN,
+                                recommendationConfidence = 0.5,
+                            ),
+                        )
+                    }.orEmpty()
                     WorkoutExercise(
                         exerciseId = exercise.id,
                         name = exercise.name,
                         bodyRegion = exercise.bodyRegion,
                         targetMuscleGroup = exercise.targetMuscleGroup,
                         equipment = exercise.equipment,
-                        sets = if (index < 2) 4 else 3,
-                        repRange = defaultRepRange(profile.goal),
-                        restSeconds = defaultRestSeconds(profile.goal),
+                        sets = startingSets.size.takeIf { it > 0 } ?: if (index < 2) 4 else 3,
+                        repRange = workUnitTargetLabel(exercise.workUnits, workUnitDefaults.orEmpty())
+                            ?: defaultRepRange(profile.goal),
+                        restSeconds = if (startingSets.isNotEmpty()) 0 else defaultRestSeconds(profile.goal),
                         rationale = "Fallback selection because the filtered candidate pool was empty.",
+                        startingSets = startingSets,
                     )
                 }
             return WorkoutPlan(
                 title = "$locationName ${generatedWorkoutFocusDisplayName(persistedFocus)}",
                 subtitle = "${splitProgram.name} • ${profile.goal} • ${profile.durationMinutes} min",
                 locationModeId = locationModeId,
-                estimatedMinutes = max(profile.durationMinutes, fallbackExercises.sumOf { it.sets * 3 }),
+                estimatedMinutes = max(profile.durationMinutes, fallbackExercises.sumOf(::fallbackEstimatedMinutes)),
                 origin = "generated",
                 focusKey = persistedFocus,
                 exercises = fallbackExercises,
@@ -108,19 +123,29 @@ class GeneratorRepository(
         }
 
         val workoutExercises = generated.exercises.map { exercise ->
+            val startingSets = exercise.workUnitValuesBySet.mapIndexed { index, values ->
+                WorkoutExerciseSetDraft(
+                    setNumber = index + 1,
+                    targetReps = "",
+                    workUnitValues = values,
+                    recommendationSource = RecommendationSource.GENERATED_PLAN,
+                    recommendationConfidence = 0.82,
+                )
+            }
             WorkoutExercise(
                 exerciseId = exercise.exerciseId,
                 name = exercise.name,
                 bodyRegion = exercise.bodyRegion,
                 targetMuscleGroup = exercise.targetMuscleGroup,
                 equipment = exercise.equipment,
-                sets = exercise.setCount,
+                sets = startingSets.size.takeIf { it > 0 } ?: exercise.setCount,
                 repRange = exercise.repRange,
                 restSeconds = exercise.restSeconds,
                 rationale = exercise.rationale,
                 suggestedWeight = exercise.suggestedWeight,
                 overloadStrategy = exercise.overloadStrategy,
                 decisionTrace = exercise.decisionTrace,
+                startingSets = startingSets,
             )
         }
 
@@ -319,8 +344,83 @@ class GeneratorRepository(
                 candidates = candidates,
                 biasPlan = gymEquipmentBiasPlan,
                 maxCount = 240,
-            )
+            ).withCatalogWorkUnits()
         }
+    }
+
+    private fun List<GeneratorCatalogExercise>.withCatalogWorkUnits(): List<GeneratorCatalogExercise> {
+        if (isEmpty()) return this
+        val workUnitsByExerciseId = loadWorkUnitsByExerciseIds(map(GeneratorCatalogExercise::id))
+        if (workUnitsByExerciseId.isEmpty()) return this
+        return map { exercise ->
+            exercise.copy(workUnits = workUnitsByExerciseId[exercise.id].orEmpty())
+        }
+    }
+
+    private fun loadWorkUnitsByExerciseIds(exerciseIds: Collection<Long>): Map<Long, List<WorkUnitDefinition>> {
+        val distinctIds = exerciseIds.distinct()
+        if (distinctIds.isEmpty()) return emptyMap()
+        val db = database.open()
+        val placeholders = distinctIds.joinToString(",") { "?" }
+        return db.rawQuery(
+            """
+            SELECT
+                exercise_id,
+                unit_key,
+                display_label,
+                value_type,
+                unit_label,
+                default_value,
+                min_value,
+                max_value,
+                step_value,
+                is_primary,
+                is_required,
+                tracks_effort
+            FROM exercise_work_units
+            WHERE exercise_id IN ($placeholders)
+            ORDER BY exercise_id, sequence_no
+            """.trimIndent(),
+            distinctIds.map(Long::toString).toTypedArray(),
+        ).use { cursor ->
+            val grouped = linkedMapOf<Long, MutableList<WorkUnitDefinition>>()
+            while (cursor.moveToNext()) {
+                grouped.getOrPut(cursor.getLong(0)) { mutableListOf() } += WorkUnitDefinition(
+                    key = cursor.getString(1),
+                    label = cursor.getString(2),
+                    valueType = cursor.getString(3),
+                    unitLabel = cursor.getStringOrNull(4),
+                    defaultValue = cursor.getStringOrNull(5),
+                    minValue = if (cursor.isNull(6)) null else cursor.getDouble(6),
+                    maxValue = if (cursor.isNull(7)) null else cursor.getDouble(7),
+                    stepValue = if (cursor.isNull(8)) null else cursor.getDouble(8),
+                    isPrimary = cursor.getInt(9) == 1,
+                    isRequired = cursor.getInt(10) == 1,
+                    tracksEffort = cursor.getInt(11) == 1,
+                )
+            }
+            grouped
+        }
+    }
+
+    private fun workUnitTargetLabel(
+        workUnits: List<WorkUnitDefinition>,
+        values: Map<String, String>,
+    ): String? {
+        val primary = workUnits.firstOrNull { it.isPrimary } ?: workUnits.firstOrNull() ?: return null
+        val value = values[primary.key]?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+        val unit = primary.unitLabel?.trim()?.takeIf { it.isNotEmpty() }
+        return listOfNotNull(value, unit).joinToString(" ")
+    }
+
+    private fun fallbackEstimatedMinutes(exercise: WorkoutExercise): Int {
+        val workUnitMinutes = exercise.startingSets
+            .mapNotNull { draft -> draft.workUnitValues["duration_min"]?.toDoubleOrNull() }
+            .sum()
+        return workUnitMinutes
+            .takeIf { it > 0.0 }
+            ?.let { ceil(it).toInt() }
+            ?: (exercise.sets * 3)
     }
 
     private fun loadHistoricalSets(): List<HistoricalExerciseSet> {
@@ -328,6 +428,7 @@ class GeneratorRepository(
         return db.rawQuery(
             """
             SELECT
+                pe.performed_exercise_id,
                 pw.completed_at_utc,
                 pe.exercise_id,
                 pe.exercise_name,
@@ -344,6 +445,9 @@ class GeneratorRepository(
                 e.mechanics,
                 e.laterality,
                 e.primary_exercise_classification,
+                COALESCE(e.primary_equipment, ''),
+                ps.set_number,
+                ps.work_unit_values_json,
                 (
                     SELECT group_concat(mp.movement_pattern, '|')
                     FROM exercise_movement_patterns mp
@@ -363,32 +467,91 @@ class GeneratorRepository(
             """.trimIndent(),
             null,
         ).use { cursor ->
-            buildList {
+            data class HistoryRow(
+                val performedExerciseId: Long,
+                val completedAtUtc: Instant,
+                val exerciseId: Long,
+                val exerciseName: String,
+                val targetReps: String,
+                val actualReps: Int?,
+                val weight: Double?,
+                val completed: Boolean,
+                val lastSetRir: Int?,
+                val lastSetRpe: Double?,
+                val targetMuscleGroup: String?,
+                val primeMover: String?,
+                val secondaryMuscle: String?,
+                val tertiaryMuscle: String?,
+                val mechanics: String?,
+                val laterality: String?,
+                val classification: String?,
+                val equipment: String?,
+                val setNumber: Int,
+                val workUnitValues: Map<String, String>,
+                val movementPatterns: List<String>,
+                val planesOfMotion: List<String>,
+            )
+
+            val rows = buildList {
                 while (cursor.moveToNext()) {
-                    val completedAt = cursor.getString(0)?.let(Instant::parse) ?: continue
+                    val completedAt = cursor.getString(1)?.let(Instant::parse) ?: continue
                     add(
-                        HistoricalExerciseSet(
+                        HistoryRow(
+                            performedExerciseId = cursor.getLong(0),
                             completedAtUtc = completedAt,
-                            exerciseId = cursor.getLong(1),
-                            exerciseName = cursor.getString(2),
-                            targetReps = cursor.getString(3),
-                            actualReps = if (cursor.isNull(4)) null else cursor.getInt(4),
-                            weight = if (cursor.isNull(5)) null else cursor.getDouble(5),
-                            completed = cursor.getInt(6) == 1,
-                            lastSetRir = if (cursor.isNull(7)) null else cursor.getInt(7),
-                            lastSetRpe = if (cursor.isNull(8)) null else cursor.getDouble(8),
-                            targetMuscleGroup = cursor.getStringOrNull(9),
-                            primeMover = cursor.getStringOrNull(10),
-                            secondaryMuscle = cursor.getStringOrNull(11),
-                            tertiaryMuscle = cursor.getStringOrNull(12),
-                            mechanics = cursor.getStringOrNull(13),
-                            laterality = cursor.getStringOrNull(14),
-                            classification = cursor.getStringOrNull(15),
-                            movementPatterns = cursor.getStringOrNull(16).splitPipe(),
-                            planesOfMotion = cursor.getStringOrNull(17).splitPipe(),
+                            exerciseId = cursor.getLong(2),
+                            exerciseName = cursor.getString(3),
+                            targetReps = cursor.getString(4),
+                            actualReps = if (cursor.isNull(5)) null else cursor.getInt(5),
+                            weight = if (cursor.isNull(6)) null else cursor.getDouble(6),
+                            completed = cursor.getInt(7) == 1,
+                            lastSetRir = if (cursor.isNull(8)) null else cursor.getInt(8),
+                            lastSetRpe = if (cursor.isNull(9)) null else cursor.getDouble(9),
+                            targetMuscleGroup = cursor.getStringOrNull(10),
+                            primeMover = cursor.getStringOrNull(11),
+                            secondaryMuscle = cursor.getStringOrNull(12),
+                            tertiaryMuscle = cursor.getStringOrNull(13),
+                            mechanics = cursor.getStringOrNull(14),
+                            laterality = cursor.getStringOrNull(15),
+                            classification = cursor.getStringOrNull(16),
+                            equipment = cursor.getStringOrNull(17),
+                            setNumber = cursor.getInt(18),
+                            workUnitValues = decodeWorkUnitValues(cursor.getStringOrNull(19)),
+                            movementPatterns = cursor.getStringOrNull(20).splitPipe(),
+                            planesOfMotion = cursor.getStringOrNull(21).splitPipe(),
                         ),
                     )
                 }
+            }
+            val maxLoggedSetByExerciseSession = rows
+                .groupBy { row -> row.performedExerciseId }
+                .mapValues { (_, groupedRows) -> groupedRows.maxOf { it.setNumber } }
+
+            rows.map { row ->
+                HistoricalExerciseSet(
+                    completedAtUtc = row.completedAtUtc,
+                    exerciseId = row.exerciseId,
+                    exerciseName = row.exerciseName,
+                    targetReps = row.targetReps,
+                    actualReps = row.actualReps,
+                    weight = row.weight,
+                    completed = row.completed,
+                    lastSetRir = row.lastSetRir,
+                    lastSetRpe = row.lastSetRpe,
+                    targetMuscleGroup = row.targetMuscleGroup,
+                    primeMover = row.primeMover,
+                    secondaryMuscle = row.secondaryMuscle,
+                    tertiaryMuscle = row.tertiaryMuscle,
+                    mechanics = row.mechanics,
+                    laterality = row.laterality,
+                    classification = row.classification,
+                    movementPatterns = row.movementPatterns,
+                    planesOfMotion = row.planesOfMotion,
+                    equipment = row.equipment,
+                    setNumber = row.setNumber,
+                    effortAppliesToSet = row.setNumber == maxLoggedSetByExerciseSession[row.performedExerciseId],
+                    workUnitValues = row.workUnitValues,
+                )
             }
         }
     }
