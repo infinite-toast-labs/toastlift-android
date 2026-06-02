@@ -10,6 +10,7 @@ import dev.toastlabs.toastlift.data.pause
 import dev.toastlabs.toastlift.data.resume
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.Instant
 
@@ -236,6 +237,151 @@ class ActiveSessionWorkoutDetailsTest {
     }
 
     @Test
+    fun activeWorkoutMuscleTargetSummary_keepsUnplannedBucketsAndSubcategoriesVisible() {
+        val session = session(
+            exercises = listOf(
+                exercise(
+                    "Bench Press",
+                    sets = listOf(
+                        SessionSet(setNumber = 1, targetReps = "8", completed = true),
+                        SessionSet(setNumber = 2, targetReps = "8"),
+                    ),
+                ),
+            ),
+        )
+        val summary = buildActiveWorkoutMuscleTargetCoverageSummary(
+            session = session,
+            exerciseDetailsById = mapOf(
+                "Bench Press".hashCode().toLong() to detail(
+                    "Bench Press",
+                    target = "Chest",
+                    prime = "Chest",
+                    secondary = "Triceps",
+                ),
+            ),
+        )
+
+        assertEquals(listOf("push", "pull", "legs"), summary.bucketRows.map { it.key })
+        assertEquals(ActiveWorkoutMuscleTargetState.InProgress, summary.bucketRows.first { it.key == "push" }.state)
+        assertEquals(ActiveWorkoutMuscleTargetState.NotPlanned, summary.bucketRows.first { it.key == "pull" }.state)
+        assertEquals(ActiveWorkoutMuscleTargetState.NotPlanned, summary.bucketRows.first { it.key == "legs" }.state)
+
+        val pushSubcategoryStates = summary.bucketRows.first { it.key == "push" }
+            .subcategories
+            .associate { it.key to it.state }
+        assertTrue("chest should be present", pushSubcategoryStates.containsKey("chest"))
+        assertTrue("shoulders should be present", pushSubcategoryStates.containsKey("shoulders"))
+        assertTrue("triceps should be present", pushSubcategoryStates.containsKey("triceps"))
+        assertEquals(ActiveWorkoutMuscleTargetState.InProgress, pushSubcategoryStates.getValue("chest"))
+        assertEquals(ActiveWorkoutMuscleTargetState.NotPlanned, pushSubcategoryStates.getValue("shoulders"))
+
+        val legSubcategoryStates = summary.bucketRows.first { it.key == "legs" }
+            .subcategories
+            .associate { it.key to it.state }
+        assertEquals(ActiveWorkoutMuscleTargetState.NotPlanned, legSubcategoryStates.getValue("quadriceps"))
+        assertEquals(ActiveWorkoutMuscleTargetState.NotPlanned, legSubcategoryStates.getValue("hamstrings"))
+        assertEquals(ActiveWorkoutMuscleTargetState.NotPlanned, legSubcategoryStates.getValue("glutes"))
+    }
+
+    @Test
+    fun weeklyMuscleTargetRemainingLabel_matchesWeeklyTargetScreenCopy() {
+        assertEquals("10 to go", weeklyMuscleTargetRemainingLabel(completedSets = 0.0, targetSets = 10.0))
+        assertEquals("2.5 to go", weeklyMuscleTargetRemainingLabel(completedSets = 7.5, targetSets = 10.0))
+        assertEquals("0 to go", weeklyMuscleTargetRemainingLabel(completedSets = 12.0, targetSets = 10.0))
+        assertEquals(
+            "2.5 to go • +1.5 done",
+            weeklyMuscleTargetRemainingLabel(completedSets = 6.0, targetSets = 10.0, activeContributionSets = 1.5),
+        )
+    }
+
+    @Test
+    fun weeklyMuscleTargetOverageLabel_reportsOnlyCompletedSetsAboveTarget() {
+        assertNull(weeklyMuscleTargetOverageLabel(completedSets = 7.5, targetSets = 10.0))
+        assertNull(weeklyMuscleTargetOverageLabel(completedSets = 10.0, targetSets = 10.0))
+        assertEquals("2 over", weeklyMuscleTargetOverageLabel(completedSets = 12.0, targetSets = 10.0))
+        assertEquals("1.8 over", weeklyMuscleTargetOverageLabel(completedSets = 11.75, targetSets = 10.0))
+        assertNull(weeklyMuscleTargetOverageLabel(completedSets = -4.0, targetSets = 10.0))
+    }
+
+    @Test
+    fun activeWorkoutMuscleTargetWeeklyProgress_subtractsCurrentWorkoutContribution() {
+        val progress = requireNotNull(
+            activeWorkoutMuscleTargetWeeklyProgress(
+                weeklyCompletedSets = 4.2,
+                weeklyTargetSets = 10.0,
+                activeCompletedWeightedSets = 1.5,
+            ),
+        )
+
+        assertEquals(4.3, progress.remainingSets, 0.001)
+        assertEquals(1.5, progress.activeContributionSets, 0.001)
+        assertEquals(0.57f, progress.progressFraction, 0.001f)
+        assertEquals("4.3 to go • +1.5 done", progress.label)
+    }
+
+    @Test
+    fun activeWorkoutMuscleTargetWeeklyProgress_clampsOverTargetProgressAndNegativeInputs() {
+        val overTarget = requireNotNull(
+            activeWorkoutMuscleTargetWeeklyProgress(
+                weeklyCompletedSets = 9.0,
+                weeklyTargetSets = 10.0,
+                activeCompletedWeightedSets = 3.0,
+            ),
+        )
+        val negativeInputs = requireNotNull(
+            activeWorkoutMuscleTargetWeeklyProgress(
+                weeklyCompletedSets = -4.0,
+                weeklyTargetSets = -10.0,
+                activeCompletedWeightedSets = -2.0,
+            ),
+        )
+
+        assertEquals(0.0, overTarget.remainingSets, 0.001)
+        assertEquals(1.0f, overTarget.progressFraction, 0.001f)
+        assertEquals("0 to go • +3 done", overTarget.label)
+        assertEquals(0.0, negativeInputs.remainingSets, 0.001)
+        assertEquals(0.0, negativeInputs.activeContributionSets, 0.001)
+        assertEquals(0.0f, negativeInputs.progressFraction, 0.001f)
+        assertEquals("0 to go", negativeInputs.label)
+    }
+
+    @Test
+    fun sortedActiveWorkoutMuscleTargetBucketRows_ordersByWeeklyToGoAfterCurrentWorkoutContribution() {
+        val rows = listOf(
+            bucketRow(key = "push", label = "Push Muscles", completedWeightedSets = 0.0),
+            bucketRow(key = "pull", label = "Pull Muscles", completedWeightedSets = 3.0),
+            bucketRow(key = "legs", label = "Legs Muscles", completedWeightedSets = 0.0),
+        )
+        val weeklyGroups = listOf(
+            weeklyGroup(key = "push", label = "Push Muscles", completedSets = 8.0, targetSets = 10.0),
+            weeklyGroup(key = "pull", label = "Pull Muscles", completedSets = 0.0, targetSets = 10.0),
+            weeklyGroup(key = "legs", label = "Legs Muscles", completedSets = 5.0, targetSets = 10.0),
+        ).associateBy { it.key }
+
+        val sorted = sortedActiveWorkoutMuscleTargetBucketRows(rows, weeklyGroups)
+
+        assertEquals(listOf("pull", "legs", "push"), sorted.map { it.key })
+    }
+
+    @Test
+    fun sortedActiveWorkoutMuscleTargetSubcategoryRows_ordersByWeeklyToGoAfterCurrentWorkoutContribution() {
+        val rows = listOf(
+            subcategoryRow(key = "chest", label = "Chest", bucketKey = "push", completedWeightedSets = 1.0),
+            subcategoryRow(key = "shoulders", label = "Shoulders", bucketKey = "push", completedWeightedSets = 5.0),
+            subcategoryRow(key = "triceps", label = "Triceps", bucketKey = "push", completedWeightedSets = 0.0),
+        )
+        val weeklyMuscles = listOf(
+            weeklyMuscle(key = "chest", bucketKey = "push", label = "Chest", completedSets = 5.0, targetSets = 10.0),
+            weeklyMuscle(key = "shoulders", bucketKey = "push", label = "Shoulders", completedSets = 2.0, targetSets = 10.0),
+            weeklyMuscle(key = "triceps", bucketKey = "push", label = "Triceps", completedSets = 1.0, targetSets = 10.0),
+        ).associateBy { it.key }
+
+        val sorted = sortedActiveWorkoutMuscleTargetSubcategoryRows(rows, weeklyMuscles)
+
+        assertEquals(listOf("triceps", "chest", "shoulders"), sorted.map { it.key })
+    }
+
+    @Test
     fun filterActiveWorkoutMuscleRefreshRows_keepsDueOverdueNotTargetedMuscles() {
         val session = session(
             exercises = listOf(
@@ -439,6 +585,84 @@ class ActiveSessionWorkoutDetailsTest {
             targetReps = "8",
             completed = true,
             completedAtUtc = completedAt.toString(),
+        )
+    }
+
+    private fun bucketRow(
+        key: String,
+        label: String,
+        completedWeightedSets: Double,
+        plannedWeightedSets: Double = completedWeightedSets,
+        subcategories: List<ActiveWorkoutMuscleTargetSubcategoryRow> = emptyList(),
+    ): ActiveWorkoutMuscleTargetBucketRow {
+        return ActiveWorkoutMuscleTargetBucketRow(
+            key = key,
+            label = label,
+            plannedWeightedSets = plannedWeightedSets,
+            completedWeightedSets = completedWeightedSets,
+            remainingPlannedWeightedSets = (plannedWeightedSets - completedWeightedSets).coerceAtLeast(0.0),
+            progressFraction = if (plannedWeightedSets > 0.0) {
+                (completedWeightedSets / plannedWeightedSets).coerceIn(0.0, 1.0).toFloat()
+            } else {
+                0f
+            },
+            state = if (plannedWeightedSets > 0.0) ActiveWorkoutMuscleTargetState.InProgress else ActiveWorkoutMuscleTargetState.NotPlanned,
+            subcategories = subcategories,
+        )
+    }
+
+    private fun subcategoryRow(
+        key: String,
+        label: String,
+        bucketKey: String,
+        completedWeightedSets: Double,
+        plannedWeightedSets: Double = completedWeightedSets,
+    ): ActiveWorkoutMuscleTargetSubcategoryRow {
+        return ActiveWorkoutMuscleTargetSubcategoryRow(
+            key = key,
+            label = label,
+            bucketKey = bucketKey,
+            plannedWeightedSets = plannedWeightedSets,
+            completedWeightedSets = completedWeightedSets,
+            remainingPlannedWeightedSets = (plannedWeightedSets - completedWeightedSets).coerceAtLeast(0.0),
+            progressFraction = if (plannedWeightedSets > 0.0) {
+                (completedWeightedSets / plannedWeightedSets).coerceIn(0.0, 1.0).toFloat()
+            } else {
+                0f
+            },
+            state = if (plannedWeightedSets > 0.0) ActiveWorkoutMuscleTargetState.InProgress else ActiveWorkoutMuscleTargetState.NotPlanned,
+        )
+    }
+
+    private fun weeklyGroup(
+        key: String,
+        label: String,
+        completedSets: Double,
+        targetSets: Double,
+        muscles: List<WeeklyMuscleTargetMuscleSummary> = emptyList(),
+    ): WeeklyMuscleTargetGroupSummary {
+        return WeeklyMuscleTargetGroupSummary(
+            key = key,
+            label = label,
+            completedSets = completedSets,
+            targetSets = targetSets,
+            muscleSummaries = muscles,
+        )
+    }
+
+    private fun weeklyMuscle(
+        key: String,
+        bucketKey: String,
+        label: String,
+        completedSets: Double,
+        targetSets: Double,
+    ): WeeklyMuscleTargetMuscleSummary {
+        return WeeklyMuscleTargetMuscleSummary(
+            key = key,
+            bucketKey = bucketKey,
+            label = label,
+            completedSets = completedSets,
+            targetSets = targetSets,
         )
     }
 

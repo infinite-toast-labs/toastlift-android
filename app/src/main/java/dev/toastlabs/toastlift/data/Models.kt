@@ -96,18 +96,22 @@ data class LibraryFilters(
     val targetMuscles: Set<String> = emptySet(),
     val primeMovers: Set<String> = emptySet(),
     val freshnessMuscleKeys: Set<String> = emptySet(),
+    val muscleTargetBucketKeys: Set<String> = emptySet(),
+    val muscleTargetSubcategoryKeys: Set<String> = emptySet(),
     val recommendationBiases: Set<RecommendationBias> = emptySet(),
     val hasLoggedHistoryOnly: Boolean = false,
     val favoritesOnly: Boolean = false,
 ) {
     fun activeCount(): Int =
-            equipment.size +
+        equipment.size +
             targetMuscles.size +
             primeMovers.size +
             freshnessMuscleKeys.size +
+            muscleTargetBucketKeys.size +
+            muscleTargetSubcategoryKeys.size +
             recommendationBiases.size +
-            if (hasLoggedHistoryOnly) 1 else 0 +
-            if (favoritesOnly) 1 else 0
+            (if (hasLoggedHistoryOnly) 1 else 0) +
+            (if (favoritesOnly) 1 else 0)
 }
 
 data class FilterOptionCount(

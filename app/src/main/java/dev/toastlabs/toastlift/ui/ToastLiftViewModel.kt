@@ -57,6 +57,16 @@ import dev.toastlabs.toastlift.data.HistoryDetail
 import dev.toastlabs.toastlift.data.LibraryFacets
 import dev.toastlabs.toastlift.data.LibraryFilters
 import dev.toastlabs.toastlift.data.LocationMode
+import dev.toastlabs.toastlift.data.MuscleTargetBucketKey
+import dev.toastlabs.toastlift.data.muscleTargetBucketLabel
+import dev.toastlabs.toastlift.data.muscleTargetBuckets
+import dev.toastlabs.toastlift.data.muscleTargetFilterLabel
+import dev.toastlabs.toastlift.data.muscleTargetSubcategories
+import dev.toastlabs.toastlift.data.muscleTargetSubcategoriesForBucket
+import dev.toastlabs.toastlift.data.muscleTargetSubcategory
+import dev.toastlabs.toastlift.data.muscleTargetSubcategoryLabel
+import dev.toastlabs.toastlift.data.normalizeMuscleTargetBucketKey
+import dev.toastlabs.toastlift.data.normalizeMuscleTargetSubcategoryKey
 import dev.toastlabs.toastlift.data.normalizeExerciseNote
 import dev.toastlabs.toastlift.data.normalizeExerciseVideoLinkLabel
 import dev.toastlabs.toastlift.data.normalizeExerciseVideoLinkUrl
@@ -106,6 +116,7 @@ import dev.toastlabs.toastlift.data.buildTodayCompletionFeedbackAbFlags
 import dev.toastlabs.toastlift.data.buildAdherenceCurrencySnapshot
 import dev.toastlabs.toastlift.data.buildGlobalAdherenceCurrencyTrend
 import dev.toastlabs.toastlift.data.defaultWorkUnitValues
+import dev.toastlabs.toastlift.data.resolveMuscleTargetContributions
 import dev.toastlabs.toastlift.data.toPendingWorkoutShare
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -276,6 +287,8 @@ data class WeeklyMuscleTargetRange(
 )
 
 data class WeeklyMuscleTargetMuscleSummary(
+    val key: String = "",
+    val bucketKey: String = "",
     val label: String,
     val completedSets: Double,
     val targetSets: Double,
@@ -293,6 +306,7 @@ data class WeeklyMuscleTargetHistorySummary(
     val weekNumber: Int,
     val completionRatio: Double,
     val range: WeeklyMuscleTargetRange,
+    val bucketCompletionRatios: Map<String, Double> = emptyMap(),
 )
 
 data class WeeklyMuscleTargetSummary(
@@ -303,6 +317,7 @@ data class WeeklyMuscleTargetSummary(
     val range: WeeklyMuscleTargetRange,
     val groupSummaries: List<WeeklyMuscleTargetGroupSummary>,
     val history: List<WeeklyMuscleTargetHistorySummary>,
+    val balanceInsight: String? = null,
 )
 
 data class ProjectedMuscleInsight(
@@ -505,6 +520,18 @@ internal data class ActiveSessionMuscleFilterOption(
     val matchingExerciseCount: Int,
 )
 
+internal data class ActiveSessionMuscleTargetFilterOption(
+    val key: String,
+    val label: String,
+    val bucketKey: String,
+    val matchingExerciseCount: Int,
+)
+
+internal data class LibraryMuscleTargetFilterSelection(
+    val bucketKeys: Set<String>,
+    val subcategoryKeys: Set<String>,
+)
+
 internal fun activeSessionMuscleFilterOptions(
     session: ActiveSession,
     exerciseDetailsById: Map<Long, ExerciseDetail>,
@@ -518,6 +545,55 @@ internal fun activeSessionMuscleFilterOptions(
                     exercise = exercise,
                     detail = exerciseDetailsById[exercise.exerciseId],
                     muscleFilterKey = slot.key,
+                )
+            },
+        )
+    }
+}
+
+internal fun activeSessionMuscleTargetBucketOptions(
+    session: ActiveSession,
+    exerciseDetailsById: Map<Long, ExerciseDetail>,
+): List<ActiveSessionMuscleTargetFilterOption> {
+    return muscleTargetBuckets().map { bucket ->
+        ActiveSessionMuscleTargetFilterOption(
+            key = bucket.key,
+            label = bucket.label,
+            bucketKey = bucket.key,
+            matchingExerciseCount = session.exercises.count { exercise ->
+                activeSessionExerciseMatchesMuscleTarget(
+                    exercise = exercise,
+                    detail = exerciseDetailsById[exercise.exerciseId],
+                    bucketKey = bucket.key,
+                    subcategoryKey = null,
+                )
+            },
+        )
+    }
+}
+
+internal fun activeSessionMuscleTargetSubcategoryOptions(
+    session: ActiveSession,
+    exerciseDetailsById: Map<Long, ExerciseDetail>,
+    bucketKey: String? = null,
+): List<ActiveSessionMuscleTargetFilterOption> {
+    val resolvedBucket = normalizeMuscleTargetBucketKey(bucketKey)
+    val subcategories = if (resolvedBucket == null) {
+        muscleTargetSubcategories()
+    } else {
+        muscleTargetSubcategoriesForBucket(resolvedBucket)
+    }
+    return subcategories.map { subcategory ->
+        ActiveSessionMuscleTargetFilterOption(
+            key = subcategory.key,
+            label = subcategory.label,
+            bucketKey = subcategory.bucketKey,
+            matchingExerciseCount = session.exercises.count { exercise ->
+                activeSessionExerciseMatchesMuscleTarget(
+                    exercise = exercise,
+                    detail = exerciseDetailsById[exercise.exerciseId],
+                    bucketKey = null,
+                    subcategoryKey = subcategory.key,
                 )
             },
         )
@@ -546,6 +622,14 @@ internal fun resolveActiveSessionMuscleFilter(muscleFilterKey: String?): Trainin
         }
 }
 
+internal fun resolveActiveSessionMuscleTargetBucket(bucketKey: String?): String? {
+    return normalizeMuscleTargetBucketKey(bucketKey)
+}
+
+internal fun resolveActiveSessionMuscleTargetSubcategory(subcategoryKey: String?): String? {
+    return normalizeMuscleTargetSubcategoryKey(subcategoryKey)
+}
+
 internal fun activeSessionExerciseMatchesMuscleFilter(
     exercise: SessionExercise,
     detail: ExerciseDetail?,
@@ -558,8 +642,32 @@ internal fun activeSessionExerciseMatchesMuscleFilter(
     ).any { contribution -> contribution.key == slot.key }
 }
 
-private fun activeSessionPickNextFilterLabel(equipment: String?, muscle: String?): String? {
-    return listOfNotNull(equipment, muscle).takeIf { it.isNotEmpty() }?.joinToString(" and ")
+internal fun activeSessionExerciseMatchesMuscleTarget(
+    exercise: SessionExercise,
+    detail: ExerciseDetail?,
+    bucketKey: String?,
+    subcategoryKey: String?,
+): Boolean {
+    val resolvedBucket = normalizeMuscleTargetBucketKey(bucketKey)
+    val resolvedSubcategory = normalizeMuscleTargetSubcategoryKey(subcategoryKey)
+    if (resolvedBucket == null && resolvedSubcategory == null) return true
+    return resolveMuscleTargetContributions(
+        exercise = exercise,
+        detail = detail,
+    ).any { contribution ->
+        (resolvedBucket == null || contribution.bucketKey == resolvedBucket) &&
+            (resolvedSubcategory == null || contribution.subcategoryKey == resolvedSubcategory)
+    }
+}
+
+private fun activeSessionPickNextFilterLabel(
+    equipment: String?,
+    muscle: String?,
+    muscleTarget: String?,
+): String? {
+    return listOfNotNull(equipment, muscle, muscleTarget)
+        .takeIf { it.isNotEmpty() }
+        ?.joinToString(" and ")
 }
 
 internal fun activeSessionFreshnessLibraryFilters(
@@ -592,6 +700,52 @@ internal fun libraryFreshnessMuscleFilterLabel(muscleKey: String): String {
         ?: normalizedKey.toReadableFreshnessMuscleLabel()
 }
 
+internal fun activeSessionMuscleTargetLibraryFilters(
+    bucketKey: String?,
+    subcategoryKey: String?,
+): LibraryFilters {
+    val resolvedBucket = normalizeMuscleTargetBucketKey(bucketKey)
+    val resolvedSubcategory = normalizeMuscleTargetSubcategoryKey(subcategoryKey)
+    return LibraryFilters(
+        muscleTargetBucketKeys = listOfNotNull(resolvedBucket).toSet(),
+        muscleTargetSubcategoryKeys = listOfNotNull(resolvedSubcategory).toSet(),
+    )
+}
+
+internal fun libraryMuscleTargetFilterSelection(filters: LibraryFilters): LibraryMuscleTargetFilterSelection {
+    return LibraryMuscleTargetFilterSelection(
+        bucketKeys = filters.muscleTargetBucketKeys
+            .mapNotNull(::normalizeMuscleTargetBucketKey)
+            .toSet(),
+        subcategoryKeys = filters.muscleTargetSubcategoryKeys
+            .mapNotNull(::normalizeMuscleTargetSubcategoryKey)
+            .toSet(),
+    )
+}
+
+internal fun libraryMuscleTargetFilterLabels(filters: LibraryFilters): List<String> {
+    val selection = libraryMuscleTargetFilterSelection(filters)
+    val bucketLabels = selection.bucketKeys.map(::muscleTargetBucketLabel)
+    val subcategoryLabels = selection.subcategoryKeys
+        .filter { subcategoryKey ->
+            val parentBucket = muscleTargetSubcategory(subcategoryKey)?.bucketKey
+            parentBucket == null || parentBucket !in selection.bucketKeys
+        }
+        .map { subcategoryKey ->
+            muscleTargetFilterLabel(
+                bucketKey = muscleTargetSubcategory(subcategoryKey)?.bucketKey,
+                subcategoryKey = subcategoryKey,
+            )
+        }
+    return (bucketLabels + subcategoryLabels)
+        .filter { it.isNotBlank() }
+        .distinct()
+}
+
+internal fun libraryMuscleTargetFilterLabel(bucketKey: String?, subcategoryKey: String?): String {
+    return muscleTargetFilterLabel(bucketKey = bucketKey, subcategoryKey = subcategoryKey)
+}
+
 private fun normalizeLibraryFreshnessMuscleKey(muscleKey: String): String? {
     val trimmed = muscleKey.trim()
     if (trimmed.isEmpty()) return null
@@ -614,6 +768,8 @@ internal fun orderedSessionExercises(
     session: ActiveSession,
     equipmentFilter: String?,
     muscleFilterKey: String? = null,
+    muscleTargetBucketKey: String? = null,
+    muscleTargetSubcategoryKey: String? = null,
     exerciseDetailsById: Map<Long, ExerciseDetail> = emptyMap(),
 ): List<IndexedValue<SessionExercise>> {
     val resolvedFilter = resolveActiveSessionEquipmentFilter(
@@ -621,6 +777,8 @@ internal fun orderedSessionExercises(
         equipmentFilter = equipmentFilter,
     )
     val resolvedMuscleFilterKey = resolveActiveSessionMuscleFilter(muscleFilterKey)?.key
+    val resolvedTargetBucketKey = resolveActiveSessionMuscleTargetBucket(muscleTargetBucketKey)
+    val resolvedTargetSubcategoryKey = resolveActiveSessionMuscleTargetSubcategory(muscleTargetSubcategoryKey)
     return orderedSessionExercises(session).filter { indexedExercise ->
         val exercise = indexedExercise.value
         (resolvedFilter == null || exercise.equipment.equals(resolvedFilter, ignoreCase = true)) &&
@@ -628,6 +786,12 @@ internal fun orderedSessionExercises(
                 exercise = exercise,
                 detail = exerciseDetailsById[exercise.exerciseId],
                 muscleFilterKey = resolvedMuscleFilterKey,
+            ) &&
+            activeSessionExerciseMatchesMuscleTarget(
+                exercise = exercise,
+                detail = exerciseDetailsById[exercise.exerciseId],
+                bucketKey = resolvedTargetBucketKey,
+                subcategoryKey = resolvedTargetSubcategoryKey,
             )
     }
 }
@@ -645,6 +809,8 @@ internal fun pickNextSessionExerciseIndex(
     random: Random = Random.Default,
     equipmentFilter: String? = null,
     muscleFilterKey: String? = null,
+    muscleTargetBucketKey: String? = null,
+    muscleTargetSubcategoryKey: String? = null,
 ): Int? {
     return pickNextSessionExerciseIndex(
         session = session,
@@ -653,6 +819,8 @@ internal fun pickNextSessionExerciseIndex(
         random = random,
         equipmentFilter = equipmentFilter,
         muscleFilterKey = muscleFilterKey,
+        muscleTargetBucketKey = muscleTargetBucketKey,
+        muscleTargetSubcategoryKey = muscleTargetSubcategoryKey,
     )
 }
 
@@ -663,6 +831,8 @@ internal fun pickNextSessionExerciseIndex(
     random: Random = Random.Default,
     equipmentFilter: String? = null,
     muscleFilterKey: String? = null,
+    muscleTargetBucketKey: String? = null,
+    muscleTargetSubcategoryKey: String? = null,
 ): Int? {
     val normalizedEquipmentFilter = equipmentFilter?.trim()?.takeIf(String::isNotEmpty)
     val resolvedEquipmentFilter = normalizedEquipmentFilter?.let { filter ->
@@ -672,6 +842,8 @@ internal fun pickNextSessionExerciseIndex(
         ) ?: filter
     }
     val resolvedMuscleFilterKey = resolveActiveSessionMuscleFilter(muscleFilterKey)?.key
+    val resolvedTargetBucketKey = resolveActiveSessionMuscleTargetBucket(muscleTargetBucketKey)
+    val resolvedTargetSubcategoryKey = resolveActiveSessionMuscleTargetSubcategory(muscleTargetSubcategoryKey)
     val unstartedExercises = session.exercises
         .withIndex()
         .filter { (_, exercise) -> exercise.isNotStartedInActiveWorkout() }
@@ -685,7 +857,34 @@ internal fun pickNextSessionExerciseIndex(
                 muscleFilterKey = resolvedMuscleFilterKey,
             )
         }
+        .filter { (_, exercise) ->
+            activeSessionExerciseMatchesMuscleTarget(
+                exercise = exercise,
+                detail = exerciseDetailsById[exercise.exerciseId],
+                bucketKey = resolvedTargetBucketKey,
+                subcategoryKey = resolvedTargetSubcategoryKey,
+            )
+        }
     if (unstartedExercises.isEmpty()) return null
+
+    if (resolvedTargetBucketKey != null || resolvedTargetSubcategoryKey != null) {
+        val rankedTargetMatches = unstartedExercises
+            .map { indexedExercise ->
+                indexedExercise to smartMuscleTargetPickScore(
+                    exercise = indexedExercise.value,
+                    detail = exerciseDetailsById[indexedExercise.value.exerciseId],
+                    bucketKey = resolvedTargetBucketKey,
+                    subcategoryKey = resolvedTargetSubcategoryKey,
+                )
+            }
+            .filter { (_, score) -> score > 0.0 }
+            .sortedWith(
+                compareByDescending<Pair<IndexedValue<SessionExercise>, Double>> { it.second }
+                    .thenBy { it.first.index },
+            )
+        rankedTargetMatches.firstOrNull()?.let { return it.first.index }
+    }
+
     val normalizedTarget = normalizeMuscleToken(smartTargetMuscle)
     if (normalizedTarget.isBlank()) return unstartedExercises.random(random).index
 
@@ -704,6 +903,30 @@ internal fun pickNextSessionExerciseIndex(
         )
 
     return rankedMatches.firstOrNull()?.first?.index ?: unstartedExercises.random(random).index
+}
+
+private fun smartMuscleTargetPickScore(
+    exercise: SessionExercise,
+    detail: ExerciseDetail?,
+    bucketKey: String?,
+    subcategoryKey: String?,
+): Double {
+    val resolvedBucket = normalizeMuscleTargetBucketKey(bucketKey)
+    val resolvedSubcategory = normalizeMuscleTargetSubcategoryKey(subcategoryKey)
+    if (resolvedBucket == null && resolvedSubcategory == null) return 0.0
+    val contributions = resolveMuscleTargetContributions(
+        exercise = exercise,
+        detail = detail,
+    )
+    return contributions.sumOf { contribution ->
+        when {
+            resolvedSubcategory != null && contribution.subcategoryKey == resolvedSubcategory ->
+                10.0 * contribution.weight
+            resolvedSubcategory == null && resolvedBucket != null && contribution.bucketKey == resolvedBucket ->
+                4.0 * contribution.weight
+            else -> 0.0
+        }
+    }
 }
 
 internal fun reconcileSessionExerciseCompletionState(
@@ -1393,46 +1616,10 @@ private data class WeeklyMuscleTargetAccumulator(
 private data class MuscleAccumulator(
     val key: String,
     val label: String,
+    val targetMultiplier: Double,
     var targetSets: Double = 0.0,
     var completedSets: Double = 0.0,
 )
-
-private enum class PplWeeklyMuscleBucket(
-    val key: String,
-    val label: String,
-    val focus: SessionFocus,
-    val muscleOrder: List<Pair<String, String>>,
-) {
-    Push(
-        key = "push",
-        label = "Push Muscles",
-        focus = SessionFocus.PUSH,
-        muscleOrder = listOf(
-            "chest" to "Chest",
-            "shoulders" to "Shoulders",
-            "triceps" to "Triceps",
-        ),
-    ),
-    Pull(
-        key = "pull",
-        label = "Pull Muscles",
-        focus = SessionFocus.PULL,
-        muscleOrder = listOf(
-            "back" to "Back",
-            "biceps" to "Biceps",
-        ),
-    ),
-    Legs(
-        key = "legs",
-        label = "Leg Muscles",
-        focus = SessionFocus.LEGS,
-        muscleOrder = listOf(
-            "quadriceps" to "Quadriceps",
-            "hamstrings" to "Hamstrings",
-            "glutes" to "Glutes",
-        ),
-    ),
-}
 
 private val weeklyMuscleTargetDateFormatter: DateTimeFormatter = DateTimeFormatter.ofPattern("d MMM")
 private val weeklyMuscleTargetBaseByGoal = mapOf(
@@ -1485,6 +1672,9 @@ internal fun buildWeeklyMuscleTargetSummary(
                 weekNumber = it.weekNumber,
                 completionRatio = it.overallCompletionRatio,
                 range = it.range,
+                bucketCompletionRatios = it.groupSummaries.associate { group ->
+                    group.key to if (group.targetSets > 0.0) group.completedSets / group.targetSets else 0.0
+                },
             )
         }
 
@@ -1498,18 +1688,22 @@ private fun buildWeeklyMuscleTargetWeekSummary(
     rows: List<WeeklyMuscleTargetWorkoutRow>,
     exerciseDetailsById: Map<Long, ExerciseDetail>,
 ): WeeklyMuscleTargetSummary {
-    val accumulators = PplWeeklyMuscleBucket.entries.associate { bucket ->
+    val accumulators = muscleTargetBuckets().associate { bucket ->
         bucket.key to WeeklyMuscleTargetAccumulator(
             key = bucket.key,
-            label = bucket.label,
+            label = "${bucket.label} Muscles",
             muscles = LinkedHashMap<String, MuscleAccumulator>().apply {
-                bucket.muscleOrder.forEach { (muscleKey, label) ->
+                muscleTargetSubcategoriesForBucket(bucket.key).forEach { subcategory ->
                     put(
-                        muscleKey,
+                        subcategory.key,
                         MuscleAccumulator(
-                            key = muscleKey,
-                            label = label,
-                            targetSets = weeklyTargetSetsForMuscle(profile = profile, muscleKey = muscleKey),
+                            key = subcategory.key,
+                            label = subcategory.label,
+                            targetMultiplier = subcategory.targetMultiplier,
+                            targetSets = weeklyTargetSetsForMuscle(
+                                profile = profile,
+                                targetMultiplier = subcategory.targetMultiplier,
+                            ),
                         ),
                     )
                 }
@@ -1527,12 +1721,14 @@ private fun buildWeeklyMuscleTargetWeekSummary(
         )
     }
 
-    val groupSummaries = PplWeeklyMuscleBucket.entries.mapNotNull { bucket ->
+    val groupSummaries = muscleTargetBuckets().mapNotNull { bucket ->
         val group = accumulators.getValue(bucket.key)
         val muscles = group.muscles.values
             .filter { it.targetSets > 0.0 || it.completedSets > 0.0 }
             .map {
                 WeeklyMuscleTargetMuscleSummary(
+                    key = it.key,
+                    bucketKey = group.key,
                     label = it.label,
                     completedSets = it.completedSets,
                     targetSets = it.targetSets,
@@ -1566,6 +1762,7 @@ private fun buildWeeklyMuscleTargetWeekSummary(
         ),
         groupSummaries = groupSummaries,
         history = emptyList(),
+        balanceInsight = weeklyMuscleTargetBalanceInsight(groupSummaries),
     )
 }
 
@@ -1581,16 +1778,49 @@ private fun applyMuscleContributions(
     }
 }
 
-private fun weeklyTargetSetsForMuscle(profile: UserProfile, muscleKey: String): Double {
+private fun weeklyMuscleTargetBalanceInsight(groups: List<WeeklyMuscleTargetGroupSummary>): String? {
+    val groupsByKey = groups.associateBy { it.key }
+    val push = groupsByKey[MuscleTargetBucketKey.Push.storageKey]
+    val pull = groupsByKey[MuscleTargetBucketKey.Pull.storageKey]
+    if (push != null && pull != null && (push.completedSets > 0.0 || pull.completedSets > 0.0)) {
+        val lead = if (push.completedSets >= pull.completedSets) push else pull
+        val lag = if (lead == push) pull else push
+        val difference = (lead.completedSets - lag.completedSets).coerceAtLeast(0.0)
+        return if (difference < 2.0) {
+            "Push and pull work are balanced within 2 weighted sets this week."
+        } else {
+            "${lag.label.removeSuffix(" Muscles")} is trailing ${lead.label.removeSuffix(" Muscles")} by ${weeklyTargetSetCountLabel(difference)}."
+        }
+    }
+
+    val legs = groupsByKey[MuscleTargetBucketKey.Legs.storageKey] ?: return null
+    val legPrimaries = legs.muscleSummaries
+        .filter { muscle -> muscle.key in setOf("quadriceps", "hamstrings", "glutes") }
+        .filter { muscle -> muscle.completedSets > 0.0 || muscle.targetSets > 0.0 }
+    if (legPrimaries.size < 2) return null
+    val lead = legPrimaries.maxByOrNull { it.completedSets } ?: return null
+    val lag = legPrimaries.minByOrNull { it.completedSets } ?: return null
+    val difference = (lead.completedSets - lag.completedSets).coerceAtLeast(0.0)
+    return if (difference < 2.0) {
+        "Quadriceps, hamstrings, and glutes are balanced within 2 weighted sets this week."
+    } else {
+        "${lag.label} is trailing ${lead.label} by ${weeklyTargetSetCountLabel(difference)}."
+    }
+}
+
+private fun weeklyTargetSetCountLabel(value: Double): String {
+    val formatted = if (value % 1.0 == 0.0) {
+        value.roundToInt().toString()
+    } else {
+        "%.1f".format(value)
+    }
+    return "$formatted weighted set${if (formatted == "1") "" else "s"}"
+}
+
+private fun weeklyTargetSetsForMuscle(profile: UserProfile, targetMultiplier: Double): Double {
     val base = weeklyMuscleTargetBaseByGoal[profile.goal] ?: weeklyMuscleTargetBaseByGoal.getValue("General Fitness")
     val experienceFactor = weeklyMuscleTargetExperienceFactorByLevel[profile.experience] ?: 1.0
-    val multiplier = when (muscleKey) {
-        "chest", "back", "quadriceps", "hamstrings", "glutes" -> 1.15
-        "shoulders" -> 1.0
-        "biceps", "triceps" -> 0.8
-        else -> 0.95
-    }
-    return base * experienceFactor * multiplier
+    return base * experienceFactor * targetMultiplier
 }
 
 internal fun weeklyMuscleTargetRangeLabel(range: WeeklyMuscleTargetRange): String {
@@ -1600,93 +1830,12 @@ internal fun weeklyMuscleTargetRangeLabel(range: WeeklyMuscleTargetRange): Strin
 private fun resolveMuscleContributions(
     detail: ExerciseDetail?,
 ): List<MuscleContribution> {
-    val contributions = linkedMapOf<Pair<String, String>, Double>()
-
-    fun addContribution(muscleKey: String?, weight: Double) {
-        val resolvedKey = muscleKey
-            ?.let(::mapMuscleToSlot)
-            ?: return
-        val key = resolvedKey.bucket.key to resolvedKey.key
-        contributions[key] = maxOf(contributions[key] ?: 0.0, weight)
-    }
-
-    addContribution(detail?.summary?.targetMuscleGroup, 1.0)
-    addContribution(detail?.primeMover, 1.0)
-    addContribution(detail?.secondaryMuscle, 0.5)
-    addContribution(detail?.tertiaryMuscle, 0.5)
-
-    if (contributions.isNotEmpty()) {
-        return contributions.entries.map { (key, weight) ->
-            MuscleContribution(
-                bucketKey = key.first,
-                muscleKey = key.second,
-                weight = weight,
-            )
-        }
-    }
-
-    val patterns = detail?.movementPatterns.orEmpty().map(::normalizeMuscleToken)
-    return fallbackContributionsFromMovementPatterns(patterns)
-}
-
-private fun fallbackContributionsFromMovementPatterns(
-    patterns: List<String>,
-): List<MuscleContribution> = when {
-    patterns.any { "overhead" in it || "vertical press" in it } -> listOf(
-        MuscleContribution(bucketKey = "push", muscleKey = "shoulders", weight = 1.0),
-        MuscleContribution(bucketKey = "push", muscleKey = "triceps", weight = 0.5),
-    )
-    patterns.any { "fly" in it || "horizontal push" in it || "push up" in it || "bench" in it } -> listOf(
-        MuscleContribution(bucketKey = "push", muscleKey = "chest", weight = 1.0),
-        MuscleContribution(bucketKey = "push", muscleKey = "triceps", weight = 0.5),
-    )
-    patterns.any { "curl" in it } -> listOf(
-        MuscleContribution(bucketKey = "pull", muscleKey = "biceps", weight = 1.0),
-    )
-    patterns.any { "pull" in it || "row" in it } -> listOf(
-        MuscleContribution(bucketKey = "pull", muscleKey = "back", weight = 1.0),
-        MuscleContribution(bucketKey = "pull", muscleKey = "biceps", weight = 0.5),
-    )
-    patterns.any { "hinge" in it || "deadlift" in it || "good morning" in it } -> listOf(
-        MuscleContribution(bucketKey = "legs", muscleKey = "hamstrings", weight = 1.0),
-        MuscleContribution(bucketKey = "legs", muscleKey = "glutes", weight = 0.5),
-    )
-    patterns.any { "bridge" in it || "thrust" in it || "abduction" in it } -> listOf(
-        MuscleContribution(bucketKey = "legs", muscleKey = "glutes", weight = 1.0),
-        MuscleContribution(bucketKey = "legs", muscleKey = "hamstrings", weight = 0.5),
-    )
-    patterns.any { "squat" in it || "lunge" in it || "step up" in it } -> listOf(
-        MuscleContribution(bucketKey = "legs", muscleKey = "quadriceps", weight = 1.0),
-        MuscleContribution(bucketKey = "legs", muscleKey = "glutes", weight = 0.5),
-    )
-    else -> emptyList()
-}
-
-private data class WeeklyMuscleSlot(
-    val key: String,
-    val bucket: PplWeeklyMuscleBucket,
-)
-
-private fun mapMuscleToSlot(muscleName: String): WeeklyMuscleSlot? {
-    val normalized = normalizeMuscleToken(muscleName)
-    if (normalized.isBlank()) return null
-
-    return when {
-        normalized.contains("chest") || normalized.contains("pec") -> WeeklyMuscleSlot("chest", PplWeeklyMuscleBucket.Push)
-        normalized.contains("shoulder") || normalized.contains("delt") -> WeeklyMuscleSlot("shoulders", PplWeeklyMuscleBucket.Push)
-        normalized.contains("tricep") -> WeeklyMuscleSlot("triceps", PplWeeklyMuscleBucket.Push)
-        normalized.contains("bicep") || normalized.contains("brachialis") || normalized.contains("brachioradialis") ->
-            WeeklyMuscleSlot("biceps", PplWeeklyMuscleBucket.Pull)
-        normalized.contains("back") || normalized.contains("lat") || normalized.contains("trap") ||
-            normalized.contains("rear delt") || normalized.contains("rhomboid") ->
-            WeeklyMuscleSlot("back", PplWeeklyMuscleBucket.Pull)
-        normalized.contains("quad") || normalized.contains("vastus") || normalized.contains("rectus femoris") ->
-            WeeklyMuscleSlot("quadriceps", PplWeeklyMuscleBucket.Legs)
-        normalized.contains("hamstring") || normalized.contains("biceps femoris") ||
-            normalized.contains("semitendinosus") || normalized.contains("semimembranosus") ->
-            WeeklyMuscleSlot("hamstrings", PplWeeklyMuscleBucket.Legs)
-        normalized.contains("glute") -> WeeklyMuscleSlot("glutes", PplWeeklyMuscleBucket.Legs)
-        else -> null
+    return resolveMuscleTargetContributions(detail).map { contribution ->
+        MuscleContribution(
+            bucketKey = contribution.bucketKey,
+            muscleKey = contribution.subcategoryKey,
+            weight = contribution.weight,
+        )
     }
 }
 
@@ -2426,6 +2575,42 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
         refreshLibrary()
     }
 
+    fun toggleLibraryMuscleTargetBucketFilter(bucketKey: String) {
+        val key = normalizeMuscleTargetBucketKey(bucketKey) ?: return
+        val filters = uiState.libraryFilters
+        val selectedBuckets = libraryMuscleTargetFilterSelection(filters).bucketKeys
+        val selectedSubcategories = libraryMuscleTargetFilterSelection(filters).subcategoryKeys
+        val updatedBuckets = if (key in selectedBuckets) selectedBuckets - key else selectedBuckets + key
+        val updatedSubcategories = if (key in selectedBuckets) {
+            val bucketSubcategories = muscleTargetSubcategoriesForBucket(key).map { it.key }.toSet()
+            selectedSubcategories - bucketSubcategories
+        } else {
+            selectedSubcategories
+        }
+        uiState = uiState.copy(
+            libraryFilters = filters.copy(
+                muscleTargetBucketKeys = updatedBuckets,
+                muscleTargetSubcategoryKeys = updatedSubcategories,
+            ),
+        )
+        refreshLibrary()
+    }
+
+    fun toggleLibraryMuscleTargetSubcategoryFilter(subcategoryKey: String) {
+        val key = normalizeMuscleTargetSubcategoryKey(subcategoryKey) ?: return
+        val filters = uiState.libraryFilters
+        val selection = libraryMuscleTargetFilterSelection(filters)
+        val updated = if (key in selection.subcategoryKeys) {
+            selection.subcategoryKeys - key
+        } else {
+            selection.subcategoryKeys + key
+        }
+        uiState = uiState.copy(
+            libraryFilters = filters.copy(muscleTargetSubcategoryKeys = updated),
+        )
+        refreshLibrary()
+    }
+
     fun toggleLibraryRecommendationBiasFilter(bias: RecommendationBias) {
         if (bias == RecommendationBias.Neutral) return
         val updated = uiState.libraryFilters.recommendationBiases.toMutableSet().apply {
@@ -2448,6 +2633,18 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
 
     fun clearLibraryFilters() {
         uiState = uiState.copy(libraryFilters = LibraryFilters())
+        refreshLibrary()
+    }
+
+    fun clearLibraryMuscleTargetFilters() {
+        val filters = uiState.libraryFilters
+        if (filters.muscleTargetBucketKeys.isEmpty() && filters.muscleTargetSubcategoryKeys.isEmpty()) return
+        uiState = uiState.copy(
+            libraryFilters = filters.copy(
+                muscleTargetBucketKeys = emptySet(),
+                muscleTargetSubcategoryKeys = emptySet(),
+            ),
+        )
         refreshLibrary()
     }
 
@@ -3210,6 +3407,8 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
     fun pickNextSessionExercise(
         equipmentFilter: String? = null,
         muscleFilterKey: String? = null,
+        muscleTargetBucketKey: String? = null,
+        muscleTargetSubcategoryKey: String? = null,
     ) {
         val session = uiState.activeSession ?: return
         val smartTargetMuscle = uiState.profile?.smartPickerTargetMuscle
@@ -3218,6 +3417,8 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
             equipmentFilter = equipmentFilter,
         )
         val resolvedMuscleFilter = resolveActiveSessionMuscleFilter(muscleFilterKey)
+        val resolvedTargetBucket = resolveActiveSessionMuscleTargetBucket(muscleTargetBucketKey)
+        val resolvedTargetSubcategory = resolveActiveSessionMuscleTargetSubcategory(muscleTargetSubcategoryKey)
         viewModelScope.launch(Dispatchers.IO) {
             val untouchedExerciseIds = session.exercises
                 .filter(SessionExercise::isNotStartedInActiveWorkout)
@@ -3232,10 +3433,16 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
                 exerciseDetailsById = exerciseDetailsById,
                 equipmentFilter = resolvedEquipmentFilter,
                 muscleFilterKey = resolvedMuscleFilter?.key,
+                muscleTargetBucketKey = resolvedTargetBucket,
+                muscleTargetSubcategoryKey = resolvedTargetSubcategory,
             ) ?: run {
                 val filterLabel = activeSessionPickNextFilterLabel(
                     equipment = resolvedEquipmentFilter,
                     muscle = resolvedMuscleFilter?.label,
+                    muscleTarget = libraryMuscleTargetFilterLabel(
+                        bucketKey = resolvedTargetBucket,
+                        subcategoryKey = resolvedTargetSubcategory,
+                    ).takeIf { it.isNotBlank() },
                 )
                 uiState = uiState.copy(
                     message = if (filterLabel == null) {
@@ -3426,6 +3633,8 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
         pickNextAfterRemoval: Boolean = false,
         equipmentFilter: String? = null,
         muscleFilterKey: String? = null,
+        muscleTargetBucketKey: String? = null,
+        muscleTargetSubcategoryKey: String? = null,
     ) {
         val session = uiState.activeSession ?: return
         val removedExercise = session.exercises.getOrNull(exerciseIndex) ?: return
@@ -3438,6 +3647,8 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
                 equipmentFilter = equipmentFilter,
             ) ?: equipmentFilter?.trim()?.takeIf(String::isNotEmpty)
             val resolvedMuscleFilter = resolveActiveSessionMuscleFilter(muscleFilterKey)
+            val resolvedTargetBucket = resolveActiveSessionMuscleTargetBucket(muscleTargetBucketKey)
+            val resolvedTargetSubcategory = resolveActiveSessionMuscleTargetSubcategory(muscleTargetSubcategoryKey)
             viewModelScope.launch(Dispatchers.IO) {
                 val untouchedExerciseIds = updatedSession.exercises
                     .filter(SessionExercise::isNotStartedInActiveWorkout)
@@ -3452,6 +3663,8 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
                     exerciseDetailsById = exerciseDetailsById,
                     equipmentFilter = resolvedEquipmentFilter,
                     muscleFilterKey = resolvedMuscleFilter?.key,
+                    muscleTargetBucketKey = resolvedTargetBucket,
+                    muscleTargetSubcategoryKey = resolvedTargetSubcategory,
                 )
                 val pickedExercise = pickedExerciseIndex?.let(updatedSession.exercises::getOrNull)
                 uiState = uiState.copy(
@@ -3622,6 +3835,30 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
             librarySearchVisible = false,
             libraryQuery = "",
             libraryFilters = freshnessFilters,
+            message = null,
+        )
+        refreshLibrary()
+    }
+
+    fun openActiveSessionAddExerciseForMuscleTarget(bucketKey: String?, subcategoryKey: String?) {
+        val targetFilters = activeSessionMuscleTargetLibraryFilters(
+            bucketKey = bucketKey,
+            subcategoryKey = subcategoryKey,
+        )
+        if (targetFilters.muscleTargetBucketKeys.isEmpty() && targetFilters.muscleTargetSubcategoryKeys.isEmpty()) {
+            openActiveSessionAddExercise()
+            return
+        }
+        uiState = uiState.copy(
+            activeSessionAddExerciseVisible = true,
+            activeSessionAddExerciseMode = ActiveSessionAddExerciseMode.Manual,
+            activeSessionGeneratedExercise = ActiveSessionGeneratedExerciseState(),
+            customExerciseDraft = null,
+            customExerciseDestination = null,
+            pendingAddExercisePickerSelection = null,
+            librarySearchVisible = false,
+            libraryQuery = "",
+            libraryFilters = targetFilters,
             message = null,
         )
         refreshLibrary()
