@@ -436,6 +436,16 @@ data class HistorySummary(
     val averageTimeBetweenSetCompletionsSeconds: Int? = null,
 )
 
+data class HistoryWorkoutMetric(
+    val id: Long,
+    val completedAtUtc: String,
+    val startedAtUtc: String = completedAtUtc,
+    val durationSeconds: Int,
+    val totalVolume: Double,
+    val exerciseCount: Int,
+    val setCount: Int,
+)
+
 data class HistoryExerciseDetail(
     val exerciseId: Long,
     val name: String,

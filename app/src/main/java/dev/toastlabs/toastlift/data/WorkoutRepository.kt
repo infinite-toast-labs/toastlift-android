@@ -1049,6 +1049,54 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
         )
     }
 
+    fun loadHistoryWorkoutMetrics(): List<HistoryWorkoutMetric> {
+        val db = database.open()
+        return db.rawQuery(
+            """
+            SELECT
+                pw.performed_workout_id,
+                pw.completed_at_utc,
+                pw.started_at_utc,
+                pw.actual_duration_seconds,
+                COALESCE(SUM(
+                    CASE
+                        WHEN ${loggedRepSignalClause()} THEN ps.actual_reps * COALESCE(ps.weight_value, 0)
+                        ELSE 0
+                    END
+                ), 0),
+                COUNT(DISTINCT CASE WHEN ${loggedRepSignalClause()} THEN pe.performed_exercise_id END) AS logged_exercise_count,
+                COUNT(CASE WHEN ${loggedRepSignalClause()} THEN ps.performed_set_id END) AS logged_set_count
+            FROM performed_workouts pw
+            LEFT JOIN performed_exercises pe ON pe.performed_workout_id = pw.performed_workout_id
+            LEFT JOIN performed_sets ps ON ps.performed_exercise_id = pe.performed_exercise_id
+            GROUP BY
+                pw.performed_workout_id,
+                pw.completed_at_utc,
+                pw.started_at_utc,
+                pw.actual_duration_seconds
+            HAVING logged_exercise_count > 0
+            ORDER BY pw.started_at_utc DESC
+            """.trimIndent(),
+            null,
+        ).use { cursor ->
+            buildList {
+                while (cursor.moveToNext()) {
+                    add(
+                        HistoryWorkoutMetric(
+                            id = cursor.getLong(0),
+                            completedAtUtc = cursor.getString(1),
+                            startedAtUtc = cursor.getString(2),
+                            durationSeconds = cursor.getInt(3),
+                            totalVolume = cursor.getDouble(4),
+                            exerciseCount = cursor.getInt(5),
+                            setCount = cursor.getInt(6),
+                        ),
+                    )
+                }
+            }
+        }
+    }
+
     internal fun loadWeeklyMuscleTargetRows(sinceUtcInclusive: String): List<WeeklyMuscleTargetWorkoutRow> {
         val db = database.open()
         return db.rawQuery(

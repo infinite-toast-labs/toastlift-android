@@ -223,6 +223,7 @@ import dev.toastlabs.toastlift.data.FORMULA_B_UPPER_CHEST_STRENGTH_FOCUS_KEY
 import dev.toastlabs.toastlift.data.HistoryDetail
 import dev.toastlabs.toastlift.data.HistoryReuseMode
 import dev.toastlabs.toastlift.data.HistorySummary
+import dev.toastlabs.toastlift.data.HistoryWorkoutMetric
 import dev.toastlabs.toastlift.data.LibraryFacets
 import dev.toastlabs.toastlift.data.LibraryFilters
 import dev.toastlabs.toastlift.data.LocationMode
@@ -1149,6 +1150,7 @@ fun ToastLiftApp(
                                     MainTab.History -> HistoryScreen(
                                         profile = state.profile,
                                         history = state.history,
+                                        historyWorkoutMetrics = state.historyWorkoutMetrics,
                                         tokenBalanceTrend = state.tokenBalanceTrend,
                                         weeklyMuscleTargets = state.weeklyMuscleTargets,
                                         topExercise = state.historyTopExercise,
@@ -1421,6 +1423,7 @@ private fun TodayScreen(
     var pendingProgramAction by remember { mutableStateOf<TodayProgramActionConfirmation?>(null) }
     var showTemplateAddScreen by remember { mutableStateOf(false) }
     var showTrainingFreshnessDashboard by remember { mutableStateOf(false) }
+    var showTemplatesListScreen by remember { mutableStateOf(false) }
     val profile = state.profile
     val templates = state.templates
     val history = state.history
@@ -1483,13 +1486,23 @@ private fun TodayScreen(
         return
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
+    if (showTemplatesListScreen) {
+        TodayTemplatesListScreen(
+            templates = templates,
+            onBack = { showTemplatesListScreen = false },
+            onStartTemplate = onStartTemplate,
+            onEditTemplate = onEditTemplate,
+            onRenameTemplate = { renameTarget = it },
+            onDeleteTemplate = { deleteTarget = it },
+        )
+    } else {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
         if (state.activeProgram != null && state.programOverview != null) {
             // ── Active Program UI ──
             ProgramOverviewCard(
@@ -1571,6 +1584,7 @@ private fun TodayScreen(
                 onEditTemplate = onEditTemplate,
                 onRenameTemplate = { renameTarget = it },
                 onDeleteTemplate = { deleteTarget = it },
+                onOpenTemplates = { showTemplatesListScreen = true },
                 onOpenHistoryWorkout = onOpenHistoryWorkout,
                 onRestoreAbandonedWorkout = onRestoreAbandonedWorkout,
             )
@@ -1621,9 +1635,11 @@ private fun TodayScreen(
                 onEditTemplate = onEditTemplate,
                 onRenameTemplate = { renameTarget = it },
                 onDeleteTemplate = { deleteTarget = it },
+                onOpenTemplates = { showTemplatesListScreen = true },
                 onOpenHistoryWorkout = onOpenHistoryWorkout,
                 onRestoreAbandonedWorkout = onRestoreAbandonedWorkout,
             )
+        }
         }
     }
 
@@ -2745,6 +2761,7 @@ private fun TodaySecondarySections(
     onEditTemplate: (Long) -> Unit,
     onRenameTemplate: (TemplateSummary) -> Unit,
     onDeleteTemplate: (TemplateSummary) -> Unit,
+    onOpenTemplates: () -> Unit,
     onOpenHistoryWorkout: (Long) -> Unit,
     onRestoreAbandonedWorkout: () -> Unit,
 ) {
@@ -2791,6 +2808,7 @@ private fun TodaySecondarySections(
         onEditTemplate = onEditTemplate,
         onRenameTemplate = onRenameTemplate,
         onDeleteTemplate = onDeleteTemplate,
+        onOpenTemplates = onOpenTemplates,
         subtitle = if (hasActiveProgram && templates.isEmpty()) {
             "Saved templates stay available while your program is in progress."
         } else if (templates.isEmpty()) {
@@ -2857,12 +2875,19 @@ private fun TodayTemplatesSection(
     onEditTemplate: (Long) -> Unit,
     onRenameTemplate: (TemplateSummary) -> Unit,
     onDeleteTemplate: (TemplateSummary) -> Unit,
+    onOpenTemplates: () -> Unit,
     subtitle: String,
 ) {
     CompactSectionCard(
+        modifier = Modifier
+            .clickable(onClick = onOpenTemplates)
+            .semantics {
+                contentDescription = "Open templates"
+                role = Role.Button
+            },
         title = "Templates",
         subtitle = subtitle,
-        menuItems = listOf("Generate instead" to onGenerate),
+        menuItems = listOf("View all templates" to onOpenTemplates, "Generate instead" to onGenerate),
     ) {
         TodayTemplatesSectionContent(
             templates = templates,
@@ -2870,6 +2895,7 @@ private fun TodayTemplatesSection(
             onEditTemplate = onEditTemplate,
             onRenameTemplate = onRenameTemplate,
             onDeleteTemplate = onDeleteTemplate,
+            onOpenTemplates = onOpenTemplates,
         )
     }
 }
@@ -2881,6 +2907,7 @@ private fun TodayTemplatesSectionContent(
     onEditTemplate: (Long) -> Unit,
     onRenameTemplate: (TemplateSummary) -> Unit,
     onDeleteTemplate: (TemplateSummary) -> Unit,
+    onOpenTemplates: () -> Unit,
 ) {
     if (templates.isEmpty()) {
         SuggestionRow(
@@ -2897,6 +2924,64 @@ private fun TodayTemplatesSectionContent(
                 onRename = { onRenameTemplate(template) },
                 onDelete = { onDeleteTemplate(template) },
             )
+        }
+        if (templates.size > 3) {
+            Text(
+                text = "View all ${templates.size} templates",
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier
+                    .clickable(onClick = onOpenTemplates)
+                    .padding(vertical = 8.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun TodayTemplatesListScreen(
+    templates: List<TemplateSummary>,
+    onBack: () -> Unit,
+    onStartTemplate: (Long) -> Unit,
+    onEditTemplate: (Long) -> Unit,
+    onRenameTemplate: (TemplateSummary) -> Unit,
+    onDeleteTemplate: (TemplateSummary) -> Unit,
+) {
+    BackHandler(onBack = onBack)
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        item {
+            HistoryDetailHeader(title = "Templates", onBack = onBack)
+        }
+        if (templates.isEmpty()) {
+            item {
+                FeatureCard {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Text("No templates yet", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                        Text(
+                            "Generate or build a workout, then save it for reuse here.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+        } else {
+            items(templates, key = { it.id }) { template ->
+                TemplateListRow(
+                    template = template,
+                    onStart = { onStartTemplate(template.id) },
+                    onEdit = { onEditTemplate(template.id) },
+                    onRename = { onRenameTemplate(template) },
+                    onDelete = { onDeleteTemplate(template) },
+                )
+            }
         }
     }
 }
@@ -3424,6 +3509,7 @@ private fun historyMuscleFilterFor(muscle: String): HistoryMuscleFilter? = when 
 private fun HistoryScreen(
     profile: UserProfile?,
     history: List<HistorySummary>,
+    historyWorkoutMetrics: List<HistoryWorkoutMetric>,
     tokenBalanceTrend: AdherenceCurrencyTrend?,
     weeklyMuscleTargets: WeeklyMuscleTargetSummary?,
     topExercise: String?,
@@ -3441,9 +3527,10 @@ private fun HistoryScreen(
     var destination by remember { mutableStateOf("dashboard") }
     var selectedMuscleFilter by remember { mutableStateOf(HistoryMuscleFilter.All) }
     var selectedMovementFilter by remember { mutableStateOf(HistoryMovementFilter.All) }
-    val dashboard = remember(history, profile, topExercise, topEquipment, strengthScore) {
+    val dashboard = remember(history, historyWorkoutMetrics, profile, topExercise, topEquipment, strengthScore) {
         buildHistoryDashboardData(
             history = history,
+            historyWorkoutMetrics = historyWorkoutMetrics,
             weeklyGoal = profile?.weeklyFrequency ?: 4,
             topExercise = topExercise,
             topEquipment = topEquipment,
@@ -3471,6 +3558,10 @@ private fun HistoryScreen(
 
     if (destination == "workouts") {
         HistoryWorkoutStatsScreen(data = dashboard, onBack = { destination = "dashboard" })
+        return
+    }
+    if (destination == "stats") {
+        HistoryStatsScreen(data = dashboard, onBack = { destination = "dashboard" })
         return
     }
     if (destination == "milestones") {
@@ -3517,6 +3608,7 @@ private fun HistoryScreen(
             HistoryOverviewHeader(
                 data = dashboard,
                 onOpenWorkouts = { destination = "workouts" },
+                onOpenStats = { destination = "stats" },
                 onOpenMilestones = { destination = "milestones" },
                 onOpenStreak = { destination = "streak" },
                 onOpenCalendar = { destination = "calendar" },
@@ -3679,10 +3771,13 @@ private fun HistoryScreen(
     }
 }
 
-private data class HistoryDashboardData(
+internal data class HistoryDashboardData(
     val totalWorkouts: Int,
     val totalMinutes: Int,
     val totalVolume: Double,
+    val totalSets: Int,
+    val totalExercises: Int,
+    val activeDayCount: Int,
     val weeklyGoal: Int,
     val currentWeekCount: Int,
     val currentStreakWeeks: Int,
@@ -3694,6 +3789,7 @@ private data class HistoryDashboardData(
     val monthlyVolume: List<Pair<YearMonth, Double>>,
     val milestoneProgress: List<MilestoneProgress>,
     val strengthScore: StrengthScoreSummary?,
+    val workoutMetrics: List<HistoryWorkoutMetric>,
 )
 
 internal data class HistoryCalendarDay(
@@ -3701,17 +3797,42 @@ internal data class HistoryCalendarDay(
     val workoutCount: Int,
 )
 
-private data class HistoryWeekSnapshot(
+internal data class HistoryWeekSnapshot(
     val weekStart: LocalDate,
     val days: List<HistoryCalendarDay>,
     val workoutCount: Int,
 )
 
-private data class MilestoneProgress(
+internal data class MilestoneProgress(
     val title: String,
     val current: Int,
     val target: Int,
     val unit: String,
+    val achievedCount: Int,
+)
+
+internal enum class HistoryStatsFilter(val label: String, val days: Long?) {
+    AllTime("All time", null),
+    Last7Days("Last 7 days", 7L),
+    Last30Days("Last 30 days", 30L),
+}
+
+internal data class HistoryStatsPeriodData(
+    val workoutCount: Int,
+    val activeDayCount: Int,
+    val totalMinutes: Int,
+    val totalVolume: Double,
+    val completedSets: Int,
+    val loggedExercises: Int,
+    val averageDurationSeconds: Int,
+    val averageVolumePerWorkout: Double,
+    val averageSetsPerWorkout: Double,
+    val averageExercisesPerWorkout: Double,
+    val workoutsPerActiveDay: Double,
+    val weeklyPace: Double,
+    val longestWorkoutSeconds: Int,
+    val highestVolumeWorkout: Double,
+    val busiestDayWorkoutCount: Int,
 )
 
 private enum class HistoryCalendarMode(val label: String) {
@@ -3747,6 +3868,7 @@ private data class RewardVisualSpec(
 )
 
 private fun historyStatRewardIcon(title: String): ImageVector? = when (title) {
+    "Stats" -> Icons.Rounded.QueryStats
     "Milestones" -> Icons.Rounded.WorkspacePremium
     "Current Streak" -> Icons.Rounded.LocalFireDepartment
     else -> null
@@ -3837,6 +3959,7 @@ private fun streakRewardSpec(currentStreakWeeks: Int): RewardVisualSpec = when {
 private fun HistoryOverviewHeader(
     data: HistoryDashboardData,
     onOpenWorkouts: () -> Unit,
+    onOpenStats: () -> Unit,
     onOpenMilestones: () -> Unit,
     onOpenStreak: () -> Unit,
     onOpenCalendar: () -> Unit,
@@ -3847,12 +3970,13 @@ private fun HistoryOverviewHeader(
                 Text("History", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Black)
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
                     HistoryStatTile("Workouts", data.totalWorkouts.toString(), onClick = onOpenWorkouts, modifier = Modifier.weight(1f))
-                    HistoryStatTile("Milestones", data.milestoneProgress.count { it.current >= it.target }.toString(), onClick = onOpenMilestones, modifier = Modifier.weight(1f))
+                    HistoryStatTile("Milestones", data.milestoneProgress.sumOf { it.achievedCount }.toString(), onClick = onOpenMilestones, modifier = Modifier.weight(1f))
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
                     HistoryStatTile("Weekly Goal", "${data.currentWeekCount}/${data.weeklyGoal}", modifier = Modifier.weight(1f))
                     HistoryStatTile("Current Streak", "${data.currentStreakWeeks} week${if (data.currentStreakWeeks == 1) "" else "s"}", onClick = onOpenStreak, modifier = Modifier.weight(1f))
                 }
+                HistoryStatTile("Stats", "All / 7 / 30", onClick = onOpenStats, modifier = Modifier.fillMaxWidth())
             }
         }
         data.strengthScore?.let { score ->
@@ -5064,12 +5188,114 @@ private fun HistoryStatTile(
 }
 
 @Composable
+private fun HistoryStatsScreen(data: HistoryDashboardData, onBack: () -> Unit) {
+    var selectedFilterName by rememberSaveable { mutableStateOf(HistoryStatsFilter.AllTime.name) }
+    val selectedFilter = remember(selectedFilterName) {
+        HistoryStatsFilter.entries.firstOrNull { it.name == selectedFilterName } ?: HistoryStatsFilter.AllTime
+    }
+    val stats = remember(data.workoutMetrics, selectedFilter) {
+        buildHistoryStatsPeriodData(data.workoutMetrics, selectedFilter)
+    }
+
+    CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onBackground) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            HistoryDetailHeader(title = "Stats", onBack = onBack)
+            FeatureCard(containerColor = MaterialTheme.colorScheme.surface) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text("Stats", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black)
+                            Text(
+                                "${stats.workoutCount} workout${if (stats.workoutCount == 1) "" else "s"}",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Icon(
+                            imageVector = Icons.Rounded.QueryStats,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                    ChoiceChipRow(
+                        values = HistoryStatsFilter.entries.map(HistoryStatsFilter::label),
+                        selected = selectedFilter.label,
+                        onSelect = { label ->
+                            selectedFilterName = HistoryStatsFilter.entries
+                                .firstOrNull { it.label == label }
+                                ?.name
+                                ?: HistoryStatsFilter.AllTime.name
+                        },
+                    )
+                }
+            }
+
+            if (stats.workoutCount == 0) {
+                FeatureCard(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.48f)) {
+                    Text(
+                        text = "No completed workouts in this range yet.",
+                        modifier = Modifier.padding(16.dp),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            } else {
+                StatRail(
+                    items = listOf(
+                        Triple("Workouts", stats.workoutCount.toString(), selectedFilter.label),
+                        Triple("Active days", stats.activeDayCount.toString(), "training days"),
+                        Triple("Weekly pace", "${decimalString(stats.weeklyPace)}/wk", "average"),
+                    ),
+                )
+                StatRail(
+                    items = listOf(
+                        Triple("Total time", formatMinutes(stats.totalMinutes * 60), "logged"),
+                        Triple("Avg duration", formatMinutes(stats.averageDurationSeconds), "per workout"),
+                        Triple("Longest", formatMinutes(stats.longestWorkoutSeconds), "single workout"),
+                    ),
+                )
+                StatRail(
+                    items = listOf(
+                        Triple("Volume", formatVolume(stats.totalVolume), "total"),
+                        Triple("Avg volume", formatVolume(stats.averageVolumePerWorkout), "per workout"),
+                        Triple("Best volume", formatVolume(stats.highestVolumeWorkout), "single workout"),
+                    ),
+                )
+                StatRail(
+                    items = listOf(
+                        Triple("Sets", stats.completedSets.toString(), "completed"),
+                        Triple("Avg sets", decimalString(stats.averageSetsPerWorkout), "per workout"),
+                        Triple("Exercises", stats.loggedExercises.toString(), "logged"),
+                    ),
+                )
+                StatRail(
+                    items = listOf(
+                        Triple("Avg exercises", decimalString(stats.averageExercisesPerWorkout), "per workout"),
+                        Triple("Density", decimalString(stats.workoutsPerActiveDay), "workouts/day"),
+                        Triple("Busiest day", stats.busiestDayWorkoutCount.toString(), "workouts"),
+                    ),
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun HistoryWorkoutStatsScreen(data: HistoryDashboardData, onBack: () -> Unit) {
     CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onBackground) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(16.dp),
+                .padding(16.dp)
+                .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             HistoryDetailHeader(title = "Workouts", onBack = onBack)
@@ -5080,6 +5306,13 @@ private fun HistoryWorkoutStatsScreen(data: HistoryDashboardData, onBack: () -> 
                             Triple("Total workouts", data.totalWorkouts.toString(), ""),
                             Triple("Total time", formatMinutes(data.totalMinutes * 60), ""),
                             Triple("Longest streak", "${data.longestStreakWeeks} wk", ""),
+                        ),
+                    )
+                    StatRail(
+                        items = listOf(
+                            Triple("Completed sets", data.totalSets.toString(), ""),
+                            Triple("Logged exercises", data.totalExercises.toString(), ""),
+                            Triple("Active days", data.activeDayCount.toString(), ""),
                         ),
                     )
                     StatRail(
@@ -5116,7 +5349,8 @@ private fun HistoryMilestonesScreen(data: HistoryDashboardData, onBack: () -> Un
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(16.dp),
+                .padding(16.dp)
+                .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             HistoryDetailHeader(title = "Milestones", onBack = onBack)
@@ -5133,7 +5367,7 @@ private fun HistoryMilestonesScreen(data: HistoryDashboardData, onBack: () -> Un
                         modifier = Modifier.size(76.dp),
                         iconSize = 28.dp,
                     )
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Text("Milestones", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
                         Text(
                             "Track your workout consistency, training time, and total volume.",
@@ -5156,7 +5390,8 @@ private fun HistoryStreakScreen(data: HistoryDashboardData, onBack: () -> Unit) 
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(16.dp),
+                .padding(16.dp)
+                .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             HistoryDetailHeader(title = "Streak", onBack = onBack)
@@ -5439,16 +5674,20 @@ private fun ProgressPill(current: Int, target: Int, label: String, accent: GlowA
     }
 }
 
-private fun buildHistoryDashboardData(
+internal fun buildHistoryDashboardData(
     history: List<HistorySummary>,
+    historyWorkoutMetrics: List<HistoryWorkoutMetric>,
     weeklyGoal: Int,
     topExercise: String?,
     topEquipment: String?,
     strengthScore: StrengthScoreSummary?,
+    today: LocalDate = LocalDate.now(),
+    zoneId: ZoneId = ZoneId.systemDefault(),
 ): HistoryDashboardData {
-    val workoutDates = history.mapNotNull { historyStartedLocalDate(it) }
+    val metrics = effectiveHistoryWorkoutMetrics(history = history, historyWorkoutMetrics = historyWorkoutMetrics)
+    val workoutDates = metrics.mapNotNull { historyWorkoutMetricStartedLocalDate(it, zoneId) }
     val workoutCountsByDate = workoutDates.groupingBy { it }.eachCount()
-    val currentWeekStart = LocalDate.now().with(TemporalAdjusters.previousOrSame(java.time.DayOfWeek.SUNDAY))
+    val currentWeekStart = today.with(TemporalAdjusters.previousOrSame(java.time.DayOfWeek.SUNDAY))
     val currentWeekDays = (0L..6L).map { offset ->
         val date = currentWeekStart.plusDays(offset)
         HistoryCalendarDay(date = date, workoutCount = workoutCountsByDate[date] ?: 0)
@@ -5473,18 +5712,23 @@ private fun buildHistoryDashboardData(
         }
     }
     val monthlyVolume = (-5L..0L).map { offset ->
-        val month = YearMonth.now().plusMonths(offset)
-        month to history.filter {
-            historyStartedLocalDate(it)?.let(YearMonth::from) == month
+        val month = YearMonth.from(today).plusMonths(offset)
+        month to metrics.filter {
+            historyWorkoutMetricStartedLocalDate(it, zoneId)?.let(YearMonth::from) == month
         }.sumOf { it.totalVolume }
     }
-    val totalWorkouts = history.size
-    val totalMinutes = history.sumOf { it.durationSeconds } / 60
-    val totalVolume = history.sumOf { it.totalVolume }
+    val totalWorkouts = metrics.size
+    val totalMinutes = metrics.sumOf { it.durationSeconds } / 60
+    val totalVolume = metrics.sumOf { it.totalVolume }
+    val totalSets = metrics.sumOf { it.setCount }
+    val totalExercises = metrics.sumOf { it.exerciseCount }
     return HistoryDashboardData(
         totalWorkouts = totalWorkouts,
         totalMinutes = totalMinutes,
         totalVolume = totalVolume,
+        totalSets = totalSets,
+        totalExercises = totalExercises,
+        activeDayCount = workoutDates.toSet().size,
         weeklyGoal = weeklyGoal,
         currentWeekCount = currentWeekDays.sumOf { it.workoutCount },
         currentStreakWeeks = currentStreak,
@@ -5495,11 +5739,106 @@ private fun buildHistoryDashboardData(
         streakWeeks = streakWeeks,
         monthlyVolume = monthlyVolume,
         milestoneProgress = listOf(
-            MilestoneProgress("Volume", totalVolume.toInt(), nextMilestone(totalVolume.toInt(), listOf(10_000, 25_000, 50_000, 100_000)), "lb"),
-            MilestoneProgress("Workouts", totalWorkouts, nextMilestone(totalWorkouts, listOf(10, 20, 50, 100)), "workouts"),
-            MilestoneProgress("Minutes", totalMinutes, nextMilestone(totalMinutes, listOf(300, 600, 1_200, 2_400)), "min"),
+            buildMilestoneProgress("Volume", totalVolume.toInt(), listOf(10_000, 25_000, 50_000, 100_000), "lb"),
+            buildMilestoneProgress("Workouts", totalWorkouts, listOf(10, 20, 50, 100), "workouts"),
+            buildMilestoneProgress("Minutes", totalMinutes, listOf(300, 600, 1_200, 2_400), "min"),
         ),
         strengthScore = strengthScore,
+        workoutMetrics = metrics,
+    )
+}
+
+private fun buildMilestoneProgress(
+    title: String,
+    current: Int,
+    thresholds: List<Int>,
+    unit: String,
+): MilestoneProgress {
+    return MilestoneProgress(
+        title = title,
+        current = current,
+        target = nextMilestone(current, thresholds),
+        unit = unit,
+        achievedCount = thresholds.count { current >= it },
+    )
+}
+
+private fun effectiveHistoryWorkoutMetrics(
+    history: List<HistorySummary>,
+    historyWorkoutMetrics: List<HistoryWorkoutMetric>,
+): List<HistoryWorkoutMetric> {
+    if (historyWorkoutMetrics.isNotEmpty() || history.isEmpty()) return historyWorkoutMetrics
+    return history.map { summary ->
+        HistoryWorkoutMetric(
+            id = summary.id,
+            completedAtUtc = summary.completedAtUtc,
+            startedAtUtc = summary.startedAtUtc,
+            durationSeconds = summary.durationSeconds,
+            totalVolume = summary.totalVolume,
+            exerciseCount = summary.exerciseCount,
+            setCount = summary.setCount,
+        )
+    }
+}
+
+internal fun buildHistoryStatsPeriodData(
+    metrics: List<HistoryWorkoutMetric>,
+    filter: HistoryStatsFilter,
+    today: LocalDate = LocalDate.now(),
+    zoneId: ZoneId = ZoneId.systemDefault(),
+): HistoryStatsPeriodData {
+    val datedMetrics = metrics.mapNotNull { metric ->
+        historyWorkoutMetricStartedLocalDate(metric, zoneId)?.let { date -> metric to date }
+    }
+    val filteredMetrics = filter.days?.let { days ->
+        val startDate = today.minusDays(days - 1L)
+        datedMetrics
+            .filter { (_, date) -> !date.isBefore(startDate) && !date.isAfter(today) }
+            .map { (metric, _) -> metric }
+    } ?: metrics
+    val filteredDates = filter.days?.let { days ->
+        val startDate = today.minusDays(days - 1L)
+        datedMetrics
+            .map { (_, date) -> date }
+            .filter { date -> !date.isBefore(startDate) && !date.isAfter(today) }
+    } ?: datedMetrics.map { (_, date) -> date }
+
+    val workoutCount = filteredMetrics.size
+    val totalSeconds = filteredMetrics.sumOf { it.durationSeconds }
+    val totalVolume = filteredMetrics.sumOf { it.totalVolume }
+    val completedSets = filteredMetrics.sumOf { it.setCount }
+    val loggedExercises = filteredMetrics.sumOf { it.exerciseCount }
+    val activeDayCount = filteredDates.toSet().size
+    val busiestDayWorkoutCount = filteredDates.groupingBy { it }.eachCount().values.maxOrNull() ?: 0
+    val activeWeekCount = filteredDates
+        .map { it.with(TemporalAdjusters.previousOrSame(java.time.DayOfWeek.SUNDAY)) }
+        .toSet()
+        .size
+        .coerceAtLeast(1)
+    val weeklyPace = filter.days?.let { days ->
+        workoutCount.toDouble() * 7.0 / days.toDouble()
+    } ?: if (workoutCount == 0) {
+        0.0
+    } else {
+        workoutCount.toDouble() / activeWeekCount.toDouble()
+    }
+
+    return HistoryStatsPeriodData(
+        workoutCount = workoutCount,
+        activeDayCount = activeDayCount,
+        totalMinutes = totalSeconds / 60,
+        totalVolume = totalVolume,
+        completedSets = completedSets,
+        loggedExercises = loggedExercises,
+        averageDurationSeconds = if (workoutCount == 0) 0 else totalSeconds / workoutCount,
+        averageVolumePerWorkout = if (workoutCount == 0) 0.0 else totalVolume / workoutCount.toDouble(),
+        averageSetsPerWorkout = if (workoutCount == 0) 0.0 else completedSets.toDouble() / workoutCount.toDouble(),
+        averageExercisesPerWorkout = if (workoutCount == 0) 0.0 else loggedExercises.toDouble() / workoutCount.toDouble(),
+        workoutsPerActiveDay = if (activeDayCount == 0) 0.0 else workoutCount.toDouble() / activeDayCount.toDouble(),
+        weeklyPace = weeklyPace,
+        longestWorkoutSeconds = filteredMetrics.maxOfOrNull { it.durationSeconds } ?: 0,
+        highestVolumeWorkout = filteredMetrics.maxOfOrNull { it.totalVolume } ?: 0.0,
+        busiestDayWorkoutCount = busiestDayWorkoutCount,
     )
 }
 
@@ -5525,6 +5864,17 @@ internal fun historyStartedLocalDate(
         Instant.parse(summary.startedAtUtc).atZone(zoneId).toLocalDate()
     }.getOrNull() ?: runCatching {
         Instant.parse(summary.completedAtUtc).atZone(zoneId).toLocalDate()
+    }.getOrNull()
+}
+
+internal fun historyWorkoutMetricStartedLocalDate(
+    metric: HistoryWorkoutMetric,
+    zoneId: ZoneId = ZoneId.systemDefault(),
+): LocalDate? {
+    return runCatching {
+        Instant.parse(metric.startedAtUtc).atZone(zoneId).toLocalDate()
+    }.getOrNull() ?: runCatching {
+        Instant.parse(metric.completedAtUtc).atZone(zoneId).toLocalDate()
     }.getOrNull()
 }
 
@@ -6362,10 +6712,11 @@ private fun CompactSectionCard(
     title: String,
     subtitle: String,
     menuItems: List<Pair<String, () -> Unit>> = emptyList(),
+    modifier: Modifier = Modifier,
     content: @Composable () -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
-    FeatureCard(accentKey = "$title $subtitle") {
+    FeatureCard(modifier = modifier, accentKey = "$title $subtitle") {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
                 Column(modifier = Modifier.weight(1f)) {

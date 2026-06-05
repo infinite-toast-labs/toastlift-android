@@ -54,6 +54,7 @@ import dev.toastlabs.toastlift.data.HistoryShareFormat
 import dev.toastlabs.toastlift.data.HistoryReuseMode
 import dev.toastlabs.toastlift.data.HistorySummary
 import dev.toastlabs.toastlift.data.HistoryDetail
+import dev.toastlabs.toastlift.data.HistoryWorkoutMetric
 import dev.toastlabs.toastlift.data.LibraryFacets
 import dev.toastlabs.toastlift.data.LibraryFilters
 import dev.toastlabs.toastlift.data.LocationMode
@@ -369,6 +370,7 @@ internal data class AppUiState(
     val templates: List<TemplateSummary> = emptyList(),
     val templateExerciseIds: Map<Long, Set<Long>> = emptyMap(),
     val history: List<HistorySummary> = emptyList(),
+    val historyWorkoutMetrics: List<HistoryWorkoutMetric> = emptyList(),
     val historyTopExercise: String? = null,
     val historyTopEquipment: String? = null,
     val historyStrengthScore: StrengthScoreSummary? = null,
@@ -2019,6 +2021,7 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
             val templateExerciseIds = container.workoutRepository.loadTemplateExerciseIds()
             val historyStrengthScore = container.workoutRepository.loadStrengthScoreSummary()
             val history = container.workoutRepository.loadHistory(historyStrengthScore)
+            val historyWorkoutMetrics = container.workoutRepository.loadHistoryWorkoutMetrics()
             val recommendationHistory = container.generatorRepository.loadHistoricalSetsForRecommendations()
             val historyTopExercise = container.workoutRepository.loadTopPerformedExercise()
             val historyTopEquipment = container.workoutRepository.loadTopPerformedEquipment()
@@ -2122,6 +2125,7 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
                 templates = templates,
                 templateExerciseIds = templateExerciseIds,
                 history = history,
+                historyWorkoutMetrics = historyWorkoutMetrics,
                 historyTopExercise = historyTopExercise,
                 historyTopEquipment = historyTopEquipment,
                 historyStrengthScore = historyStrengthScore,
@@ -4230,6 +4234,7 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
             val currentDetail = workoutId?.let { container.workoutRepository.loadHistoryDetail(it) }
             val afterStrengthScore = container.workoutRepository.loadStrengthScoreSummary()
             val afterHistory = container.workoutRepository.loadHistory(afterStrengthScore)
+            val afterHistoryWorkoutMetrics = container.workoutRepository.loadHistoryWorkoutMetrics()
             val todayReceiptRecap = buildTodayReceiptRecapState(afterHistory)
             val afterWeeklyTargets = profile?.let { loadWeeklyMuscleTargetSummary(it) }
             val afterProgramSessions = activeProgram?.let { container.programRepository.loadSessionsForProgram(it.id) }.orEmpty()
@@ -4316,6 +4321,7 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
                 showSfrDebrief = false,
                 sfrDebriefExercises = emptyList(),
                 history = afterHistory,
+                historyWorkoutMetrics = afterHistoryWorkoutMetrics,
                 historyStrengthScore = afterStrengthScore,
                 todayReceiptRecap = todayReceiptRecap,
                 completionReceipt = receiptSnapshot?.let { CompletionReceiptUiState(snapshot = it) },
