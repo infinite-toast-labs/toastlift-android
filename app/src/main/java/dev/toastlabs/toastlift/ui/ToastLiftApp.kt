@@ -7,6 +7,7 @@ import android.net.Uri
 import android.provider.Settings
 import android.util.Log
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
@@ -2551,6 +2552,7 @@ private fun TrainingFreshnessDashboardScreen(
             sort = sort,
         )
     }
+    BackHandler(onBack = onBack)
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -3400,6 +3402,9 @@ private fun HistoryScreen(
                 HistoryMovementFilter.Laterality -> insight.kind == "laterality"
             }
         }
+    }
+    BackHandler(enabled = destination != "dashboard") {
+        destination = "dashboard"
     }
 
     if (destination == "workouts") {
@@ -7115,6 +7120,7 @@ private fun BuilderAddExercisesScreen(
     var showMenu by remember { mutableStateOf(false) }
     val freshnessFilterLabels = libraryFreshnessMuscleFilterLabels(state.libraryFilters)
     val muscleTargetFilterLabels = libraryMuscleTargetFilterLabels(state.libraryFilters)
+    BackHandler(enabled = !showFilterScreen, onBack = onDismiss)
 
     if (showFilterScreen) {
         BuilderFilterScreen(
@@ -7608,6 +7614,7 @@ private fun BuilderFilterScreen(
     onClearFreshnessMuscleFilters: () -> Unit,
     onClearMuscleTargetFilters: () -> Unit,
 ) {
+    BackHandler(onBack = onDismiss)
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -8006,6 +8013,10 @@ private fun ActiveSessionAddExerciseScreen(
     onPendingSelectionConsumed: () -> Unit,
     onShowDetail: (Long) -> Unit,
 ) {
+    BackHandler(
+        enabled = state.activeSessionAddExerciseMode != ActiveSessionAddExerciseMode.Manual,
+        onBack = onBack,
+    )
     when (state.activeSessionAddExerciseMode) {
         ActiveSessionAddExerciseMode.Choice -> ActiveSessionAddExerciseModeScreen(
             onDismiss = onBack,
@@ -8990,6 +9001,7 @@ private fun CustomExerciseEditorScreen(
     onUseExistingExercise: (ExerciseSummary) -> Unit,
     onSave: () -> Unit,
 ) {
+    BackHandler(onBack = onBack)
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
@@ -10742,6 +10754,7 @@ private fun SessionExerciseDetailScreen(
     val allSetsCompleted = exercise.sets.isNotEmpty() && exercise.sets.all { it.completed }
     val completedSets = exercise.sets.count { it.completed }
     val usesCustomWorkUnits = exercise.workUnits.isNotEmpty()
+    val closeExerciseEnabled = !allSetsCompleted || usesCustomWorkUnits || exercise.lastSetRepsInReserve != null
     val currentSetNumbers = exercise.sets.associate { it.id to it.setNumber }
     val currentSetNumberSnapshot = exercise.sets.map { it.id to it.setNumber }
     var animatedSetNumbers by remember(exercise.exerciseId) { mutableStateOf(currentSetNumbers) }
@@ -10757,6 +10770,13 @@ private fun SessionExerciseDetailScreen(
         }
         animatedSetNumbers = currentSetNumbers
         committedSetNumbers = currentSetNumbers
+    }
+    BackHandler(enabled = closeExerciseEnabled) {
+        if (allSetsCompleted) {
+            onFinishExercise(exerciseIndex)
+        } else {
+            onBack()
+        }
     }
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -10810,7 +10830,7 @@ private fun SessionExerciseDetailScreen(
                             onBack()
                         }
                     },
-                    enabled = !allSetsCompleted || usesCustomWorkUnits || exercise.lastSetRepsInReserve != null,
+                    enabled = closeExerciseEnabled,
                     modifier = Modifier.align(Alignment.TopStart).padding(8.dp),
                 ) {
                     Icon(imageVector = Icons.Rounded.Close, contentDescription = "Back to workout")
@@ -14579,6 +14599,7 @@ private fun ProgramSetupScreen(
     onStart: () -> Unit,
     onDismiss: () -> Unit,
 ) {
+    BackHandler(onBack = onDismiss)
     Surface(
         modifier = Modifier.fillMaxSize(),
         color = MaterialTheme.colorScheme.background,
