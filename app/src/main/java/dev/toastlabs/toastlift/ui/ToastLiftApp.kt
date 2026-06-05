@@ -643,6 +643,11 @@ private fun ToastLiftModalBottomSheet(
 }
 
 @Composable
+private fun ProtectWorkInProgressBackGesture(enabled: Boolean = true) {
+    BackHandler(enabled = enabled, onBack = {})
+}
+
+@Composable
 private fun SheetSystemBarAppearanceEffect() {
     val view = LocalView.current
     val isDarkTheme = LocalToastLiftIsDarkTheme.current
@@ -1662,6 +1667,7 @@ private fun TodayScreen(
             items = state.todayEditingTemplateItems,
             recommendationBiasByExerciseId = state.recommendationBiasByExerciseId,
             onDismiss = onCloseTemplateEditor,
+            protectBackGesture = true,
             onRemoveExercise = onRemoveTemplateExercise,
             onAddExercise = { showTemplateAddScreen = true },
             onOpenExerciseHistory = onOpenExerciseHistory,
@@ -6563,6 +6569,7 @@ private fun ManualBuilderSheet(
     items: List<WorkoutExercise>,
     recommendationBiasByExerciseId: Map<Long, RecommendationBias>,
     onDismiss: () -> Unit,
+    protectBackGesture: Boolean = false,
     onTitleChange: ((String) -> Unit)? = null,
     onRemoveExercise: (Long) -> Unit,
     onAddExercise: () -> Unit,
@@ -6572,6 +6579,7 @@ private fun ManualBuilderSheet(
     onStartWorkout: () -> Unit,
 ) {
     ToastLiftModalBottomSheet(onDismissRequest = onDismiss) {
+        ProtectWorkInProgressBackGesture(enabled = protectBackGesture)
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -7123,7 +7131,7 @@ private fun BuilderAddExercisesScreen(
     var showMenu by remember { mutableStateOf(false) }
     val freshnessFilterLabels = libraryFreshnessMuscleFilterLabels(state.libraryFilters)
     val muscleTargetFilterLabels = libraryMuscleTargetFilterLabels(state.libraryFilters)
-    BackHandler(enabled = !showFilterScreen, onBack = onDismiss)
+    ProtectWorkInProgressBackGesture(enabled = !showFilterScreen)
 
     if (showFilterScreen) {
         BuilderFilterScreen(
@@ -7617,7 +7625,7 @@ private fun BuilderFilterScreen(
     onClearFreshnessMuscleFilters: () -> Unit,
     onClearMuscleTargetFilters: () -> Unit,
 ) {
-    BackHandler(onBack = onDismiss)
+    ProtectWorkInProgressBackGesture()
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -8017,8 +8025,11 @@ private fun ActiveSessionAddExerciseScreen(
     onShowDetail: (Long) -> Unit,
 ) {
     BackHandler(
-        enabled = state.activeSessionAddExerciseMode != ActiveSessionAddExerciseMode.Manual,
+        enabled = state.activeSessionAddExerciseMode == ActiveSessionAddExerciseMode.Choice,
         onBack = onBack,
+    )
+    ProtectWorkInProgressBackGesture(
+        enabled = state.activeSessionAddExerciseMode == ActiveSessionAddExerciseMode.Generated,
     )
     when (state.activeSessionAddExerciseMode) {
         ActiveSessionAddExerciseMode.Choice -> ActiveSessionAddExerciseModeScreen(
@@ -9004,7 +9015,7 @@ private fun CustomExerciseEditorScreen(
     onUseExistingExercise: (ExerciseSummary) -> Unit,
     onSave: () -> Unit,
 ) {
-    BackHandler(onBack = onBack)
+    ProtectWorkInProgressBackGesture()
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
@@ -10774,13 +10785,7 @@ private fun SessionExerciseDetailScreen(
         animatedSetNumbers = currentSetNumbers
         committedSetNumbers = currentSetNumbers
     }
-    BackHandler(enabled = closeExerciseEnabled) {
-        if (allSetsCompleted) {
-            onFinishExercise(exerciseIndex)
-        } else {
-            onBack()
-        }
-    }
+    ProtectWorkInProgressBackGesture()
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
@@ -14628,7 +14633,7 @@ private fun ProgramSetupScreen(
     onStart: () -> Unit,
     onDismiss: () -> Unit,
 ) {
-    BackHandler(onBack = onDismiss)
+    ProtectWorkInProgressBackGesture()
     Surface(
         modifier = Modifier.fillMaxSize(),
         color = MaterialTheme.colorScheme.background,
