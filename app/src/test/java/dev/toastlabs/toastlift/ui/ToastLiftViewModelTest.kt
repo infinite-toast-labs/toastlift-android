@@ -187,6 +187,25 @@ class ToastLiftViewModelTest {
     }
 
     @Test
+    fun muscleTargetLibraryFilters_selectsOnlyMuscleTargetSubcategory() {
+        val filters = muscleTargetLibraryFilters(
+            bucketKey = null,
+            subcategoryKey = "Chest",
+        )
+
+        assertEquals(setOf("chest"), filters.muscleTargetSubcategoryKeys)
+        assertEquals(1, filters.activeCount())
+        assertTrue(filters.muscleTargetBucketKeys.isEmpty())
+        assertTrue(filters.equipment.isEmpty())
+        assertTrue(filters.targetMuscles.isEmpty())
+        assertTrue(filters.primeMovers.isEmpty())
+        assertTrue(filters.freshnessMuscleKeys.isEmpty())
+        assertTrue(filters.recommendationBiases.isEmpty())
+        assertFalse(filters.favoritesOnly)
+        assertFalse(filters.hasLoggedHistoryOnly)
+    }
+
+    @Test
     fun libraryFreshnessMuscleFilterLabel_resolvesKnownFreshnessSlot() {
         assertEquals("Lower Back", libraryFreshnessMuscleFilterLabel("erector_spinae"))
     }

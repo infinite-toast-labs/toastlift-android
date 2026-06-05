@@ -1146,6 +1146,7 @@ fun ToastLiftApp(
                                         onOpenWorkout = viewModel::openHistoryWorkout,
                                         onShareWorkout = viewModel::prepareHistoryWorkoutShare,
                                         onDeleteWorkout = viewModel::deleteHistoryWorkout,
+                                        onOpenLibraryMuscleTarget = viewModel::openLibraryForMuscleTarget,
                                     )
                                     MainTab.Profile -> ProfileScreen(state = state, viewModel = viewModel)
                                 }
@@ -3373,6 +3374,7 @@ private fun HistoryScreen(
     onOpenWorkout: (Long) -> Unit,
     onShareWorkout: (Long, HistoryShareFormat) -> Unit,
     onDeleteWorkout: (Long) -> Unit,
+    onOpenLibraryMuscleTarget: (String) -> Unit,
 ) {
     var deleteTarget by remember { mutableStateOf<HistorySummary?>(null) }
     var shareTarget by remember { mutableStateOf<HistorySummary?>(null) }
@@ -3433,6 +3435,7 @@ private fun HistoryScreen(
         WeeklyMuscleTargetsDetailScreen(
             summary = weeklyMuscleTargets,
             onBack = { destination = "dashboard" },
+            onOpenLibraryMuscleTarget = onOpenLibraryMuscleTarget,
         )
         return
     }
@@ -14038,6 +14041,7 @@ private fun WeeklyMuscleTargetHexagon(
 private fun WeeklyMuscleTargetsDetailScreen(
     summary: WeeklyMuscleTargetSummary,
     onBack: () -> Unit,
+    onOpenLibraryMuscleTarget: (String) -> Unit,
 ) {
     LazyColumn(
         modifier = Modifier
@@ -14059,14 +14063,20 @@ private fun WeeklyMuscleTargetsDetailScreen(
             )
         }
         item {
-            WeeklyMuscleTargetsCard(summary = summary)
+            WeeklyMuscleTargetsCard(
+                summary = summary,
+                onOpenLibraryMuscleTarget = onOpenLibraryMuscleTarget,
+            )
         }
     }
 }
 
 @Composable
 @OptIn(ExperimentalLayoutApi::class)
-private fun WeeklyMuscleTargetsCard(summary: WeeklyMuscleTargetSummary) {
+private fun WeeklyMuscleTargetsCard(
+    summary: WeeklyMuscleTargetSummary,
+    onOpenLibraryMuscleTarget: (String) -> Unit,
+) {
     val expandedByGroup = remember(summary.weekNumber) {
         mutableStateMapOf<String, Boolean>().apply {
             summary.groupSummaries.forEach { put(it.key, false) }
@@ -14140,6 +14150,7 @@ private fun WeeklyMuscleTargetsCard(summary: WeeklyMuscleTargetSummary) {
                         summary = group,
                         expanded = expandedByGroup[group.key] == true,
                         onToggle = { expandedByGroup[group.key] = expandedByGroup[group.key] != true },
+                        onOpenLibraryMuscleTarget = onOpenLibraryMuscleTarget,
                     )
                 }
             }
@@ -14173,6 +14184,7 @@ private fun WeeklyMuscleTargetGroupCard(
     summary: WeeklyMuscleTargetGroupSummary,
     expanded: Boolean,
     onToggle: () -> Unit,
+    onOpenLibraryMuscleTarget: (String) -> Unit,
 ) {
     val accent = weeklyMuscleAccent(summary.key)
     val progress = if (summary.targetSets > 0.0) {
@@ -14270,8 +14282,25 @@ private fun WeeklyMuscleTargetGroupCard(
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
                     summary.muscleSummaries.forEach { muscle ->
+                        val rowModifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 48.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .let { base ->
+                                if (muscle.key.isBlank()) {
+                                    base
+                                } else {
+                                    base
+                                        .clickable(onClick = { onOpenLibraryMuscleTarget(muscle.key) })
+                                        .semantics {
+                                            contentDescription = "Open Library filtered to ${muscle.label}"
+                                            role = Role.Button
+                                        }
+                                }
+                            }
+                            .padding(horizontal = 8.dp, vertical = 6.dp)
                         Row(
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = rowModifier,
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically,
                         ) {

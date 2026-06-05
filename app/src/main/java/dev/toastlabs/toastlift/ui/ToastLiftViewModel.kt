@@ -700,7 +700,7 @@ internal fun libraryFreshnessMuscleFilterLabel(muscleKey: String): String {
         ?: normalizedKey.toReadableFreshnessMuscleLabel()
 }
 
-internal fun activeSessionMuscleTargetLibraryFilters(
+internal fun muscleTargetLibraryFilters(
     bucketKey: String?,
     subcategoryKey: String?,
 ): LibraryFilters {
@@ -711,6 +711,14 @@ internal fun activeSessionMuscleTargetLibraryFilters(
         muscleTargetSubcategoryKeys = listOfNotNull(resolvedSubcategory).toSet(),
     )
 }
+
+internal fun activeSessionMuscleTargetLibraryFilters(
+    bucketKey: String?,
+    subcategoryKey: String?,
+): LibraryFilters = muscleTargetLibraryFilters(
+    bucketKey = bucketKey,
+    subcategoryKey = subcategoryKey,
+)
 
 internal fun libraryMuscleTargetFilterSelection(filters: LibraryFilters): LibraryMuscleTargetFilterSelection {
     return LibraryMuscleTargetFilterSelection(
@@ -2627,6 +2635,22 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
             libraryFilters = uiState.libraryFilters.copy(
                 hasLoggedHistoryOnly = !uiState.libraryFilters.hasLoggedHistoryOnly,
             ),
+        )
+        refreshLibrary()
+    }
+
+    fun openLibraryForMuscleTarget(subcategoryKey: String) {
+        val targetFilters = muscleTargetLibraryFilters(
+            bucketKey = null,
+            subcategoryKey = subcategoryKey,
+        )
+        if (targetFilters.muscleTargetBucketKeys.isEmpty() && targetFilters.muscleTargetSubcategoryKeys.isEmpty()) return
+        uiState = uiState.copy(
+            selectedTab = MainTab.Library,
+            librarySearchVisible = false,
+            libraryQuery = "",
+            libraryFilters = targetFilters,
+            message = null,
         )
         refreshLibrary()
     }
