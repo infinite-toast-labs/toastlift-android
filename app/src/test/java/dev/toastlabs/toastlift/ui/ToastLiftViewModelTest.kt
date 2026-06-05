@@ -334,6 +334,53 @@ class ToastLiftViewModelTest {
     }
 
     @Test
+    fun activeSessionBodyRegionFilterOptions_countsUpperLowerCoreAndFullBody() {
+        val session = ActiveSession(
+            title = "Mixed Day",
+            origin = "manual",
+            locationModeId = 2L,
+            startedAtUtc = "2026-03-20T10:00:00Z",
+            exercises = listOf(
+                sessionExercise(id = 101L, name = "Bench Press", completedSets = listOf(false), bodyRegion = "Upper Body"),
+                sessionExercise(id = 202L, name = "Squat", completedSets = listOf(false), bodyRegion = "Lower Body"),
+                sessionExercise(id = 303L, name = "Plank", completedSets = listOf(false), bodyRegion = "Core"),
+                sessionExercise(id = 404L, name = "Burpee", completedSets = listOf(false), bodyRegion = "Full Body"),
+            ),
+        )
+
+        val countsByKey = activeSessionBodyRegionFilterOptions(session).associate { it.key to it.matchingExerciseCount }
+
+        assertEquals(1, countsByKey["upper"])
+        assertEquals(1, countsByKey["lower"])
+        assertEquals(1, countsByKey["core"])
+        assertEquals(1, countsByKey["full_body"])
+    }
+
+    @Test
+    fun orderedSessionExercises_withBodyRegionFilter_keepsMatchingBodyAreaExercises() {
+        val session = ActiveSession(
+            title = "Mixed Day",
+            origin = "manual",
+            locationModeId = 2L,
+            startedAtUtc = "2026-03-20T10:00:00Z",
+            exercises = listOf(
+                sessionExercise(id = 101L, name = "Bench Press", completedSets = listOf(false), bodyRegion = "Upper Body"),
+                sessionExercise(id = 202L, name = "Squat", completedSets = listOf(false), bodyRegion = "Lower Body"),
+                sessionExercise(id = 303L, name = "Plank", completedSets = listOf(false), bodyRegion = "Core"),
+                sessionExercise(id = 404L, name = "Burpee", completedSets = listOf(false), bodyRegion = "Full Body"),
+            ),
+        )
+
+        val orderedNames = orderedSessionExercises(
+            session = session,
+            equipmentFilter = null,
+            bodyRegionFilterKey = "lower",
+        ).map { it.value.name }
+
+        assertEquals(listOf("Squat"), orderedNames)
+    }
+
+    @Test
     fun activeSessionMuscleFilterOptions_usesTrainingFreshnessMuscleCategories() {
         val session = ActiveSession(
             title = "Pull Day",
@@ -460,6 +507,30 @@ class ToastLiftViewModelTest {
         )
 
         assertEquals(2, pickedIndex)
+    }
+
+    @Test
+    fun pickNextSessionExerciseIndex_respectsBodyRegionFilter() {
+        val session = ActiveSession(
+            title = "Mixed Day",
+            origin = "manual",
+            locationModeId = 2L,
+            startedAtUtc = "2026-03-20T10:00:00Z",
+            exercises = listOf(
+                sessionExercise(id = 101L, name = "Bench Press", completedSets = listOf(false), bodyRegion = "Upper Body"),
+                sessionExercise(id = 202L, name = "Squat", completedSets = listOf(false), bodyRegion = "Lower Body"),
+            ),
+        )
+
+        val pickedIndex = pickNextSessionExerciseIndex(
+            session = session,
+            smartTargetMuscle = null,
+            exerciseDetailsById = emptyMap(),
+            bodyRegionFilterKey = "lower",
+            random = Random(0),
+        )
+
+        assertEquals(1, pickedIndex)
     }
 
     @Test
@@ -937,13 +1008,14 @@ class ToastLiftViewModelTest {
         completedSets: List<Boolean>,
         activitySequence: Int? = null,
         completionSequence: Int? = null,
+        bodyRegion: String = "Upper Body",
         targetMuscleGroup: String = "Chest",
         equipment: String = "Cable",
     ): SessionExercise {
         return SessionExercise(
             exerciseId = id,
             name = name,
-            bodyRegion = "Upper Body",
+            bodyRegion = bodyRegion,
             targetMuscleGroup = targetMuscleGroup,
             equipment = equipment,
             restSeconds = 90,

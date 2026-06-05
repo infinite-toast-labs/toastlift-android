@@ -34,6 +34,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.rememberDraggableState
@@ -733,6 +734,7 @@ fun ToastLiftApp(
     val latestPendingWorkoutShare = rememberUpdatedState(state.pendingWorkoutShare)
     var isGenerateFullscreenFlow by remember { mutableStateOf(false) }
     var isTodayFullscreenFlow by remember { mutableStateOf(false) }
+    val historyNavigationState = rememberHistoryNavigationState()
     val createExportDocument = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/json"),
     ) { uri ->
@@ -1148,6 +1150,7 @@ fun ToastLiftApp(
                                     )
 
                                     MainTab.History -> HistoryScreen(
+                                        navigationState = historyNavigationState,
                                         profile = state.profile,
                                         history = state.history,
                                         historyWorkoutMetrics = state.historyWorkoutMetrics,
@@ -3506,7 +3509,56 @@ private fun historyMuscleFilterFor(muscle: String): HistoryMuscleFilter? = when 
 }
 
 @Composable
+private fun rememberHistoryNavigationState(): HistoryNavigationState {
+    val dashboardListState = rememberLazyListState()
+    val weeklyMuscleTargetsListState = rememberLazyListState()
+    val workoutStatsScrollState = rememberScrollState()
+    val statsScrollState = rememberScrollState()
+    val milestonesScrollState = rememberScrollState()
+    val streakScrollState = rememberScrollState()
+    val calendarScrollState = rememberScrollState()
+    val tokenBalanceScrollState = rememberScrollState()
+
+    return remember {
+        HistoryNavigationState(
+            dashboardListState = dashboardListState,
+            weeklyMuscleTargetsListState = weeklyMuscleTargetsListState,
+            workoutStatsScrollState = workoutStatsScrollState,
+            statsScrollState = statsScrollState,
+            milestonesScrollState = milestonesScrollState,
+            streakScrollState = streakScrollState,
+            calendarScrollState = calendarScrollState,
+            tokenBalanceScrollState = tokenBalanceScrollState,
+        )
+    }
+}
+
+private class HistoryNavigationState(
+    val dashboardListState: LazyListState,
+    val weeklyMuscleTargetsListState: LazyListState,
+    val workoutStatsScrollState: ScrollState,
+    val statsScrollState: ScrollState,
+    val milestonesScrollState: ScrollState,
+    val streakScrollState: ScrollState,
+    val calendarScrollState: ScrollState,
+    val tokenBalanceScrollState: ScrollState,
+) {
+    var destination by mutableStateOf("dashboard")
+    var selectedMuscleFilter by mutableStateOf(HistoryMuscleFilter.All)
+    var selectedMovementFilter by mutableStateOf(HistoryMovementFilter.All)
+    var calendarModeName by mutableStateOf(HistoryCalendarMode.Week.name)
+    var calendarWeekPage by mutableStateOf<Int?>(null)
+    var calendarMonthPage by mutableStateOf<Int?>(null)
+    var selectedWeekDateKey by mutableStateOf<String?>(null)
+    var selectedMonthDateKey by mutableStateOf<String?>(null)
+    var statsFilterName by mutableStateOf(HistoryStatsFilter.AllTime.name)
+    var tokenBalanceWindow by mutableStateOf(TokenBalanceWindow.Last7Days)
+    val weeklyMuscleTargetExpandedGroups: SnapshotStateMap<String, Boolean> = mutableStateMapOf()
+}
+
+@Composable
 private fun HistoryScreen(
+    navigationState: HistoryNavigationState,
     profile: UserProfile?,
     history: List<HistorySummary>,
     historyWorkoutMetrics: List<HistoryWorkoutMetric>,
@@ -3524,9 +3576,6 @@ private fun HistoryScreen(
 ) {
     var deleteTarget by remember { mutableStateOf<HistorySummary?>(null) }
     var shareTarget by remember { mutableStateOf<HistorySummary?>(null) }
-    var destination by remember { mutableStateOf("dashboard") }
-    var selectedMuscleFilter by remember { mutableStateOf(HistoryMuscleFilter.All) }
-    var selectedMovementFilter by remember { mutableStateOf(HistoryMovementFilter.All) }
     val dashboard = remember(history, historyWorkoutMetrics, profile, topExercise, topEquipment, strengthScore) {
         buildHistoryDashboardData(
             history = history,
@@ -3537,14 +3586,15 @@ private fun HistoryScreen(
             strengthScore = strengthScore,
         )
     }
-    val filteredHistoricalMuscles = remember(historicalMuscleInsights, selectedMuscleFilter) {
+    val filteredHistoricalMuscles = remember(historicalMuscleInsights, navigationState.selectedMuscleFilter) {
         historicalMuscleInsights.filter { insight ->
-            selectedMuscleFilter == HistoryMuscleFilter.All || historyMuscleFilterFor(insight.muscle) == selectedMuscleFilter
+            navigationState.selectedMuscleFilter == HistoryMuscleFilter.All ||
+                historyMuscleFilterFor(insight.muscle) == navigationState.selectedMuscleFilter
         }
     }
-    val filteredHistoricalMovements = remember(historicalMovementInsights, selectedMovementFilter) {
+    val filteredHistoricalMovements = remember(historicalMovementInsights, navigationState.selectedMovementFilter) {
         historicalMovementInsights.filter { insight ->
-            when (selectedMovementFilter) {
+            when (navigationState.selectedMovementFilter) {
                 HistoryMovementFilter.All -> true
                 HistoryMovementFilter.Patterns -> insight.kind == "pattern"
                 HistoryMovementFilter.Planes -> insight.kind == "plane"
@@ -3552,53 +3602,78 @@ private fun HistoryScreen(
             }
         }
     }
-    BackHandler(enabled = destination != "dashboard") {
-        destination = "dashboard"
+    BackHandler(enabled = navigationState.destination != "dashboard") {
+        navigationState.destination = "dashboard"
     }
 
-    if (destination == "workouts") {
-        HistoryWorkoutStatsScreen(data = dashboard, onBack = { destination = "dashboard" })
+    if (navigationState.destination == "workouts") {
+        HistoryWorkoutStatsScreen(
+            data = dashboard,
+            scrollState = navigationState.workoutStatsScrollState,
+            onBack = { navigationState.destination = "dashboard" },
+        )
         return
     }
-    if (destination == "stats") {
-        HistoryStatsScreen(data = dashboard, onBack = { destination = "dashboard" })
+    if (navigationState.destination == "stats") {
+        HistoryStatsScreen(
+            data = dashboard,
+            selectedFilterName = navigationState.statsFilterName,
+            onSelectedFilterNameChange = { navigationState.statsFilterName = it },
+            scrollState = navigationState.statsScrollState,
+            onBack = { navigationState.destination = "dashboard" },
+        )
         return
     }
-    if (destination == "milestones") {
-        HistoryMilestonesScreen(data = dashboard, onBack = { destination = "dashboard" })
+    if (navigationState.destination == "milestones") {
+        HistoryMilestonesScreen(
+            data = dashboard,
+            scrollState = navigationState.milestonesScrollState,
+            onBack = { navigationState.destination = "dashboard" },
+        )
         return
     }
-    if (destination == "streak") {
-        HistoryStreakScreen(data = dashboard, onBack = { destination = "dashboard" })
+    if (navigationState.destination == "streak") {
+        HistoryStreakScreen(
+            data = dashboard,
+            scrollState = navigationState.streakScrollState,
+            onBack = { navigationState.destination = "dashboard" },
+        )
         return
     }
-    if (destination == "calendar") {
+    if (navigationState.destination == "calendar") {
         HistoryCalendarDetailScreen(
+            navigationState = navigationState,
             history = history,
-            onBack = { destination = "dashboard" },
+            onBack = { navigationState.destination = "dashboard" },
             onOpenWorkout = onOpenWorkout,
             onShareWorkout = onShareWorkout,
             onDeleteWorkout = onDeleteWorkout,
         )
         return
     }
-    if (destination == "weekly-muscles" && weeklyMuscleTargets != null) {
+    if (navigationState.destination == "weekly-muscles" && weeklyMuscleTargets != null) {
         WeeklyMuscleTargetsDetailScreen(
             summary = weeklyMuscleTargets,
-            onBack = { destination = "dashboard" },
+            listState = navigationState.weeklyMuscleTargetsListState,
+            expandedByGroup = navigationState.weeklyMuscleTargetExpandedGroups,
+            onBack = { navigationState.destination = "dashboard" },
             onOpenLibraryMuscleTarget = onOpenLibraryMuscleTarget,
         )
         return
     }
-    if (destination == "token-balance" && tokenBalanceTrend != null) {
+    if (navigationState.destination == "token-balance" && tokenBalanceTrend != null) {
         TokenBalanceDetailScreen(
             trend = tokenBalanceTrend,
-            onBack = { destination = "dashboard" },
+            selectedWindow = navigationState.tokenBalanceWindow,
+            onSelectedWindowChange = { navigationState.tokenBalanceWindow = it },
+            scrollState = navigationState.tokenBalanceScrollState,
+            onBack = { navigationState.destination = "dashboard" },
         )
         return
     }
 
     LazyColumn(
+        state = navigationState.dashboardListState,
         modifier = Modifier
             .fillMaxSize()
             .padding(16.dp),
@@ -3607,24 +3682,24 @@ private fun HistoryScreen(
         item {
             HistoryOverviewHeader(
                 data = dashboard,
-                onOpenWorkouts = { destination = "workouts" },
-                onOpenStats = { destination = "stats" },
-                onOpenMilestones = { destination = "milestones" },
-                onOpenStreak = { destination = "streak" },
-                onOpenCalendar = { destination = "calendar" },
+                onOpenWorkouts = { navigationState.destination = "workouts" },
+                onOpenStats = { navigationState.destination = "stats" },
+                onOpenMilestones = { navigationState.destination = "milestones" },
+                onOpenStreak = { navigationState.destination = "streak" },
+                onOpenCalendar = { navigationState.destination = "calendar" },
             )
         }
         item {
             TokenBalanceOverviewCard(
                 trend = tokenBalanceTrend,
-                onOpen = { destination = "token-balance" },
+                onOpen = { navigationState.destination = "token-balance" },
             )
         }
         weeklyMuscleTargets?.let { summary ->
             item {
                 WeeklyMuscleTargetsOverviewCard(
                     summary = summary,
-                    onOpen = { destination = "weekly-muscles" },
+                    onOpen = { navigationState.destination = "weekly-muscles" },
                 )
             }
         }
@@ -3636,9 +3711,10 @@ private fun HistoryScreen(
                 ) {
                     ChoiceChipRow(
                         values = HistoryMuscleFilter.entries.map(HistoryMuscleFilter::label),
-                        selected = selectedMuscleFilter.label,
+                        selected = navigationState.selectedMuscleFilter.label,
                         onSelect = { label ->
-                            selectedMuscleFilter = HistoryMuscleFilter.entries.firstOrNull { it.label == label } ?: HistoryMuscleFilter.All
+                            navigationState.selectedMuscleFilter =
+                                HistoryMuscleFilter.entries.firstOrNull { it.label == label } ?: HistoryMuscleFilter.All
                         },
                     )
                     if (filteredHistoricalMuscles.isEmpty()) {
@@ -3669,9 +3745,10 @@ private fun HistoryScreen(
                 ) {
                     ChoiceChipRow(
                         values = HistoryMovementFilter.entries.map(HistoryMovementFilter::label),
-                        selected = selectedMovementFilter.label,
+                        selected = navigationState.selectedMovementFilter.label,
                         onSelect = { label ->
-                            selectedMovementFilter = HistoryMovementFilter.entries.firstOrNull { it.label == label } ?: HistoryMovementFilter.All
+                            navigationState.selectedMovementFilter =
+                                HistoryMovementFilter.entries.firstOrNull { it.label == label } ?: HistoryMovementFilter.All
                         },
                     )
                     if (filteredHistoricalMovements.isEmpty()) {
@@ -4030,33 +4107,48 @@ private fun HistoryOverviewHeader(
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun HistoryCalendarDetailScreen(
+    navigationState: HistoryNavigationState,
     history: List<HistorySummary>,
     onBack: () -> Unit,
     onOpenWorkout: (Long) -> Unit,
     onShareWorkout: (Long, HistoryShareFormat) -> Unit,
     onDeleteWorkout: (Long) -> Unit,
 ) {
-    var selectedModeName by rememberSaveable { mutableStateOf(HistoryCalendarMode.Week.name) }
-    val mode = HistoryCalendarMode.valueOf(selectedModeName)
+    val mode = HistoryCalendarMode.entries.firstOrNull { it.name == navigationState.calendarModeName }
+        ?: HistoryCalendarMode.Week
     val weekPages = remember(history) { buildHistoryCalendarWeekPages(history) }
     val monthPages = remember(history) { buildHistoryCalendarMonthPages(history) }
-    var selectedWeekDateKey by rememberSaveable { mutableStateOf<String?>(null) }
-    var selectedMonthDateKey by rememberSaveable { mutableStateOf<String?>(null) }
+    val initialWeekPage = (navigationState.calendarWeekPage ?: weekPages.lastIndex)
+        .coerceIn(0, weekPages.lastIndex.coerceAtLeast(0))
+    val initialMonthPage = (navigationState.calendarMonthPage ?: monthPages.lastIndex)
+        .coerceIn(0, monthPages.lastIndex.coerceAtLeast(0))
     val weekPagerState = rememberPagerState(
-        initialPage = weekPages.lastIndex.coerceAtLeast(0),
+        initialPage = initialWeekPage,
         pageCount = { weekPages.size.coerceAtLeast(1) },
     )
     val monthPagerState = rememberPagerState(
-        initialPage = monthPages.lastIndex.coerceAtLeast(0),
+        initialPage = initialMonthPage,
         pageCount = { monthPages.size.coerceAtLeast(1) },
     )
     val coroutineScope = rememberCoroutineScope()
+
+    LaunchedEffect(weekPagerState) {
+        snapshotFlow { weekPagerState.currentPage }.collectLatest { page ->
+            navigationState.calendarWeekPage = page
+        }
+    }
+
+    LaunchedEffect(monthPagerState) {
+        snapshotFlow { monthPagerState.currentPage }.collectLatest { page ->
+            navigationState.calendarMonthPage = page
+        }
+    }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .padding(16.dp)
-            .verticalScroll(rememberScrollState()),
+            .verticalScroll(navigationState.calendarScrollState),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         HistoryDetailHeader(title = "Calendar", onBack = onBack)
@@ -4076,13 +4168,13 @@ private fun HistoryCalendarDetailScreen(
                     values = HistoryCalendarMode.entries.map(HistoryCalendarMode::label),
                     selected = mode.label,
                     onSelect = { label ->
-                        selectedModeName = (HistoryCalendarMode.entries.firstOrNull { it.label == label }
+                        navigationState.calendarModeName = (HistoryCalendarMode.entries.firstOrNull { it.label == label }
                             ?: HistoryCalendarMode.Week).name
                     },
                 )
                 if (mode == HistoryCalendarMode.Week) {
                     val selectedPage = weekPages.getOrElse(weekPagerState.currentPage) { weekPages.last() }
-                    val selectedDate = selectedWeekDateKey?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
+                    val selectedDate = navigationState.selectedWeekDateKey?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
                     val selectedWorkouts = selectedDate
                         ?.let { date -> historyCalendarWorkoutsForDate(selectedPage.workouts, date) }
                         .orEmpty()
@@ -4117,7 +4209,8 @@ private fun HistoryCalendarDetailScreen(
                             selectedDate = selectedDate,
                             onToggleDate = { date ->
                                 val key = date.toString()
-                                selectedWeekDateKey = if (selectedWeekDateKey == key) null else key
+                                navigationState.selectedWeekDateKey =
+                                    if (navigationState.selectedWeekDateKey == key) null else key
                             },
                         )
                     }
@@ -4139,7 +4232,7 @@ private fun HistoryCalendarDetailScreen(
                     )
                 } else {
                     val selectedPage = monthPages.getOrElse(monthPagerState.currentPage) { monthPages.last() }
-                    val selectedDate = selectedMonthDateKey?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
+                    val selectedDate = navigationState.selectedMonthDateKey?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
                     val selectedWorkouts = selectedDate
                         ?.let { date -> historyCalendarWorkoutsForDate(selectedPage.workouts, date) }
                         .orEmpty()
@@ -4174,7 +4267,8 @@ private fun HistoryCalendarDetailScreen(
                             selectedDate = selectedDate,
                             onToggleDate = { date ->
                                 val key = date.toString()
-                                selectedMonthDateKey = if (selectedMonthDateKey == key) null else key
+                                navigationState.selectedMonthDateKey =
+                                    if (navigationState.selectedMonthDateKey == key) null else key
                             },
                         )
                     }
@@ -4631,9 +4725,11 @@ private fun TokenBalanceOverviewCard(
 @Composable
 private fun TokenBalanceDetailScreen(
     trend: AdherenceCurrencyTrend,
+    selectedWindow: TokenBalanceWindow,
+    onSelectedWindowChange: (TokenBalanceWindow) -> Unit,
+    scrollState: ScrollState,
     onBack: () -> Unit,
 ) {
-    var selectedWindow by rememberSaveable { mutableStateOf(TokenBalanceWindow.Last7Days) }
     val palette = rememberTokenWalletPalette()
     val windowPoints = trend.pointsFor(selectedWindow)
     val windowDelta = trend.windowDelta(selectedWindow)
@@ -4647,7 +4743,7 @@ private fun TokenBalanceDetailScreen(
         modifier = Modifier
             .fillMaxSize()
             .padding(16.dp)
-            .verticalScroll(rememberScrollState()),
+            .verticalScroll(scrollState),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         HistoryDetailHeader(title = "Token Balance", onBack = onBack)
@@ -4756,8 +4852,10 @@ private fun TokenBalanceDetailScreen(
                     values = TokenBalanceWindow.entries.map(TokenBalanceWindow::label),
                     selected = selectedWindow.label,
                     onSelect = { label ->
-                        selectedWindow = TokenBalanceWindow.entries.firstOrNull { it.label == label }
-                            ?: TokenBalanceWindow.Last7Days
+                        onSelectedWindowChange(
+                            TokenBalanceWindow.entries.firstOrNull { it.label == label }
+                                ?: TokenBalanceWindow.Last7Days,
+                        )
                     },
                 )
                 TokenBalanceChart(
@@ -5188,8 +5286,13 @@ private fun HistoryStatTile(
 }
 
 @Composable
-private fun HistoryStatsScreen(data: HistoryDashboardData, onBack: () -> Unit) {
-    var selectedFilterName by rememberSaveable { mutableStateOf(HistoryStatsFilter.AllTime.name) }
+private fun HistoryStatsScreen(
+    data: HistoryDashboardData,
+    selectedFilterName: String,
+    onSelectedFilterNameChange: (String) -> Unit,
+    scrollState: ScrollState,
+    onBack: () -> Unit,
+) {
     val selectedFilter = remember(selectedFilterName) {
         HistoryStatsFilter.entries.firstOrNull { it.name == selectedFilterName } ?: HistoryStatsFilter.AllTime
     }
@@ -5202,7 +5305,7 @@ private fun HistoryStatsScreen(data: HistoryDashboardData, onBack: () -> Unit) {
             modifier = Modifier
                 .fillMaxSize()
                 .padding(16.dp)
-                .verticalScroll(rememberScrollState()),
+                .verticalScroll(scrollState),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             HistoryDetailHeader(title = "Stats", onBack = onBack)
@@ -5230,10 +5333,12 @@ private fun HistoryStatsScreen(data: HistoryDashboardData, onBack: () -> Unit) {
                         values = HistoryStatsFilter.entries.map(HistoryStatsFilter::label),
                         selected = selectedFilter.label,
                         onSelect = { label ->
-                            selectedFilterName = HistoryStatsFilter.entries
-                                .firstOrNull { it.label == label }
-                                ?.name
-                                ?: HistoryStatsFilter.AllTime.name
+                            onSelectedFilterNameChange(
+                                HistoryStatsFilter.entries
+                                    .firstOrNull { it.label == label }
+                                    ?.name
+                                    ?: HistoryStatsFilter.AllTime.name,
+                            )
                         },
                     )
                 }
@@ -5289,13 +5394,17 @@ private fun HistoryStatsScreen(data: HistoryDashboardData, onBack: () -> Unit) {
 }
 
 @Composable
-private fun HistoryWorkoutStatsScreen(data: HistoryDashboardData, onBack: () -> Unit) {
+private fun HistoryWorkoutStatsScreen(
+    data: HistoryDashboardData,
+    scrollState: ScrollState,
+    onBack: () -> Unit,
+) {
     CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onBackground) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(16.dp)
-                .verticalScroll(rememberScrollState()),
+                .verticalScroll(scrollState),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             HistoryDetailHeader(title = "Workouts", onBack = onBack)
@@ -5344,13 +5453,17 @@ private fun HistoryWorkoutStatsScreen(data: HistoryDashboardData, onBack: () -> 
 }
 
 @Composable
-private fun HistoryMilestonesScreen(data: HistoryDashboardData, onBack: () -> Unit) {
+private fun HistoryMilestonesScreen(
+    data: HistoryDashboardData,
+    scrollState: ScrollState,
+    onBack: () -> Unit,
+) {
     CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onBackground) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(16.dp)
-                .verticalScroll(rememberScrollState()),
+                .verticalScroll(scrollState),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             HistoryDetailHeader(title = "Milestones", onBack = onBack)
@@ -5384,14 +5497,18 @@ private fun HistoryMilestonesScreen(data: HistoryDashboardData, onBack: () -> Un
 }
 
 @Composable
-private fun HistoryStreakScreen(data: HistoryDashboardData, onBack: () -> Unit) {
+private fun HistoryStreakScreen(
+    data: HistoryDashboardData,
+    scrollState: ScrollState,
+    onBack: () -> Unit,
+) {
     val streakSpec = streakRewardSpec(data.currentStreakWeeks)
     CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onBackground) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(16.dp)
-                .verticalScroll(rememberScrollState()),
+                .verticalScroll(scrollState),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             HistoryDetailHeader(title = "Streak", onBack = onBack)
@@ -8589,7 +8706,7 @@ private fun ActiveSessionScreen(
     onOpenExercise: (Int) -> Unit,
     onShowExerciseDetail: (Long) -> Unit,
     onCloseExercise: () -> Unit,
-    onPickNextExercise: (String?, String?, String?, String?) -> Unit,
+    onPickNextExercise: (String?, String?, String?, String?, String?) -> Unit,
     onOpenAddExercise: () -> Unit,
     onOpenFreshnessTargetPicker: (String, String) -> Unit,
     onOpenMuscleTargetPicker: (String?, String?) -> Unit,
@@ -8630,7 +8747,7 @@ private fun ActiveSessionScreen(
     onToggleComplete: (Int, Int) -> Unit,
     onAddSet: (Int) -> Unit,
     onDeleteSet: (Int, Int) -> Unit,
-    onDeleteExercise: (Int, Boolean, String?, String?, String?, String?) -> Unit,
+    onDeleteExercise: (Int, Boolean, String?, String?, String?, String?, String?) -> Unit,
     onLogSet: (Int) -> Unit,
     onLogAllSets: (Int) -> Unit,
     onCancelRestTimer: () -> Unit,
@@ -8647,10 +8764,12 @@ private fun ActiveSessionScreen(
     var showExerciseFilterSheet by rememberSaveable(session.startedAtUtc) { mutableStateOf(false) }
     var pendingExerciseDeletionIndex by remember { mutableStateOf<Int?>(null) }
     var selectedEquipmentFilter by rememberSaveable(session.startedAtUtc) { mutableStateOf<String?>(null) }
+    var selectedBodyRegionFilterKey by rememberSaveable(session.startedAtUtc) { mutableStateOf<String?>(null) }
     var selectedMuscleFilterKey by rememberSaveable(session.startedAtUtc) { mutableStateOf<String?>(null) }
     var selectedMuscleTargetBucketKey by rememberSaveable(session.startedAtUtc) { mutableStateOf<String?>(null) }
     var selectedMuscleTargetSubcategoryKey by rememberSaveable(session.startedAtUtc) { mutableStateOf<String?>(null) }
     val equipmentOptions = remember(session.exercises) { activeSessionEquipmentOptions(session) }
+    val bodyRegionOptions = remember(session.exercises) { activeSessionBodyRegionFilterOptions(session) }
     val muscleFilterOptions = remember(session.exercises, exerciseDetailsById) {
         activeSessionMuscleFilterOptions(session, exerciseDetailsById)
     }
@@ -8664,11 +8783,12 @@ private fun ActiveSessionScreen(
             bucketKey = selectedMuscleTargetBucketKey,
         )
     }
-    LaunchedEffect(session, selectedEquipmentFilter, selectedMuscleFilterKey, selectedMuscleTargetBucketKey, selectedMuscleTargetSubcategoryKey) {
+    LaunchedEffect(session, selectedEquipmentFilter, selectedBodyRegionFilterKey, selectedMuscleFilterKey, selectedMuscleTargetBucketKey, selectedMuscleTargetSubcategoryKey) {
         selectedEquipmentFilter = resolveActiveSessionEquipmentFilter(
             session = session,
             equipmentFilter = selectedEquipmentFilter,
         )
+        selectedBodyRegionFilterKey = resolveActiveSessionBodyRegionFilter(selectedBodyRegionFilterKey)?.key
         selectedMuscleFilterKey = resolveActiveSessionMuscleFilter(selectedMuscleFilterKey)?.key
         selectedMuscleTargetBucketKey = resolveActiveSessionMuscleTargetBucket(selectedMuscleTargetBucketKey)
         selectedMuscleTargetSubcategoryKey = resolveActiveSessionMuscleTargetSubcategory(selectedMuscleTargetSubcategoryKey)
@@ -8758,6 +8878,7 @@ private fun ActiveSessionScreen(
                     exerciseIndexToDelete,
                     true,
                     selectedEquipmentFilter,
+                    selectedBodyRegionFilterKey,
                     selectedMuscleFilterKey,
                     selectedMuscleTargetBucketKey,
                     selectedMuscleTargetSubcategoryKey,
@@ -8840,6 +8961,7 @@ private fun ActiveSessionScreen(
     } else {
         progressMetrics.completedSets / progressMetrics.totalSets.toFloat()
     }
+    val selectedBodyRegionFilterLabel = resolveActiveSessionBodyRegionFilter(selectedBodyRegionFilterKey)?.label
     val selectedMuscleFilterLabel = resolveActiveSessionMuscleFilter(selectedMuscleFilterKey)?.label
     val selectedMuscleTargetLabel = libraryMuscleTargetFilterLabel(
         bucketKey = selectedMuscleTargetBucketKey,
@@ -8848,6 +8970,7 @@ private fun ActiveSessionScreen(
     val orderedExercises = orderedSessionExercises(
         session = session,
         equipmentFilter = selectedEquipmentFilter,
+        bodyRegionFilterKey = selectedBodyRegionFilterKey,
         muscleFilterKey = selectedMuscleFilterKey,
         muscleTargetBucketKey = selectedMuscleTargetBucketKey,
         muscleTargetSubcategoryKey = selectedMuscleTargetSubcategoryKey,
@@ -8895,6 +9018,7 @@ private fun ActiveSessionScreen(
                 onExitWorkout = { showDiscardDialog = true },
                 onOpenWorkoutDetails = { showWorkoutDetailsSheet = true },
                 equipmentFilterLabel = selectedEquipmentFilter,
+                bodyRegionFilterLabel = selectedBodyRegionFilterLabel,
                 muscleFilterLabel = selectedMuscleFilterLabel,
                 muscleTargetFilterLabel = selectedMuscleTargetLabel,
                 muscleTargetCueLabel = muscleTargetSummary.cueLabel,
@@ -8905,16 +9029,19 @@ private fun ActiveSessionScreen(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 val activeEquipmentFilter = selectedEquipmentFilter
+                val activeBodyRegionFilterLabel = selectedBodyRegionFilterLabel
                 val activeMuscleFilterLabel = selectedMuscleFilterLabel
                 val activeMuscleTargetFilterLabel = selectedMuscleTargetLabel
-                if (activeEquipmentFilter != null || activeMuscleFilterLabel != null || activeMuscleTargetFilterLabel != null) {
+                if (activeEquipmentFilter != null || activeBodyRegionFilterLabel != null || activeMuscleFilterLabel != null || activeMuscleTargetFilterLabel != null) {
                     item {
                         ActiveSessionFilterBanner(
                             equipment = activeEquipmentFilter,
+                            bodyRegion = activeBodyRegionFilterLabel,
                             muscle = activeMuscleFilterLabel,
                             muscleTarget = activeMuscleTargetFilterLabel,
                             matchingExerciseCount = orderedExercises.size,
                             onClearEquipment = { selectedEquipmentFilter = null },
+                            onClearBodyRegion = { selectedBodyRegionFilterKey = null },
                             onClearMuscle = { selectedMuscleFilterKey = null },
                             onClearMuscleTarget = {
                                 selectedMuscleTargetBucketKey = null
@@ -8922,6 +9049,7 @@ private fun ActiveSessionScreen(
                             },
                             onClearAll = {
                                 selectedEquipmentFilter = null
+                                selectedBodyRegionFilterKey = null
                                 selectedMuscleFilterKey = null
                                 selectedMuscleTargetBucketKey = null
                                 selectedMuscleTargetSubcategoryKey = null
@@ -8963,7 +9091,7 @@ private fun ActiveSessionScreen(
                         )
                     }
                 }
-                if (orderedExercises.isEmpty() && (activeEquipmentFilter != null || activeMuscleFilterLabel != null || activeMuscleTargetFilterLabel != null)) {
+                if (orderedExercises.isEmpty() && (activeEquipmentFilter != null || activeBodyRegionFilterLabel != null || activeMuscleFilterLabel != null || activeMuscleTargetFilterLabel != null)) {
                     item {
                         FeatureCard(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f)) {
                             Text(
@@ -9001,6 +9129,7 @@ private fun ActiveSessionScreen(
                             onPickNextExercise = {
                                 onPickNextExercise(
                                     selectedEquipmentFilter,
+                                    selectedBodyRegionFilterKey,
                                     selectedMuscleFilterKey,
                                     selectedMuscleTargetBucketKey,
                                     selectedMuscleTargetSubcategoryKey,
@@ -9074,6 +9203,8 @@ private fun ActiveSessionScreen(
         ActiveSessionFiltersSheet(
             selectedEquipment = selectedEquipmentFilter,
             equipmentOptions = equipmentOptions,
+            selectedBodyRegionKey = selectedBodyRegionFilterKey,
+            bodyRegionOptions = bodyRegionOptions,
             selectedMuscleKey = selectedMuscleFilterKey,
             muscleOptions = muscleFilterOptions,
             selectedMuscleTargetBucketKey = selectedMuscleTargetBucketKey,
@@ -9089,6 +9220,14 @@ private fun ActiveSessionScreen(
                 }
             },
             onClear = { selectedEquipmentFilter = null },
+            onSelectBodyRegion = { bodyRegionKey ->
+                selectedBodyRegionFilterKey = if (selectedBodyRegionFilterKey.equals(bodyRegionKey, ignoreCase = true)) {
+                    null
+                } else {
+                    bodyRegionKey
+                }
+            },
+            onClearBodyRegion = { selectedBodyRegionFilterKey = null },
             onSelectMuscle = { muscleKey ->
                 selectedMuscleFilterKey = if (selectedMuscleFilterKey.equals(muscleKey, ignoreCase = true)) {
                     null
@@ -9119,6 +9258,7 @@ private fun ActiveSessionScreen(
             onClearMuscleTargetSubcategory = { selectedMuscleTargetSubcategoryKey = null },
             onClearAll = {
                 selectedEquipmentFilter = null
+                selectedBodyRegionFilterKey = null
                 selectedMuscleFilterKey = null
                 selectedMuscleTargetBucketKey = null
                 selectedMuscleTargetSubcategoryKey = null
@@ -9141,7 +9281,7 @@ private fun ActiveSessionScreen(
                 onDismiss = { pendingExerciseDeletionIndex = null },
                 onConfirm = {
                     pendingExerciseDeletionIndex = null
-                    onDeleteExercise(exerciseIndex, false, null, null, null, null)
+                    onDeleteExercise(exerciseIndex, false, null, null, null, null, null)
                 },
             )
         }
@@ -9152,10 +9292,12 @@ private fun ActiveSessionScreen(
 @Composable
 private fun ActiveSessionFilterBanner(
     equipment: String?,
+    bodyRegion: String?,
     muscle: String?,
     muscleTarget: String?,
     matchingExerciseCount: Int,
     onClearEquipment: () -> Unit,
+    onClearBodyRegion: () -> Unit,
     onClearMuscle: () -> Unit,
     onClearMuscleTarget: () -> Unit,
     onClearAll: () -> Unit,
@@ -9174,6 +9316,9 @@ private fun ActiveSessionFilterBanner(
                     equipment?.let {
                         MiniTag("Equipment: $it")
                     }
+                    bodyRegion?.let {
+                        MiniTag("Area: $it")
+                    }
                     muscle?.let {
                         MiniTag("Muscle: $it")
                     }
@@ -9190,6 +9335,11 @@ private fun ActiveSessionFilterBanner(
                     equipment?.let {
                         TextButton(onClick = onClearEquipment, modifier = Modifier.height(32.dp)) {
                             Text("Clear equipment")
+                        }
+                    }
+                    bodyRegion?.let {
+                        TextButton(onClick = onClearBodyRegion, modifier = Modifier.height(32.dp)) {
+                            Text("Clear area")
                         }
                     }
                     muscle?.let {
@@ -9211,8 +9361,8 @@ private fun ActiveSessionFilterBanner(
     }
 }
 
-private fun activeSessionFilterSummaryLabel(equipment: String?, muscle: String?, muscleTarget: String?): String? {
-    return listOfNotNull(equipment, muscle, muscleTarget).takeIf { it.isNotEmpty() }?.joinToString(" and ")
+private fun activeSessionFilterSummaryLabel(equipment: String?, bodyRegion: String?, muscle: String?, muscleTarget: String?): String? {
+    return listOfNotNull(equipment, bodyRegion, muscle, muscleTarget).takeIf { it.isNotEmpty() }?.joinToString(" and ")
 }
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -9795,6 +9945,7 @@ private fun SessionMomentumHeader(
     onExitWorkout: () -> Unit,
     onOpenWorkoutDetails: () -> Unit,
     equipmentFilterLabel: String?,
+    bodyRegionFilterLabel: String?,
     muscleFilterLabel: String?,
     muscleTargetFilterLabel: String?,
     muscleTargetCueLabel: String?,
@@ -9802,6 +9953,7 @@ private fun SessionMomentumHeader(
 ) {
     val activeFilterLabel = activeSessionFilterSummaryLabel(
         equipment = equipmentFilterLabel,
+        bodyRegion = bodyRegionFilterLabel,
         muscle = muscleFilterLabel,
         muscleTarget = muscleTargetFilterLabel,
     )
@@ -9876,6 +10028,7 @@ private fun SessionMomentumHeader(
             }
             FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                 MiniTag(progressMetrics.volumeLabel)
+                bodyRegionFilterLabel?.let { MiniTag("Area: $it") }
                 muscleTargetFilterLabel?.let { MiniTag("Target: $it") }
                 muscleTargetCueLabel?.let { MiniTag(it) }
             }
@@ -9893,6 +10046,8 @@ private fun SessionMomentumHeader(
 private fun ActiveSessionFiltersSheet(
     selectedEquipment: String?,
     equipmentOptions: List<String>,
+    selectedBodyRegionKey: String?,
+    bodyRegionOptions: List<ActiveSessionBodyRegionFilterOption>,
     selectedMuscleKey: String?,
     muscleOptions: List<ActiveSessionMuscleFilterOption>,
     selectedMuscleTargetBucketKey: String?,
@@ -9902,6 +10057,8 @@ private fun ActiveSessionFiltersSheet(
     onDismiss: () -> Unit,
     onSelectEquipment: (String) -> Unit,
     onClear: () -> Unit,
+    onSelectBodyRegion: (String) -> Unit,
+    onClearBodyRegion: () -> Unit,
     onSelectMuscle: (String) -> Unit,
     onClearMuscle: () -> Unit,
     onSelectMuscleTargetBucket: (String) -> Unit,
@@ -9910,6 +10067,7 @@ private fun ActiveSessionFiltersSheet(
     onClearMuscleTargetSubcategory: () -> Unit,
     onClearAll: () -> Unit,
 ) {
+    val selectedBodyRegion = resolveActiveSessionBodyRegionFilter(selectedBodyRegionKey)
     val selectedMuscle = resolveActiveSessionMuscleFilter(selectedMuscleKey)
     val selectedMuscleTargetLabel = libraryMuscleTargetFilterLabel(
         bucketKey = selectedMuscleTargetBucketKey,
@@ -9929,11 +10087,11 @@ private fun ActiveSessionFiltersSheet(
                 ) {
                     Text("Exercise filters", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
                     Text(
-                        "Filter the active workout list by equipment or Training Freshness muscle.",
+                        "Filter the active workout list by equipment, body area, or muscle.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    if (selectedEquipment != null || selectedMuscle != null || selectedMuscleTargetLabel != null) {
+                    if (selectedEquipment != null || selectedBodyRegion != null || selectedMuscle != null || selectedMuscleTargetLabel != null) {
                         TextButton(
                             onClick = onClearAll,
                             modifier = Modifier.align(Alignment.Start),
@@ -9959,6 +10117,29 @@ private fun ActiveSessionFiltersSheet(
                             selected = selectedEquipment.equals(equipment, ignoreCase = true),
                             onClick = { onSelectEquipment(equipment) },
                             label = { Text(equipment) },
+                        )
+                    }
+                }
+            }
+            item {
+                Divider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.18f))
+            }
+            item {
+                Text("Body area", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    ToastLiftFilterChip(
+                        selected = selectedBodyRegion == null,
+                        onClick = onClearBodyRegion,
+                        label = { Text("All") },
+                    )
+                    bodyRegionOptions.forEach { option ->
+                        ToastLiftFilterChip(
+                            selected = selectedBodyRegion?.key == option.key,
+                            onClick = { onSelectBodyRegion(option.key) },
+                            label = { Text("${option.label} ${option.matchingExerciseCount}") },
                         )
                     }
                 }
@@ -14618,10 +14799,13 @@ private fun WeeklyMuscleTargetHexagon(
 @Composable
 private fun WeeklyMuscleTargetsDetailScreen(
     summary: WeeklyMuscleTargetSummary,
+    listState: LazyListState,
+    expandedByGroup: SnapshotStateMap<String, Boolean>,
     onBack: () -> Unit,
     onOpenLibraryMuscleTarget: (String) -> Unit,
 ) {
     LazyColumn(
+        state = listState,
         modifier = Modifier
             .fillMaxSize()
             .padding(16.dp),
@@ -14643,6 +14827,7 @@ private fun WeeklyMuscleTargetsDetailScreen(
         item {
             WeeklyMuscleTargetsCard(
                 summary = summary,
+                expandedByGroup = expandedByGroup,
                 onOpenLibraryMuscleTarget = onOpenLibraryMuscleTarget,
             )
         }
@@ -14653,11 +14838,20 @@ private fun WeeklyMuscleTargetsDetailScreen(
 @OptIn(ExperimentalLayoutApi::class)
 private fun WeeklyMuscleTargetsCard(
     summary: WeeklyMuscleTargetSummary,
+    expandedByGroup: SnapshotStateMap<String, Boolean>,
     onOpenLibraryMuscleTarget: (String) -> Unit,
 ) {
-    val expandedByGroup = remember(summary.weekNumber) {
-        mutableStateMapOf<String, Boolean>().apply {
-            summary.groupSummaries.forEach { put(it.key, false) }
+    val groupKeys = remember(summary.weekNumber, summary.groupSummaries) {
+        summary.groupSummaries.map { it.key }.toSet()
+    }
+    LaunchedEffect(groupKeys) {
+        expandedByGroup.keys.toList().filterNot(groupKeys::contains).forEach { key ->
+            expandedByGroup.remove(key)
+        }
+        groupKeys.forEach { key ->
+            if (!expandedByGroup.containsKey(key)) {
+                expandedByGroup[key] = false
+            }
         }
     }
     val progress = summary.overallCompletionRatio.coerceIn(0.0, 1.0).toFloat()

@@ -518,6 +518,12 @@ internal fun activeSessionEquipmentOptions(session: ActiveSession): List<String>
     return equipmentSelectionOptions(session.exercises.map(SessionExercise::equipment))
 }
 
+internal data class ActiveSessionBodyRegionFilterOption(
+    val key: String,
+    val label: String,
+    val matchingExerciseCount: Int,
+)
+
 internal data class ActiveSessionMuscleFilterOption(
     val key: String,
     val label: String,
@@ -535,6 +541,48 @@ internal data class LibraryMuscleTargetFilterSelection(
     val bucketKeys: Set<String>,
     val subcategoryKeys: Set<String>,
 )
+
+private val activeSessionBodyRegionFilterDefinitions = listOf(
+    "upper" to "Upper",
+    "lower" to "Lower",
+    "core" to "Core",
+    "full_body" to "Full Body",
+)
+
+private fun activeSessionBodyRegionFilterKey(value: String?): String? {
+    return when (
+        value
+            ?.trim()
+            ?.lowercase()
+            ?.replace('-', ' ')
+            ?.replace('_', ' ')
+            ?.replace(Regex("\\s+"), " ")
+            ?.takeIf(String::isNotEmpty)
+    ) {
+        "upper", "upper body" -> "upper"
+        "lower", "lower body" -> "lower"
+        "core" -> "core"
+        "full", "full body" -> "full_body"
+        else -> null
+    }
+}
+
+internal fun activeSessionBodyRegionFilterOptions(
+    session: ActiveSession,
+): List<ActiveSessionBodyRegionFilterOption> {
+    return activeSessionBodyRegionFilterDefinitions.map { (key, label) ->
+        ActiveSessionBodyRegionFilterOption(
+            key = key,
+            label = label,
+            matchingExerciseCount = session.exercises.count { exercise ->
+                activeSessionExerciseMatchesBodyRegion(
+                    exercise = exercise,
+                    bodyRegionFilterKey = key,
+                )
+            },
+        )
+    }
+}
 
 internal fun activeSessionMuscleFilterOptions(
     session: ActiveSession,
@@ -613,6 +661,19 @@ internal fun resolveActiveSessionEquipmentFilter(
         .firstOrNull { option -> option.equals(normalizedFilter, ignoreCase = true) }
 }
 
+internal fun resolveActiveSessionBodyRegionFilter(bodyRegionFilterKey: String?): ActiveSessionBodyRegionFilterOption? {
+    val normalizedFilter = activeSessionBodyRegionFilterKey(bodyRegionFilterKey) ?: return null
+    return activeSessionBodyRegionFilterDefinitions
+        .firstOrNull { (key, _) -> key == normalizedFilter }
+        ?.let { (key, label) ->
+            ActiveSessionBodyRegionFilterOption(
+                key = key,
+                label = label,
+                matchingExerciseCount = 0,
+            )
+        }
+}
+
 internal fun resolveActiveSessionMuscleFilter(muscleFilterKey: String?): TrainingFreshnessSlot? {
     val normalizedFilter = muscleFilterKey
         ?.trim()
@@ -632,6 +693,14 @@ internal fun resolveActiveSessionMuscleTargetBucket(bucketKey: String?): String?
 
 internal fun resolveActiveSessionMuscleTargetSubcategory(subcategoryKey: String?): String? {
     return normalizeMuscleTargetSubcategoryKey(subcategoryKey)
+}
+
+internal fun activeSessionExerciseMatchesBodyRegion(
+    exercise: SessionExercise,
+    bodyRegionFilterKey: String?,
+): Boolean {
+    val resolvedFilter = resolveActiveSessionBodyRegionFilter(bodyRegionFilterKey) ?: return true
+    return activeSessionBodyRegionFilterKey(exercise.bodyRegion) == resolvedFilter.key
 }
 
 internal fun activeSessionExerciseMatchesMuscleFilter(
@@ -666,10 +735,11 @@ internal fun activeSessionExerciseMatchesMuscleTarget(
 
 private fun activeSessionPickNextFilterLabel(
     equipment: String?,
+    bodyRegion: String?,
     muscle: String?,
     muscleTarget: String?,
 ): String? {
-    return listOfNotNull(equipment, muscle, muscleTarget)
+    return listOfNotNull(equipment, bodyRegion, muscle, muscleTarget)
         .takeIf { it.isNotEmpty() }
         ?.joinToString(" and ")
 }
@@ -779,6 +849,7 @@ private fun String.toReadableFreshnessMuscleLabel(): String {
 internal fun orderedSessionExercises(
     session: ActiveSession,
     equipmentFilter: String?,
+    bodyRegionFilterKey: String? = null,
     muscleFilterKey: String? = null,
     muscleTargetBucketKey: String? = null,
     muscleTargetSubcategoryKey: String? = null,
@@ -788,12 +859,17 @@ internal fun orderedSessionExercises(
         session = session,
         equipmentFilter = equipmentFilter,
     )
+    val resolvedBodyRegionFilterKey = resolveActiveSessionBodyRegionFilter(bodyRegionFilterKey)?.key
     val resolvedMuscleFilterKey = resolveActiveSessionMuscleFilter(muscleFilterKey)?.key
     val resolvedTargetBucketKey = resolveActiveSessionMuscleTargetBucket(muscleTargetBucketKey)
     val resolvedTargetSubcategoryKey = resolveActiveSessionMuscleTargetSubcategory(muscleTargetSubcategoryKey)
     return orderedSessionExercises(session).filter { indexedExercise ->
         val exercise = indexedExercise.value
         (resolvedFilter == null || exercise.equipment.equals(resolvedFilter, ignoreCase = true)) &&
+            activeSessionExerciseMatchesBodyRegion(
+                exercise = exercise,
+                bodyRegionFilterKey = resolvedBodyRegionFilterKey,
+            ) &&
             activeSessionExerciseMatchesMuscleFilter(
                 exercise = exercise,
                 detail = exerciseDetailsById[exercise.exerciseId],
@@ -820,6 +896,7 @@ internal fun pickNextSessionExerciseIndex(
     session: ActiveSession,
     random: Random = Random.Default,
     equipmentFilter: String? = null,
+    bodyRegionFilterKey: String? = null,
     muscleFilterKey: String? = null,
     muscleTargetBucketKey: String? = null,
     muscleTargetSubcategoryKey: String? = null,
@@ -830,6 +907,7 @@ internal fun pickNextSessionExerciseIndex(
         exerciseDetailsById = emptyMap(),
         random = random,
         equipmentFilter = equipmentFilter,
+        bodyRegionFilterKey = bodyRegionFilterKey,
         muscleFilterKey = muscleFilterKey,
         muscleTargetBucketKey = muscleTargetBucketKey,
         muscleTargetSubcategoryKey = muscleTargetSubcategoryKey,
@@ -842,6 +920,7 @@ internal fun pickNextSessionExerciseIndex(
     exerciseDetailsById: Map<Long, ExerciseDetail>,
     random: Random = Random.Default,
     equipmentFilter: String? = null,
+    bodyRegionFilterKey: String? = null,
     muscleFilterKey: String? = null,
     muscleTargetBucketKey: String? = null,
     muscleTargetSubcategoryKey: String? = null,
@@ -853,6 +932,7 @@ internal fun pickNextSessionExerciseIndex(
             equipmentFilter = filter,
         ) ?: filter
     }
+    val resolvedBodyRegionFilterKey = resolveActiveSessionBodyRegionFilter(bodyRegionFilterKey)?.key
     val resolvedMuscleFilterKey = resolveActiveSessionMuscleFilter(muscleFilterKey)?.key
     val resolvedTargetBucketKey = resolveActiveSessionMuscleTargetBucket(muscleTargetBucketKey)
     val resolvedTargetSubcategoryKey = resolveActiveSessionMuscleTargetSubcategory(muscleTargetSubcategoryKey)
@@ -861,6 +941,12 @@ internal fun pickNextSessionExerciseIndex(
         .filter { (_, exercise) -> exercise.isNotStartedInActiveWorkout() }
         .filter { (_, exercise) ->
             resolvedEquipmentFilter == null || exercise.equipment.equals(resolvedEquipmentFilter, ignoreCase = true)
+        }
+        .filter { (_, exercise) ->
+            activeSessionExerciseMatchesBodyRegion(
+                exercise = exercise,
+                bodyRegionFilterKey = resolvedBodyRegionFilterKey,
+            )
         }
         .filter { (_, exercise) ->
             activeSessionExerciseMatchesMuscleFilter(
@@ -3512,6 +3598,7 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
 
     fun pickNextSessionExercise(
         equipmentFilter: String? = null,
+        bodyRegionFilterKey: String? = null,
         muscleFilterKey: String? = null,
         muscleTargetBucketKey: String? = null,
         muscleTargetSubcategoryKey: String? = null,
@@ -3522,6 +3609,7 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
             session = session,
             equipmentFilter = equipmentFilter,
         )
+        val resolvedBodyRegionFilter = resolveActiveSessionBodyRegionFilter(bodyRegionFilterKey)
         val resolvedMuscleFilter = resolveActiveSessionMuscleFilter(muscleFilterKey)
         val resolvedTargetBucket = resolveActiveSessionMuscleTargetBucket(muscleTargetBucketKey)
         val resolvedTargetSubcategory = resolveActiveSessionMuscleTargetSubcategory(muscleTargetSubcategoryKey)
@@ -3531,6 +3619,12 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
                 .filter { exercise ->
                     resolvedEquipmentFilter == null || exercise.equipment.equals(resolvedEquipmentFilter, ignoreCase = true)
                 }
+                .filter { exercise ->
+                    activeSessionExerciseMatchesBodyRegion(
+                        exercise = exercise,
+                        bodyRegionFilterKey = resolvedBodyRegionFilter?.key,
+                    )
+                }
                 .map(SessionExercise::exerciseId)
             val exerciseDetailsById = loadExerciseDetailsById(untouchedExerciseIds)
             val pickedExerciseIndex = pickNextSessionExerciseIndex(
@@ -3538,12 +3632,14 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
                 smartTargetMuscle = smartTargetMuscle,
                 exerciseDetailsById = exerciseDetailsById,
                 equipmentFilter = resolvedEquipmentFilter,
+                bodyRegionFilterKey = resolvedBodyRegionFilter?.key,
                 muscleFilterKey = resolvedMuscleFilter?.key,
                 muscleTargetBucketKey = resolvedTargetBucket,
                 muscleTargetSubcategoryKey = resolvedTargetSubcategory,
             ) ?: run {
                 val filterLabel = activeSessionPickNextFilterLabel(
                     equipment = resolvedEquipmentFilter,
+                    bodyRegion = resolvedBodyRegionFilter?.label,
                     muscle = resolvedMuscleFilter?.label,
                     muscleTarget = libraryMuscleTargetFilterLabel(
                         bucketKey = resolvedTargetBucket,
@@ -3738,6 +3834,7 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
         exerciseIndex: Int,
         pickNextAfterRemoval: Boolean = false,
         equipmentFilter: String? = null,
+        bodyRegionFilterKey: String? = null,
         muscleFilterKey: String? = null,
         muscleTargetBucketKey: String? = null,
         muscleTargetSubcategoryKey: String? = null,
@@ -3752,6 +3849,7 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
                 session = session,
                 equipmentFilter = equipmentFilter,
             ) ?: equipmentFilter?.trim()?.takeIf(String::isNotEmpty)
+            val resolvedBodyRegionFilter = resolveActiveSessionBodyRegionFilter(bodyRegionFilterKey)
             val resolvedMuscleFilter = resolveActiveSessionMuscleFilter(muscleFilterKey)
             val resolvedTargetBucket = resolveActiveSessionMuscleTargetBucket(muscleTargetBucketKey)
             val resolvedTargetSubcategory = resolveActiveSessionMuscleTargetSubcategory(muscleTargetSubcategoryKey)
@@ -3761,6 +3859,12 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
                     .filter { exercise ->
                         resolvedEquipmentFilter == null || exercise.equipment.equals(resolvedEquipmentFilter, ignoreCase = true)
                     }
+                    .filter { exercise ->
+                        activeSessionExerciseMatchesBodyRegion(
+                            exercise = exercise,
+                            bodyRegionFilterKey = resolvedBodyRegionFilter?.key,
+                        )
+                    }
                     .map(SessionExercise::exerciseId)
                 val exerciseDetailsById = loadExerciseDetailsById(untouchedExerciseIds)
                 val pickedExerciseIndex = pickNextSessionExerciseIndex(
@@ -3768,6 +3872,7 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
                     smartTargetMuscle = smartTargetMuscle,
                     exerciseDetailsById = exerciseDetailsById,
                     equipmentFilter = resolvedEquipmentFilter,
+                    bodyRegionFilterKey = resolvedBodyRegionFilter?.key,
                     muscleFilterKey = resolvedMuscleFilter?.key,
                     muscleTargetBucketKey = resolvedTargetBucket,
                     muscleTargetSubcategoryKey = resolvedTargetSubcategory,
