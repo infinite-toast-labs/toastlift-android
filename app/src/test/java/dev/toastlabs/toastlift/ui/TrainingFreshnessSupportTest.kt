@@ -147,6 +147,61 @@ class TrainingFreshnessSupportTest {
     }
 
     @Test
+    fun buildTrainingFreshnessPenaltySignals_coalescesUpperAndLowerIntoOneDailyPenalty() {
+        val completedAt = "2026-05-01T00:00:00Z"
+        val signals = buildTrainingFreshnessPenaltySignals(
+            profile = profile(minBucketExercises = 1),
+            rows = listOf(
+                row(completedAt, 101L, 3),
+                row(completedAt, 301L, 3),
+            ),
+            exerciseDetailsById = mapOf(
+                101L to detail(101L, target = "Chest", prime = "Chest"),
+                301L to detail(301L, target = "Quadriceps", prime = "Quadriceps"),
+            ),
+            nowUtc = Instant.parse("2026-05-05T00:00:00Z"),
+            zoneId = ZoneOffset.UTC,
+        )
+
+        assertEquals(1, signals.size)
+        assertEquals("2026-05-05T00:00:00Z", signals.single().occurredAtUtc)
+        assertEquals(setOf("upper", "lower"), signals.single().familyKeys)
+    }
+
+    @Test
+    fun buildTrainingFreshnessPenaltySignals_continuesEveryTwentyFourHoursUntilRefreshed() {
+        val signals = buildTrainingFreshnessPenaltySignals(
+            profile = profile(minBucketExercises = 1),
+            rows = listOf(row("2026-05-01T00:00:00Z", 101L, 3)),
+            exerciseDetailsById = mapOf(101L to detail(101L, target = "Chest", prime = "Chest")),
+            nowUtc = Instant.parse("2026-05-06T00:00:00Z"),
+            zoneId = ZoneOffset.UTC,
+        )
+
+        assertEquals(listOf("2026-05-05T00:00:00Z", "2026-05-06T00:00:00Z"), signals.map { it.occurredAtUtc })
+        assertTrue(signals.all { it.familyKeys == setOf("upper") })
+    }
+
+    @Test
+    fun buildTrainingFreshnessPenaltySignals_stopsWhenBucketRefreshesBeforePenalty() {
+        val signals = buildTrainingFreshnessPenaltySignals(
+            profile = profile(minBucketExercises = 1),
+            rows = listOf(
+                row("2026-05-01T00:00:00Z", 101L, 3),
+                row("2026-05-04T12:00:00Z", 102L, 3),
+            ),
+            exerciseDetailsById = mapOf(
+                101L to detail(101L, target = "Chest", prime = "Chest"),
+                102L to detail(102L, target = "Back", prime = "Back"),
+            ),
+            nowUtc = Instant.parse("2026-05-06T00:00:00Z"),
+            zoneId = ZoneOffset.UTC,
+        )
+
+        assertTrue(signals.isEmpty())
+    }
+
+    @Test
     fun filterTrainingFreshnessMuscles_filtersDueAndSortsByUrgency() {
         val summary = buildTrainingFreshnessSummary(
             profile = profile(),

@@ -36,6 +36,8 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.layout.Arrangement
@@ -168,6 +170,7 @@ import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -490,13 +493,43 @@ private fun sessionTokenLabel(value: Int): String {
     return "${signedCompactNumber(value)} $suffix"
 }
 
+internal fun tokenChartNearestPointIndex(
+    pointCount: Int,
+    touchX: Float,
+    chartWidth: Float,
+): Int {
+    if (pointCount <= 0 || chartWidth <= 0f) return -1
+    if (pointCount == 1) return 0
+    val denominator = pointCount - 1
+    return ((touchX.coerceIn(0f, chartWidth) / chartWidth) * denominator)
+        .roundToInt()
+        .coerceIn(0, pointCount - 1)
+}
+
+internal fun tokenBalancePointActivityLabel(point: AdherenceCurrencyTrendPoint): String {
+    val parts = mutableListOf<String>()
+    if (point.completedSessions > 0) {
+        parts += "${point.completedSessions} workout${if (point.completedSessions == 1) "" else "s"}"
+    }
+    if (point.skippedSessions > 0) {
+        parts += "${point.skippedSessions} skip${if (point.skippedSessions == 1) "" else "s"}"
+    }
+    if (point.freshnessPenalties > 0) {
+        parts += "${point.freshnessPenalties} freshness"
+    }
+    return when {
+        parts.isNotEmpty() -> parts.joinToString(" • ")
+        point.delta != 0 -> "Wallet adjustment"
+        else -> "No wallet movement"
+    }
+}
+
 private fun tokenTrendDirection(delta: Int): ImageVector = when {
     delta > 0 -> Icons.Rounded.KeyboardArrowUp
     delta < 0 -> Icons.Rounded.KeyboardArrowDown
     else -> Icons.Rounded.QueryStats
 }
 
-@Composable
 private fun tokenTrendColor(delta: Int, palette: TokenWalletPalette): Color = when {
     delta > 0 -> palette.positive
     delta < 0 -> palette.negative
@@ -4642,7 +4675,7 @@ private fun TokenBalanceOverviewCard(
                                 fontWeight = FontWeight.Bold,
                             )
                             Text(
-                                "Completed workouts bank tokens here. Skipped program sessions spend from the same wallet with capped downside.",
+                                "Completed workouts bank tokens here. Program skips and stale freshness spend from the same wallet with capped downside.",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -4712,6 +4745,7 @@ private fun TokenBalanceOverviewCard(
                         points = quickPoints,
                         delta = quickDelta,
                         palette = palette,
+                        showSelectionReadout = false,
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(92.dp),
@@ -4832,7 +4866,7 @@ private fun TokenBalanceDetailScreen(
                                 color = deltaColor,
                             )
                             Text(
-                                "Completed workouts grow the wallet without an upside cap. Skipped program sessions spend it, with downside floored.",
+                                "Completed workouts grow the wallet without an upside cap. Program skips and stale freshness spend it, with downside floored.",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -4862,9 +4896,10 @@ private fun TokenBalanceDetailScreen(
                     points = windowPoints,
                     delta = windowDelta,
                     palette = palette,
+                    showSelectionReadout = true,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(184.dp),
+                        .height(232.dp),
                 )
                 TokenBalanceAxisLabels(points = windowPoints, labelStep = selectedWindow.labelStep)
             }
@@ -4873,7 +4908,7 @@ private fun TokenBalanceDetailScreen(
         StatRail(
             items = listOf(
                 Triple("Earned", signedCompactNumber(windowEarned), "positive tokens"),
-                Triple("Spent", signedCompactNumber(-windowSpent), "skip penalties"),
+                Triple("Spent", signedCompactNumber(-windowSpent), "penalties"),
                 Triple("Range", "$windowWorst to $windowBest", "${selectedWindow.days}-day band"),
             ),
         )
@@ -4891,7 +4926,7 @@ private fun TokenBalanceDetailScreen(
                 Text(
                     text = "${
                         trend.undatedSignalCount
-                    } older session outcome${if (trend.undatedSignalCount == 1) "" else "s"} are folded into the balance without a chart timestamp. New skips and completions now plot directly.",
+                    } older wallet event${if (trend.undatedSignalCount == 1) "" else "s"} are folded into the balance without a chart timestamp. New dated events now plot directly.",
                     modifier = Modifier.padding(14.dp),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -5007,8 +5042,13 @@ private fun TokenBalanceChart(
     delta: Int,
     palette: TokenWalletPalette,
     modifier: Modifier = Modifier,
+    showSelectionReadout: Boolean = true,
 ) {
     val chartColor = tokenTrendColor(delta, palette)
+    val selectedPointSurface = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f)
+    val haptic = LocalHapticFeedback.current
+    var selectedIndex by remember(points) { mutableStateOf(points.lastIndex.coerceAtLeast(0)) }
+    val selectedPoint = points.getOrNull(selectedIndex)
     val chartAlpha by animateFloatAsState(
         targetValue = 1f,
         animationSpec = tween(durationMillis = 700, easing = FastOutSlowInEasing),
@@ -5031,6 +5071,12 @@ private fun TokenBalanceChart(
         return
     }
 
+    fun updateSelectedIndex(index: Int) {
+        if (index !in points.indices || index == selectedIndex) return
+        selectedIndex = index
+        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+    }
+
     Box(
         modifier = modifier
             .graphicsLayer {
@@ -5038,81 +5084,215 @@ private fun TokenBalanceChart(
                 translationY = (1f - chartAlpha) * 18f
             }
             .clip(RoundedCornerShape(14.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.38f)),
-            contentAlignment = Alignment.Center,
-    ) {
-        Canvas(modifier = Modifier.fillMaxSize().padding(horizontal = 10.dp, vertical = 8.dp)) {
-            val minBalance = points.minOfOrNull { it.balance } ?: 0
-            val maxBalance = points.maxOfOrNull { it.balance } ?: 0
-            val balanceRange = (maxBalance - minBalance).coerceAtLeast(1)
-            val width = size.width
-            val height = size.height
-
-            repeat(4) { index ->
-                val y = (height / 3f) * index
-                drawLine(
-                    color = palette.graphGrid,
-                    start = androidx.compose.ui.geometry.Offset(0f, y),
-                    end = androidx.compose.ui.geometry.Offset(width, y),
-                    strokeWidth = 1.dp.toPx(),
-                    pathEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 8f)),
-                )
-            }
-
-            fun pointOffset(index: Int, point: AdherenceCurrencyTrendPoint): androidx.compose.ui.geometry.Offset {
-                val denominator = (points.size - 1).coerceAtLeast(1)
-                val x = if (points.size == 1) width / 2f else (index.toFloat() / denominator.toFloat()) * width
-                val normalized = (point.balance - minBalance).toFloat() / balanceRange.toFloat()
-                val y = height - (normalized * height)
-                return androidx.compose.ui.geometry.Offset(x, y)
-            }
-
-            val linePath = Path()
-            val areaPath = Path()
-            points.forEachIndexed { index, point ->
-                val offset = pointOffset(index, point)
-                if (index == 0) {
-                    linePath.moveTo(offset.x, offset.y)
-                    areaPath.moveTo(offset.x, height)
-                    areaPath.lineTo(offset.x, offset.y)
-                } else {
-                    linePath.lineTo(offset.x, offset.y)
-                    areaPath.lineTo(offset.x, offset.y)
-                }
-            }
-            val lastOffset = pointOffset(points.lastIndex, points.last())
-            areaPath.lineTo(lastOffset.x, height)
-            areaPath.close()
-
-            drawPath(
-                path = areaPath,
-                brush = Brush.verticalGradient(
+            .background(
+                Brush.verticalGradient(
                     colors = listOf(
-                        chartColor.copy(alpha = 0.28f),
-                        chartColor.copy(alpha = 0.02f),
+                        MaterialTheme.colorScheme.surface.copy(alpha = if (LocalToastLiftIsDarkTheme.current) 0.22f else 0.84f),
+                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f),
                     ),
                 ),
             )
-            drawPath(
-                path = linePath,
-                color = chartColor,
-                style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round),
-            )
+            .semantics {
+                contentDescription = selectedPoint?.let { point ->
+                    "Token balance ${point.balance}, ${signedCompactNumber(point.delta)} on ${
+                        point.date.format(DateTimeFormatter.ofPattern("MMM d"))
+                    }"
+                } ?: "Token balance chart"
+            },
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            if (showSelectionReadout && selectedPoint != null) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.Top,
+                ) {
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                    ) {
+                        Text(
+                            selectedPoint.date.format(DateTimeFormatter.ofPattern("MMM d")),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Text(
+                            "Balance ${selectedPoint.balance}",
+                            style = MaterialTheme.typography.headlineSmall,
+                            fontWeight = FontWeight.Black,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        horizontalAlignment = Alignment.End,
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        MiniTag(
+                            text = signedCompactNumber(selectedPoint.delta),
+                            accent = tokenTrendColor(selectedPoint.delta, palette).copy(alpha = 0.16f),
+                        )
+                        Text(
+                            tokenBalancePointActivityLabel(selectedPoint),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+            }
 
-            points.forEachIndexed { index, point ->
-                if (point.delta == 0) return@forEachIndexed
-                val offset = pointOffset(index, point)
-                val pointColor = if (point.delta > 0) palette.positive else palette.negative
-                drawCircle(
-                    color = pointColor.copy(alpha = 0.18f),
-                    radius = 7.dp.toPx(),
-                    center = offset,
+            Canvas(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .pointerInput(points.size) {
+                        detectTapGestures { offset ->
+                            updateSelectedIndex(tokenChartNearestPointIndex(points.size, offset.x, size.width.toFloat()))
+                        }
+                    }
+                    .pointerInput(points.size) {
+                        detectDragGestures(
+                            onDragStart = { offset ->
+                                updateSelectedIndex(tokenChartNearestPointIndex(points.size, offset.x, size.width.toFloat()))
+                            },
+                            onDrag = { change, _ ->
+                                updateSelectedIndex(tokenChartNearestPointIndex(points.size, change.position.x, size.width.toFloat()))
+                            },
+                        )
+                    },
+            ) {
+                val minBalance = minOf(points.minOfOrNull { it.balance } ?: 0, 0)
+                val maxBalance = maxOf(points.maxOfOrNull { it.balance } ?: 0, 0)
+                val balanceRange = (maxBalance - minBalance).coerceAtLeast(1)
+                val width = size.width
+                val height = size.height
+                val verticalInset = 8.dp.toPx()
+                val usableHeight = (height - (verticalInset * 2f)).coerceAtLeast(1f)
+
+                repeat(4) { index ->
+                    val y = verticalInset + ((usableHeight / 3f) * index)
+                    drawLine(
+                        color = palette.graphGrid,
+                        start = androidx.compose.ui.geometry.Offset(0f, y),
+                        end = androidx.compose.ui.geometry.Offset(width, y),
+                        strokeWidth = 1.dp.toPx(),
+                        pathEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 8f)),
+                    )
+                }
+
+                fun pointOffset(index: Int, point: AdherenceCurrencyTrendPoint): androidx.compose.ui.geometry.Offset {
+                    val denominator = (points.size - 1).coerceAtLeast(1)
+                    val x = if (points.size == 1) width / 2f else (index.toFloat() / denominator.toFloat()) * width
+                    val normalized = (point.balance - minBalance).toFloat() / balanceRange.toFloat()
+                    val y = verticalInset + usableHeight - (normalized * usableHeight)
+                    return androidx.compose.ui.geometry.Offset(x, y)
+                }
+
+                if (minBalance < 0 && maxBalance > 0) {
+                    val zeroY = pointOffset(0, points.first().copy(balance = 0)).y
+                    drawLine(
+                        color = palette.graphLabel.copy(alpha = 0.28f),
+                        start = androidx.compose.ui.geometry.Offset(0f, zeroY),
+                        end = androidx.compose.ui.geometry.Offset(width, zeroY),
+                        strokeWidth = 1.dp.toPx(),
+                    )
+                }
+
+                val linePath = Path()
+                val areaPath = Path()
+                points.forEachIndexed { index, point ->
+                    val offset = pointOffset(index, point)
+                    if (index == 0) {
+                        linePath.moveTo(offset.x, offset.y)
+                        areaPath.moveTo(offset.x, height)
+                        areaPath.lineTo(offset.x, offset.y)
+                    } else {
+                        linePath.lineTo(offset.x, offset.y)
+                        areaPath.lineTo(offset.x, offset.y)
+                    }
+                }
+                val lastOffset = pointOffset(points.lastIndex, points.last())
+                areaPath.lineTo(lastOffset.x, height)
+                areaPath.close()
+
+                drawPath(
+                    path = areaPath,
+                    brush = Brush.verticalGradient(
+                        colors = listOf(
+                            chartColor.copy(alpha = 0.32f),
+                            chartColor.copy(alpha = 0.02f),
+                        ),
+                    ),
                 )
-                drawCircle(
-                    color = pointColor,
-                    radius = 3.4.dp.toPx(),
-                    center = offset,
+                drawPath(
+                    path = linePath,
+                    color = chartColor.copy(alpha = 0.22f),
+                    style = Stroke(width = 7.dp.toPx(), cap = StrokeCap.Round),
                 )
+                drawPath(
+                    path = linePath,
+                    color = chartColor,
+                    style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round),
+                )
+
+                points.forEachIndexed { index, point ->
+                    if (point.delta == 0 && index != selectedIndex) return@forEachIndexed
+                    val offset = pointOffset(index, point)
+                    val pointColor = tokenTrendColor(point.delta, palette)
+                    val isSelected = index == selectedIndex
+                    drawCircle(
+                        color = pointColor.copy(alpha = if (isSelected) 0.24f else 0.18f),
+                        radius = if (isSelected) 11.dp.toPx() else 7.dp.toPx(),
+                        center = offset,
+                    )
+                    drawCircle(
+                        color = pointColor,
+                        radius = if (isSelected) 4.8.dp.toPx() else 3.4.dp.toPx(),
+                        center = offset,
+                    )
+                }
+
+                selectedPoint?.let { point ->
+                    val selectedOffset = pointOffset(selectedIndex, point)
+                    val selectedColor = tokenTrendColor(point.delta, palette)
+                    drawLine(
+                        color = palette.graphLabel.copy(alpha = 0.42f),
+                        start = androidx.compose.ui.geometry.Offset(selectedOffset.x, verticalInset),
+                        end = androidx.compose.ui.geometry.Offset(selectedOffset.x, height),
+                        strokeWidth = 1.dp.toPx(),
+                        pathEffect = PathEffect.dashPathEffect(floatArrayOf(6f, 7f)),
+                    )
+                    drawLine(
+                        color = palette.graphLabel.copy(alpha = 0.18f),
+                        start = androidx.compose.ui.geometry.Offset(0f, selectedOffset.y),
+                        end = androidx.compose.ui.geometry.Offset(width, selectedOffset.y),
+                        strokeWidth = 1.dp.toPx(),
+                    )
+                    drawCircle(
+                        color = selectedColor.copy(alpha = 0.18f),
+                        radius = 15.dp.toPx(),
+                        center = selectedOffset,
+                    )
+                    drawCircle(
+                        color = selectedPointSurface,
+                        radius = 8.dp.toPx(),
+                        center = selectedOffset,
+                    )
+                    drawCircle(
+                        color = selectedColor,
+                        radius = 5.dp.toPx(),
+                        center = selectedOffset,
+                    )
+                }
             }
         }
     }

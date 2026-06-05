@@ -1,6 +1,7 @@
 package dev.toastlabs.toastlift.ui
 
 import dev.toastlabs.toastlift.data.ExerciseDetail
+import dev.toastlabs.toastlift.data.FreshnessPenaltyAdherenceSignal
 import dev.toastlabs.toastlift.data.SessionExercise
 import dev.toastlabs.toastlift.data.UserProfile
 import dev.toastlabs.toastlift.data.WeeklyMuscleTargetWorkoutRow
@@ -108,6 +109,11 @@ private data class StimulusAccumulator(
     val exerciseIds: MutableSet<Long> = linkedSetOf(),
 )
 
+private data class TrainingFreshnessEventMaps(
+    val muscleEvents: Map<Pair<String, String>, StimulusAccumulator>,
+    val bucketEvents: Map<Pair<String, String>, StimulusAccumulator>,
+)
+
 private val trackedMuscles = listOf(
     TrainingFreshnessSlot("chest", "Chest", TrainingFreshnessFamily.Upper),
     TrainingFreshnessSlot("shoulders", "Shoulders", TrainingFreshnessFamily.Upper),
@@ -143,35 +149,12 @@ internal fun buildTrainingFreshnessSummary(
     val thresholdDays = normalizeTrainingFreshnessThresholdDays(profile.trainingFreshnessThresholdDays)
     val minimumBucketExercises = normalizeTrainingFreshnessBucketExercises(profile.trainingFreshnessMinimumBucketExercises)
     val thresholdHours = thresholdDays * 24L
-    val muscleEvents = linkedMapOf<Pair<String, String>, StimulusAccumulator>()
-    val bucketEvents = linkedMapOf<Pair<String, String>, StimulusAccumulator>()
-
-    rows.filter { it.completedSetCount > 0 }
-        .forEach { row ->
-            val completedAtUtc = normalizedInstantString(row.completedAtUtc, zoneId) ?: return@forEach
-            val detail = exerciseDetailsById[row.exerciseId]
-            val contributions = resolveTrainingFreshnessContributions(detail)
-            contributions.forEach { contribution ->
-                val muscleKey = completedAtUtc to contribution.key
-                val muscleAccumulator = muscleEvents.getOrPut(muscleKey) { StimulusAccumulator() }
-                val weightedSets = row.completedSetCount * contribution.weight
-                muscleAccumulator.weightedSets += weightedSets
-                muscleAccumulator.exerciseNames += contribution.exerciseName
-                muscleAccumulator.exerciseIds += row.exerciseId
-
-                val bucketKey = completedAtUtc to contribution.family.bucketKey()
-                val bucketAccumulator = bucketEvents.getOrPut(bucketKey) { StimulusAccumulator() }
-                bucketAccumulator.weightedSets += weightedSets
-                bucketAccumulator.muscleLabels += contribution.label
-                bucketAccumulator.exerciseNames += contribution.exerciseName
-                bucketAccumulator.exerciseIds += row.exerciseId
-            }
-        }
+    val eventMaps = collectTrainingFreshnessEvents(rows, exerciseDetailsById, zoneId)
 
     val muscleRows = trackedMuscles.map { slot ->
         val latest = latestQualifyingEvent(
             slotKey = slot.key,
-            events = muscleEvents,
+            events = eventMaps.muscleEvents,
             resetThreshold = TRAINING_FRESHNESS_MUSCLE_RESET_WEIGHTED_SETS,
         )
         val status = freshnessStatus(latest?.first, nowUtc, thresholdHours)
@@ -192,7 +175,7 @@ internal fun buildTrainingFreshnessSummary(
     val bucketRows = trackedBuckets.map { slot ->
         val latest = latestQualifyingEvent(
             slotKey = slot.key,
-            events = bucketEvents,
+            events = eventMaps.bucketEvents,
             resetThreshold = BUCKET_RESET_WEIGHTED_SETS,
             minimumDistinctExercises = minimumBucketExercises,
         )
@@ -243,6 +226,108 @@ internal fun buildTrainingFreshnessSummary(
         supportingText = supportingText,
         bucketRows = bucketRows,
         muscleRows = muscleRows,
+    )
+}
+
+internal fun buildTrainingFreshnessPenaltySignals(
+    profile: UserProfile,
+    rows: List<WeeklyMuscleTargetWorkoutRow>,
+    exerciseDetailsById: Map<Long, ExerciseDetail>,
+    nowUtc: Instant = Instant.now(),
+    zoneId: ZoneId = ZoneId.systemDefault(),
+): List<FreshnessPenaltyAdherenceSignal> {
+    val thresholdDays = normalizeTrainingFreshnessThresholdDays(profile.trainingFreshnessThresholdDays)
+    val thresholdHours = thresholdDays * 24L
+    val minimumBucketExercises = normalizeTrainingFreshnessBucketExercises(profile.trainingFreshnessMinimumBucketExercises)
+    val bucketEvents = collectTrainingFreshnessEvents(rows, exerciseDetailsById, zoneId).bucketEvents
+    val candidates = trackedBuckets
+        .filter { it.family == TrainingFreshnessFamily.Upper || it.family == TrainingFreshnessFamily.Lower }
+        .flatMap { bucket ->
+            val refreshInstants = qualifyingEventInstants(
+                slotKey = bucket.key,
+                events = bucketEvents,
+                resetThreshold = BUCKET_RESET_WEIGHTED_SETS,
+                minimumDistinctExercises = minimumBucketExercises,
+            )
+            buildBucketFreshnessPenaltyCandidates(
+                bucketKey = bucket.key,
+                refreshInstants = refreshInstants,
+                thresholdHours = thresholdHours,
+                nowUtc = nowUtc,
+            )
+        }
+
+    return candidates
+        .groupBy { candidate -> candidate.instant.atZone(zoneId).toLocalDate() }
+        .toSortedMap()
+        .map { (_, dayCandidates) ->
+            val occurredAt = dayCandidates.minOf { it.instant }
+            FreshnessPenaltyAdherenceSignal(
+                occurredAtUtc = occurredAt.toString(),
+                familyKeys = dayCandidates.mapTo(linkedSetOf()) { it.bucketKey },
+            )
+        }
+}
+
+private data class FreshnessPenaltyCandidate(
+    val instant: Instant,
+    val bucketKey: String,
+)
+
+private fun buildBucketFreshnessPenaltyCandidates(
+    bucketKey: String,
+    refreshInstants: List<Instant>,
+    thresholdHours: Long,
+    nowUtc: Instant,
+): List<FreshnessPenaltyCandidate> {
+    if (refreshInstants.isEmpty()) return emptyList()
+    val penaltyStartOffset = Duration.ofHours(thresholdHours + 24L)
+    val penaltyInterval = Duration.ofHours(24L)
+    return buildList {
+        refreshInstants.forEachIndexed { index, refreshInstant ->
+            val nextRefresh = refreshInstants.getOrNull(index + 1)
+            var penaltyInstant = refreshInstant.plus(penaltyStartOffset)
+            while (!penaltyInstant.isAfter(nowUtc) && (nextRefresh == null || penaltyInstant.isBefore(nextRefresh))) {
+                add(FreshnessPenaltyCandidate(instant = penaltyInstant, bucketKey = bucketKey))
+                penaltyInstant = penaltyInstant.plus(penaltyInterval)
+            }
+        }
+    }
+}
+
+private fun collectTrainingFreshnessEvents(
+    rows: List<WeeklyMuscleTargetWorkoutRow>,
+    exerciseDetailsById: Map<Long, ExerciseDetail>,
+    zoneId: ZoneId,
+): TrainingFreshnessEventMaps {
+    val muscleEvents = linkedMapOf<Pair<String, String>, StimulusAccumulator>()
+    val bucketEvents = linkedMapOf<Pair<String, String>, StimulusAccumulator>()
+
+    rows.filter { it.completedSetCount > 0 }
+        .forEach { row ->
+            val completedAtUtc = normalizedInstantString(row.completedAtUtc, zoneId) ?: return@forEach
+            val detail = exerciseDetailsById[row.exerciseId]
+            val contributions = resolveTrainingFreshnessContributions(detail)
+            contributions.forEach { contribution ->
+                val muscleKey = completedAtUtc to contribution.key
+                val muscleAccumulator = muscleEvents.getOrPut(muscleKey) { StimulusAccumulator() }
+                val weightedSets = row.completedSetCount * contribution.weight
+                muscleAccumulator.weightedSets += weightedSets
+                muscleAccumulator.exerciseNames += contribution.exerciseName
+                muscleAccumulator.exerciseIds += row.exerciseId
+
+                val bucketKey = completedAtUtc to contribution.family.bucketKey()
+                val bucketAccumulator = bucketEvents.getOrPut(bucketKey) { StimulusAccumulator() }
+                bucketAccumulator.weightedSets += weightedSets
+                bucketAccumulator.muscleLabels += contribution.label
+                bucketAccumulator.exerciseNames += contribution.exerciseName
+                bucketAccumulator.exerciseIds += row.exerciseId
+            }
+        }
+
+    return TrainingFreshnessEventMaps(
+        muscleEvents = muscleEvents,
+        bucketEvents = bucketEvents,
     )
 }
 
@@ -451,6 +536,24 @@ private fun latestQualifyingEvent(
         }
         .mapNotNull { (key, value) -> Instant.parse(key.first) to value }
         .maxByOrNull { it.first }
+}
+
+private fun qualifyingEventInstants(
+    slotKey: String,
+    events: Map<Pair<String, String>, StimulusAccumulator>,
+    resetThreshold: Double,
+    minimumDistinctExercises: Int = 1,
+): List<Instant> {
+    return events.asSequence()
+        .filter { (key, value) ->
+            key.second == slotKey &&
+                value.weightedSets >= resetThreshold &&
+                value.exerciseIds.size >= minimumDistinctExercises
+        }
+        .mapNotNull { (key, _) -> runCatching { Instant.parse(key.first) }.getOrNull() }
+        .distinct()
+        .sorted()
+        .toList()
 }
 
 private fun freshnessStatus(

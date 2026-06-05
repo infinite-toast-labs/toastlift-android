@@ -170,6 +170,30 @@ class AdherenceCurrencyTest {
         assertEquals(1, trend.dailyPoints.last().balance)
     }
 
+    @Test
+    fun globalTrendDebitsFreshnessPenaltiesLikeSkippedSessionsWithoutCountingProgramSkips() {
+        val trend = buildGlobalAdherenceCurrencyTrend(
+            completedWorkouts = emptyList(),
+            skippedSessions = emptyList(),
+            freshnessPenalties = listOf(
+                FreshnessPenaltyAdherenceSignal(
+                    occurredAtUtc = "2026-03-24T12:00:00Z",
+                    familyKeys = setOf("upper", "lower"),
+                ),
+            ),
+            today = LocalDate.parse("2026-03-25"),
+            zoneId = ZoneOffset.UTC,
+        )
+
+        requireNotNull(trend)
+        assertEquals(-3, trend.snapshot.balance)
+        assertEquals(-3, trend.monthlyDelta)
+        val penaltyPoint = trend.dailyPoints.first { it.date == LocalDate.parse("2026-03-24") }
+        assertEquals(-3, penaltyPoint.delta)
+        assertEquals(1, penaltyPoint.freshnessPenalties)
+        assertEquals(0, penaltyPoint.skippedSessions)
+    }
+
     private fun skippedSignal(
         sequence: Int,
         occurredAtUtc: String? = null,

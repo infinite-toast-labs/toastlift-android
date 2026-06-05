@@ -31,6 +31,7 @@ data class AdherenceCurrencyTrendPoint(
     val delta: Int,
     val completedSessions: Int,
     val skippedSessions: Int,
+    val freshnessPenalties: Int = 0,
 )
 
 data class AdherenceCurrencyTrend(
@@ -51,6 +52,7 @@ internal data class AdherenceSessionSignal(
     val plannedSets: Int,
     val completedSetCount: Int = 0,
     val occurredAtUtc: String? = null,
+    val source: AdherenceSignalSource = AdherenceSignalSource.fromStatus(status),
 )
 
 internal data class CompletedWorkoutAdherenceSignal(
@@ -60,6 +62,30 @@ internal data class CompletedWorkoutAdherenceSignal(
     val completedSetCount: Int,
 )
 
+internal data class FreshnessPenaltyAdherenceSignal(
+    val occurredAtUtc: String,
+    val familyKeys: Set<String>,
+)
+
+internal enum class AdherenceSignalSource {
+    CompletedWorkout,
+    ProgramSkip,
+    FreshnessPenalty,
+    Other,
+    ;
+
+    companion object {
+        fun fromStatus(status: SessionStatus): AdherenceSignalSource = when (status) {
+            SessionStatus.COMPLETED -> CompletedWorkout
+            SessionStatus.SKIPPED -> ProgramSkip
+            SessionStatus.MIGRATED,
+            SessionStatus.UPCOMING,
+            SessionStatus.IN_PROGRESS,
+            -> Other
+        }
+    }
+}
+
 private data class SequencedAdherenceEvent(
     val occurredAtUtc: String?,
     val parsedInstant: Instant?,
@@ -68,6 +94,7 @@ private data class SequencedAdherenceEvent(
     val status: SessionStatus,
     val plannedSets: Int,
     val completedSetCount: Int = 0,
+    val source: AdherenceSignalSource,
 )
 
 internal fun buildAdherenceCurrencySnapshot(signals: List<AdherenceSessionSignal>): AdherenceCurrencySnapshot {
@@ -115,8 +142,9 @@ internal fun buildAdherenceCurrencyTrend(
                     date = currentDate,
                     balance = runningBalance,
                     delta = dayEntries.sumOf { it.ledgerEntry.delta },
-                    completedSessions = dayEntries.count { it.ledgerEntry.status == SessionStatus.COMPLETED },
-                    skippedSessions = dayEntries.count { it.ledgerEntry.status == SessionStatus.SKIPPED },
+                    completedSessions = dayEntries.count { it.ledgerEntry.source == AdherenceSignalSource.CompletedWorkout },
+                    skippedSessions = dayEntries.count { it.ledgerEntry.source == AdherenceSignalSource.ProgramSkip },
+                    freshnessPenalties = dayEntries.count { it.ledgerEntry.source == AdherenceSignalSource.FreshnessPenalty },
                 ),
             )
             currentDate = currentDate.plusDays(1)
@@ -140,6 +168,7 @@ internal fun buildAdherenceCurrencyTrend(
 internal fun buildGlobalAdherenceCurrencyTrend(
     completedWorkouts: List<CompletedWorkoutAdherenceSignal>,
     skippedSessions: List<PlannedSession>,
+    freshnessPenalties: List<FreshnessPenaltyAdherenceSignal> = emptyList(),
     today: LocalDate = LocalDate.now(),
     zoneId: ZoneId = ZoneId.systemDefault(),
 ): AdherenceCurrencyTrend? {
@@ -154,6 +183,7 @@ internal fun buildGlobalAdherenceCurrencyTrend(
                     status = SessionStatus.COMPLETED,
                     plannedSets = workout.plannedSetCount,
                     completedSetCount = workout.completedSetCount,
+                    source = AdherenceSignalSource.CompletedWorkout,
                 ),
             )
         }
@@ -170,9 +200,23 @@ internal fun buildGlobalAdherenceCurrencyTrend(
                         tieBreaker = "skip:${session.programId}:${session.sequenceNumber}:${session.id}",
                         status = SessionStatus.SKIPPED,
                         plannedSets = session.plannedSets,
+                        source = AdherenceSignalSource.ProgramSkip,
                     ),
                 )
             }
+        freshnessPenalties.forEachIndexed { index, penalty ->
+            add(
+                SequencedAdherenceEvent(
+                    occurredAtUtc = penalty.occurredAtUtc,
+                    parsedInstant = runCatching { Instant.parse(penalty.occurredAtUtc) }.getOrNull(),
+                    fallbackSequenceNumber = Int.MAX_VALUE - freshnessPenalties.size + index,
+                    tieBreaker = "freshness:${penalty.occurredAtUtc}:${penalty.familyKeys.sorted().joinToString("+")}",
+                    status = SessionStatus.SKIPPED,
+                    plannedSets = 0,
+                    source = AdherenceSignalSource.FreshnessPenalty,
+                ),
+            )
+        }
     }
     if (events.isEmpty()) return null
 
@@ -192,6 +236,7 @@ internal fun buildGlobalAdherenceCurrencyTrend(
                 plannedSets = event.plannedSets,
                 completedSetCount = event.completedSetCount,
                 occurredAtUtc = event.occurredAtUtc,
+                source = event.source,
             )
         }
 
@@ -208,6 +253,7 @@ private data class AdherenceLedgerEntry(
     val delta: Int,
     val balanceAfter: Int,
     val occurredAtUtc: String?,
+    val source: AdherenceSignalSource,
 )
 
 private data class AdherenceLedger(
@@ -247,6 +293,7 @@ private fun buildAdherenceCurrencyLedger(signals: List<AdherenceSessionSignal>):
                         delta = reward,
                         balanceAfter = balance,
                         occurredAtUtc = signal.occurredAtUtc,
+                        source = signal.source,
                     )
                     consecutiveSolidCompletions = if (completionRatio >= ADHERENCE_SOLID_COMPLETION_THRESHOLD && reward > 0) {
                         consecutiveSolidCompletions + 1
@@ -263,6 +310,7 @@ private fun buildAdherenceCurrencyLedger(signals: List<AdherenceSessionSignal>):
                         delta = ADHERENCE_SKIP_PENALTY,
                         balanceAfter = balance,
                         occurredAtUtc = signal.occurredAtUtc,
+                        source = signal.source,
                     )
                     consecutiveSolidCompletions = 0
                 }
@@ -331,6 +379,6 @@ private fun adherenceStatusLabel(balance: Int): String = when {
 
 private fun adherenceDetail(balance: Int): String = when {
     balance >= 12 -> "Consistency buffer is stocked. Upside is uncapped and misses are still floored."
-    balance >= 0 -> "Solid sessions bank flexibility before skips spend it. Upside has no ceiling."
+    balance >= 0 -> "Solid sessions bank flexibility before penalties spend it. Upside has no ceiling."
     else -> "Recent misses spent the buffer. Penalties stop at -12 and solid sessions recover it faster."
 }

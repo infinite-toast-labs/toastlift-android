@@ -49,6 +49,7 @@ import dev.toastlabs.toastlift.data.FORMULA_B_REAR_SIDE_DELTS_HIGH_REPS_FOCUS_KE
 import dev.toastlabs.toastlift.data.FORMULA_B_REAR_SIDE_DELTS_STRENGTH_FOCUS_KEY
 import dev.toastlabs.toastlift.data.FORMULA_B_UPPER_CHEST_HIGH_REPS_FOCUS_KEY
 import dev.toastlabs.toastlift.data.FORMULA_B_UPPER_CHEST_STRENGTH_FOCUS_KEY
+import dev.toastlabs.toastlift.data.FreshnessPenaltyAdherenceSignal
 import dev.toastlabs.toastlift.data.HistoricalExerciseSet
 import dev.toastlabs.toastlift.data.HistoryShareFormat
 import dev.toastlabs.toastlift.data.HistoryReuseMode
@@ -2167,7 +2168,7 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
                     zoneId = zoneId,
                 )
             }
-            val tokenBalanceTrend = buildTokenBalanceTrend()
+            val tokenBalanceTrend = buildTokenBalanceTrend(profile)
             val restoredActiveSession = uiState.activeSession?.let {
                 null
             } ?: container.workoutRepository.loadActiveSession()?.let { persisted ->
@@ -4296,7 +4297,7 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
             val beforeStrengthScore = uiState.historyStrengthScore
             val beforeWeeklyTargets = uiState.weeklyMuscleTargets
             val beforeProgramSessions = activeProgram?.let { container.programRepository.loadSessionsForProgram(it.id) }.orEmpty()
-            val beforeTokenTrend = buildTokenBalanceTrend()
+            val beforeTokenTrend = buildTokenBalanceTrend(profile)
             val beforeWeekCredit = if (plannedSession != null) {
                 weekCreditForProgramSessions(beforeProgramSessions, plannedSession.weekNumber)
             } else {
@@ -4343,7 +4344,7 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
             val todayReceiptRecap = buildTodayReceiptRecapState(afterHistory)
             val afterWeeklyTargets = profile?.let { loadWeeklyMuscleTargetSummary(it) }
             val afterProgramSessions = activeProgram?.let { container.programRepository.loadSessionsForProgram(it.id) }.orEmpty()
-            val afterTokenTrend = buildTokenBalanceTrend()
+            val afterTokenTrend = buildTokenBalanceTrend(profile)
             val afterNextPlannedSession = activeProgram?.let { container.programRepository.currentPosition(it.id) }
             val afterWeekCredit = if (plannedSession != null) {
                 weekCreditForProgramSessions(afterProgramSessions, plannedSession.weekNumber)
@@ -4800,10 +4801,32 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
             .toSet()
     }
 
-    private fun buildTokenBalanceTrend(): AdherenceCurrencyTrend? {
+    private fun buildTokenBalanceTrend(
+        profile: UserProfile? = container.userRepository.loadProfile(),
+    ): AdherenceCurrencyTrend? {
         return buildGlobalAdherenceCurrencyTrend(
             completedWorkouts = container.workoutRepository.loadCompletedWorkoutAdherenceSignals(),
             skippedSessions = container.programRepository.loadSessionsByStatus(SessionStatus.SKIPPED),
+            freshnessPenalties = profile?.let(::loadFreshnessPenaltySignals).orEmpty(),
+        )
+    }
+
+    private fun loadFreshnessPenaltySignals(profile: UserProfile): List<FreshnessPenaltyAdherenceSignal> {
+        val rows = container.workoutRepository.loadWeeklyMuscleTargetRows(Instant.EPOCH.toString())
+        if (rows.isEmpty()) return emptyList()
+        val exerciseDetailsById = rows
+            .map { it.exerciseId }
+            .distinct()
+            .mapNotNull { exerciseId ->
+                container.catalogRepository.getExerciseDetail(exerciseId)?.let { detail -> exerciseId to detail }
+            }
+            .toMap()
+        return buildTrainingFreshnessPenaltySignals(
+            profile = profile,
+            rows = rows,
+            exerciseDetailsById = exerciseDetailsById,
+            nowUtc = Instant.now(),
+            zoneId = ZoneId.systemDefault(),
         )
     }
 
