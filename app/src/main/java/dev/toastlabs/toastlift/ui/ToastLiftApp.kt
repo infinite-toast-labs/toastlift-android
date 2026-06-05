@@ -860,6 +860,8 @@ fun ToastLiftApp(
                     onCustomExerciseDraftChange = viewModel::updateCustomExerciseDraft,
                     onCustomExerciseNameChange = viewModel::updateCustomExerciseName,
                     onGenerateCustomExercise = viewModel::generateCustomExerciseDetails,
+                    onAddExerciseToExistingTemplate = viewModel::addExerciseToExistingTemplate,
+                    onCreateTemplateFromExercise = viewModel::createTemplateFromExercise,
                     onAddExercises = viewModel::addExercisesToActiveSession,
                     onAddGeneratedExercise = viewModel::addGeneratedExerciseToActiveSession,
                     onPickAgainGeneratedExercise = viewModel::pickAgainGeneratedActiveSessionExercise,
@@ -1054,6 +1056,8 @@ fun ToastLiftApp(
                                         onUseExistingExercise = viewModel::useExistingExerciseFromCustomFlow,
                                         onSaveCustomExercise = viewModel::saveCustomExercise,
                                         onPendingSelectionConsumed = viewModel::clearPendingAddExercisePickerSelection,
+                                        onAddExerciseToExistingTemplate = viewModel::addExerciseToExistingTemplate,
+                                        onCreateTemplateFromExercise = viewModel::createTemplateFromExercise,
                                         onOpenExerciseHistory = viewModel::openExerciseHistory,
                                         onOpenExerciseVideos = viewModel::openExerciseVideos,
                                         onOpenHistoryWorkout = viewModel::openHistoryWorkout,
@@ -1107,6 +1111,8 @@ fun ToastLiftApp(
                                     onUseExistingExercise = viewModel::useExistingExerciseFromCustomFlow,
                                     onSaveCustomExercise = viewModel::saveCustomExercise,
                                     onPendingSelectionConsumed = viewModel::clearPendingAddExercisePickerSelection,
+                                    onAddExerciseToExistingTemplate = viewModel::addExerciseToExistingTemplate,
+                                    onCreateTemplateFromExercise = viewModel::createTemplateFromExercise,
                                     onManualNameChange = viewModel::updateManualWorkoutName,
                                     onRemoveManualExercise = viewModel::removeBuilderExercise,
                                     onAddExercisesToBuilder = viewModel::addExercisesToBuilder,
@@ -1136,6 +1142,8 @@ fun ToastLiftApp(
                                         onToggleFavorite = viewModel::toggleFavorite,
                                         onOpenExerciseHistory = viewModel::openExerciseHistory,
                                         onOpenExerciseVideos = viewModel::openExerciseVideos,
+                                        onAddExerciseToExistingTemplate = viewModel::addExerciseToExistingTemplate,
+                                        onCreateTemplateFromExercise = viewModel::createTemplateFromExercise,
                                     )
 
                                     MainTab.History -> HistoryScreen(
@@ -1388,6 +1396,8 @@ private fun TodayScreen(
     onUseExistingExercise: (ExerciseSummary) -> Unit,
     onSaveCustomExercise: () -> Unit,
     onPendingSelectionConsumed: () -> Unit,
+    onAddExerciseToExistingTemplate: (Long, ExerciseSummary) -> Unit,
+    onCreateTemplateFromExercise: (String, ExerciseSummary) -> Unit,
     onOpenExerciseHistory: (Long, String) -> Unit,
     onOpenExerciseVideos: (Long, String) -> Unit,
     onOpenHistoryWorkout: (Long) -> Unit,
@@ -1455,6 +1465,8 @@ private fun TodayScreen(
             onGenerateCustomExercise = onGenerateCustomExercise,
             onUseExistingExercise = onUseExistingExercise,
             onSaveCustomExercise = onSaveCustomExercise,
+            onAddExerciseToExistingTemplate = onAddExerciseToExistingTemplate,
+            onCreateTemplateFromExercise = onCreateTemplateFromExercise,
         )
         return
     }
@@ -2924,6 +2936,8 @@ private fun GenerateScreen(
     onUseExistingExercise: (ExerciseSummary) -> Unit,
     onSaveCustomExercise: () -> Unit,
     onPendingSelectionConsumed: () -> Unit,
+    onAddExerciseToExistingTemplate: (Long, ExerciseSummary) -> Unit,
+    onCreateTemplateFromExercise: (String, ExerciseSummary) -> Unit,
     onManualNameChange: (String) -> Unit,
     onRemoveManualExercise: (Long) -> Unit,
     onAddExercisesToBuilder: (List<ExerciseSummary>) -> Unit,
@@ -2990,6 +3004,8 @@ private fun GenerateScreen(
             onUseExistingExercise = onUseExistingExercise,
             onSaveCustomExercise = onSaveCustomExercise,
             onPendingSelectionConsumed = onPendingSelectionConsumed,
+            onAddExerciseToExistingTemplate = onAddExerciseToExistingTemplate,
+            onCreateTemplateFromExercise = onCreateTemplateFromExercise,
         )
         return
     }
@@ -3025,6 +3041,8 @@ private fun GenerateScreen(
             onUseExistingExercise = onUseExistingExercise,
             onSaveCustomExercise = onSaveCustomExercise,
             onPendingSelectionConsumed = onPendingSelectionConsumed,
+            onAddExerciseToExistingTemplate = onAddExerciseToExistingTemplate,
+            onCreateTemplateFromExercise = onCreateTemplateFromExercise,
         )
         return
     }
@@ -3247,8 +3265,12 @@ private fun LibraryScreen(
     onToggleFavorite: (ExerciseSummary) -> Unit,
     onOpenExerciseHistory: (Long, String) -> Unit,
     onOpenExerciseVideos: (Long, String) -> Unit,
+    onAddExerciseToExistingTemplate: (Long, ExerciseSummary) -> Unit,
+    onCreateTemplateFromExercise: (String, ExerciseSummary) -> Unit,
 ) {
     var showFilterSheet by remember { mutableStateOf(false) }
+    var existingTemplateTarget by remember { mutableStateOf<ExerciseSummary?>(null) }
+    var newTemplateTarget by remember { mutableStateOf<ExerciseSummary?>(null) }
 
     CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onBackground) {
         Column(
@@ -3319,6 +3341,8 @@ private fun LibraryScreen(
                         onToggleFavorite = { onToggleFavorite(exercise) },
                         onOpenExerciseHistory = { onOpenExerciseHistory(exercise.id, exercise.name) },
                         onOpenExerciseVideos = { onOpenExerciseVideos(exercise.id, exercise.name) },
+                        onAddToExistingTemplate = { existingTemplateTarget = exercise },
+                        onCreateTemplateFromExercise = { newTemplateTarget = exercise },
                     )
                 }
             }
@@ -3341,6 +3365,36 @@ private fun LibraryScreen(
             onToggleLoggedHistory = onToggleLoggedHistoryFilter,
             onClearFreshnessMuscleFilters = onClearFreshnessMuscleFilters,
             onClearMuscleTargetFilters = onClearMuscleTargetFilters,
+        )
+    }
+
+    existingTemplateTarget?.let { exercise ->
+        ExerciseTemplatePickerDialog(
+            exercise = exercise,
+            templates = state.templates,
+            templateExerciseIds = effectiveTemplateExerciseIds(state),
+            onDismiss = { existingTemplateTarget = null },
+            onSelectTemplate = { template ->
+                existingTemplateTarget = null
+                onAddExerciseToExistingTemplate(template.id, exercise)
+            },
+            onCreateNewTemplate = {
+                existingTemplateTarget = null
+                newTemplateTarget = exercise
+            },
+        )
+    }
+
+    newTemplateTarget?.let { exercise ->
+        TemplateNameDialog(
+            title = "Add to new template",
+            initialValue = "",
+            confirmLabel = "Create",
+            onDismiss = { newTemplateTarget = null },
+            onConfirm = { name ->
+                newTemplateTarget = null
+                onCreateTemplateFromExercise(name, exercise)
+            },
         )
     }
 }
@@ -6241,6 +6295,8 @@ private fun ExerciseListCard(
     onToggleFavorite: () -> Unit,
     onOpenExerciseHistory: () -> Unit,
     onOpenExerciseVideos: () -> Unit,
+    onAddToExistingTemplate: () -> Unit,
+    onCreateTemplateFromExercise: () -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
     FeatureCard(modifier = Modifier.clickable(onClick = onDetails)) {
@@ -6286,6 +6342,8 @@ private fun ExerciseListCard(
                     DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                         DropdownMenuItem(text = { Text("Details") }, onClick = { expanded = false; onDetails() })
                         DropdownMenuItem(text = { Text("Add to builder") }, onClick = { expanded = false; onAdd() })
+                        DropdownMenuItem(text = { Text("Add to existing template") }, onClick = { expanded = false; onAddToExistingTemplate() })
+                        DropdownMenuItem(text = { Text("Add to new template") }, onClick = { expanded = false; onCreateTemplateFromExercise() })
                         DropdownMenuItem(text = { Text("Exercise history") }, onClick = { expanded = false; onOpenExerciseHistory() })
                         DropdownMenuItem(text = { Text("Videos") }, onClick = { expanded = false; onOpenExerciseVideos() })
                         DropdownMenuItem(
@@ -7023,11 +7081,15 @@ private fun AddExercisesFlowScreen(
     onUseExistingExercise: (ExerciseSummary) -> Unit,
     onSaveCustomExercise: () -> Unit,
     onPendingSelectionConsumed: () -> Unit,
+    onAddExerciseToExistingTemplate: (Long, ExerciseSummary) -> Unit,
+    onCreateTemplateFromExercise: (String, ExerciseSummary) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val selectedExercises = remember { mutableStateMapOf<Long, ExerciseSummary>() }
     val listState = rememberLazyListState()
     var scrollTargetId by remember { mutableStateOf<Long?>(null) }
+    var existingTemplateTarget by remember { mutableStateOf<ExerciseSummary?>(null) }
+    var newTemplateTarget by remember { mutableStateOf<ExerciseSummary?>(null) }
     val displayedExercises = remember(state.libraryResults, selectedExercises.keys.toSet(), scrollTargetId) {
         buildList {
             val libraryIds = state.libraryResults.map { it.id }.toSet()
@@ -7095,8 +7157,40 @@ private fun AddExercisesFlowScreen(
             onClearFreshnessMuscleFilters = onClearFreshnessMuscleFilters,
             onClearMuscleTargetFilters = onClearMuscleTargetFilters,
             onShowDetail = onShowDetail,
+            onAddToExistingTemplate = { exercise -> existingTemplateTarget = exercise },
+            onCreateTemplateFromExercise = { exercise -> newTemplateTarget = exercise },
             overflowActionLabel = "Add custom exercise",
             onOverflowActionClick = onOpenCustomExercise,
+        )
+    }
+
+    existingTemplateTarget?.let { exercise ->
+        ExerciseTemplatePickerDialog(
+            exercise = exercise,
+            templates = state.templates,
+            templateExerciseIds = effectiveTemplateExerciseIds(state),
+            onDismiss = { existingTemplateTarget = null },
+            onSelectTemplate = { template ->
+                existingTemplateTarget = null
+                onAddExerciseToExistingTemplate(template.id, exercise)
+            },
+            onCreateNewTemplate = {
+                existingTemplateTarget = null
+                newTemplateTarget = exercise
+            },
+        )
+    }
+
+    newTemplateTarget?.let { exercise ->
+        TemplateNameDialog(
+            title = "Add to new template",
+            initialValue = "",
+            confirmLabel = "Create",
+            onDismiss = { newTemplateTarget = null },
+            onConfirm = { name ->
+                newTemplateTarget = null
+                onCreateTemplateFromExercise(name, exercise)
+            },
         )
     }
 }
@@ -7124,6 +7218,8 @@ private fun BuilderAddExercisesScreen(
     onClearFreshnessMuscleFilters: () -> Unit,
     onClearMuscleTargetFilters: () -> Unit,
     onShowDetail: (Long) -> Unit,
+    onAddToExistingTemplate: (ExerciseSummary) -> Unit,
+    onCreateTemplateFromExercise: (ExerciseSummary) -> Unit,
     overflowActionLabel: String? = null,
     onOverflowActionClick: (() -> Unit)? = null,
 ) {
@@ -7303,6 +7399,8 @@ private fun BuilderAddExercisesScreen(
                             if (selected) selectedExercises.remove(exercise.id) else selectedExercises[exercise.id] = exercise
                         },
                         onShowDetail = { onShowDetail(exercise.id) },
+                        onAddToExistingTemplate = { onAddToExistingTemplate(exercise) },
+                        onCreateTemplateFromExercise = { onCreateTemplateFromExercise(exercise) },
                     )
                 }
             }
@@ -7515,7 +7613,10 @@ private fun SelectableExerciseCard(
     selected: Boolean,
     onToggleSelected: () -> Unit,
     onShowDetail: () -> Unit,
+    onAddToExistingTemplate: () -> Unit,
+    onCreateTemplateFromExercise: () -> Unit,
 ) {
+    var expanded by remember { mutableStateOf(false) }
     val containerColor = if (selected) {
         MaterialTheme.colorScheme.primaryContainer
     } else {
@@ -7550,7 +7651,42 @@ private fun SelectableExerciseCard(
                 Text(exercise.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                 ExerciseAttributeText(exercise = exercise)
             }
-            SelectionIndicatorSlot(selected = selected)
+            Box {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    SelectionIndicatorSlot(selected = selected)
+                    IconButton(onClick = { expanded = true }) {
+                        Text(
+                            "⋮",
+                            modifier = Modifier.semantics { contentDescription = "Exercise actions" },
+                            style = MaterialTheme.typography.titleLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                    DropdownMenuItem(
+                        text = { Text("Details") },
+                        onClick = {
+                            expanded = false
+                            onShowDetail()
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Add to existing template") },
+                        onClick = {
+                            expanded = false
+                            onAddToExistingTemplate()
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Add to new template") },
+                        onClick = {
+                            expanded = false
+                            onCreateTemplateFromExercise()
+                        },
+                    )
+                }
+            }
         }
     }
 }
@@ -8019,6 +8155,8 @@ private fun ActiveSessionAddExerciseScreen(
     onGenerateCustomExercise: () -> Unit,
     onUseExistingExercise: (ExerciseSummary) -> Unit,
     onSaveCustomExercise: () -> Unit,
+    onAddExerciseToExistingTemplate: (Long, ExerciseSummary) -> Unit,
+    onCreateTemplateFromExercise: (String, ExerciseSummary) -> Unit,
     onAddGeneratedExercise: () -> Unit,
     onPickAgainGeneratedExercise: () -> Unit,
     onPendingSelectionConsumed: () -> Unit,
@@ -8067,6 +8205,8 @@ private fun ActiveSessionAddExerciseScreen(
             onUseExistingExercise = onUseExistingExercise,
             onSaveCustomExercise = onSaveCustomExercise,
             onPendingSelectionConsumed = onPendingSelectionConsumed,
+            onAddExerciseToExistingTemplate = onAddExerciseToExistingTemplate,
+            onCreateTemplateFromExercise = onCreateTemplateFromExercise,
             modifier = Modifier
                 .fillMaxSize()
                 .statusBarsPadding(),
@@ -8125,6 +8265,8 @@ private fun ActiveSessionScreen(
     onCustomExerciseDraftChange: (CustomExerciseDraft) -> Unit,
     onCustomExerciseNameChange: (String) -> Unit,
     onGenerateCustomExercise: () -> Unit,
+    onAddExerciseToExistingTemplate: (Long, ExerciseSummary) -> Unit,
+    onCreateTemplateFromExercise: (String, ExerciseSummary) -> Unit,
     onAddExercises: (List<ExerciseSummary>) -> Unit,
     onAddGeneratedExercise: () -> Unit,
     onPickAgainGeneratedExercise: () -> Unit,
@@ -8220,6 +8362,8 @@ private fun ActiveSessionScreen(
             onGenerateCustomExercise = onGenerateCustomExercise,
             onUseExistingExercise = onUseExistingExercise,
             onSaveCustomExercise = onSaveCustomExercise,
+            onAddExerciseToExistingTemplate = onAddExerciseToExistingTemplate,
+            onCreateTemplateFromExercise = onCreateTemplateFromExercise,
             onAddGeneratedExercise = onAddGeneratedExercise,
             onPickAgainGeneratedExercise = onPickAgainGeneratedExercise,
             onPendingSelectionConsumed = onPendingSelectionConsumed,
@@ -13018,6 +13162,84 @@ private fun WorkoutListRow(
             Text(text = actionLabel, color = MaterialTheme.colorScheme.primary, modifier = Modifier.clickable(onClick = onAction).padding(8.dp))
         }
     }
+}
+
+private fun effectiveTemplateExerciseIds(state: AppUiState): Map<Long, Set<Long>> {
+    val idsByTemplate = state.templateExerciseIds.mapValues { (_, ids) -> ids.toMutableSet() }.toMutableMap()
+    state.todayEditingTemplateId?.let { templateId ->
+        idsByTemplate[templateId] = state.todayEditingTemplateItems.mapTo(linkedSetOf()) { it.exerciseId }
+    }
+    state.editingTemplateId?.let { templateId ->
+        idsByTemplate[templateId] = state.manualWorkoutItems.mapTo(linkedSetOf()) { it.exerciseId }
+    }
+    return idsByTemplate
+}
+
+@Composable
+private fun ExerciseTemplatePickerDialog(
+    exercise: ExerciseSummary,
+    templates: List<TemplateSummary>,
+    templateExerciseIds: Map<Long, Set<Long>>,
+    onDismiss: () -> Unit,
+    onSelectTemplate: (TemplateSummary) -> Unit,
+    onCreateNewTemplate: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Add to existing template") },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Text(
+                    exercise.name,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                if (templates.isEmpty()) {
+                    Text(
+                        "No saved templates yet.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else {
+                    templates.forEach { template ->
+                        val alreadyPresent = templateExerciseIds[template.id]?.contains(exercise.id) == true
+                        OutlinedButton(
+                            onClick = { onSelectTemplate(template) },
+                            enabled = !alreadyPresent,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Column(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalAlignment = Alignment.Start,
+                            ) {
+                                Text(template.name, fontWeight = FontWeight.SemiBold)
+                                Text(
+                                    if (alreadyPresent) {
+                                        "Already contains this exercise"
+                                    } else {
+                                        "${template.exerciseCount} exercise${if (template.exerciseCount == 1) "" else "s"}"
+                                    },
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                            }
+                        }
+                    }
+                }
+                TextButton(onClick = onCreateNewTemplate, modifier = Modifier.fillMaxWidth()) {
+                    Text("Create new template")
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        },
+    )
 }
 
 @Composable

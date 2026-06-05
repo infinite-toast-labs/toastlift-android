@@ -72,4 +72,43 @@ class WorkoutRepositoryReuseHelpersTest {
 
         assertEquals("upper_body", workout.focusKey)
     }
+
+    @Test
+    fun distinctTemplateExercises_keepsFirstExerciseForDuplicateIds() {
+        val exercises = distinctTemplateExercises(
+            listOf(
+                workoutExercise(101L, "Bench Press"),
+                workoutExercise(202L, "Cable Row"),
+                workoutExercise(101L, "Duplicate Bench Press"),
+            ),
+        )
+
+        assertEquals(listOf(101L, 202L), exercises.map(WorkoutExercise::exerciseId))
+        assertEquals("Bench Press", exercises.first().name)
+    }
+
+    @Test
+    fun appendDistinctTemplateExercise_skipsExistingExerciseId() {
+        val existing = listOf(workoutExercise(101L, "Bench Press"))
+
+        assertEquals(existing, appendDistinctTemplateExercise(existing, workoutExercise(101L, "Bench Press")))
+        assertEquals(
+            listOf(101L, 202L),
+            appendDistinctTemplateExercise(existing, workoutExercise(202L, "Cable Row")).map(WorkoutExercise::exerciseId),
+        )
+    }
+
+    private fun workoutExercise(id: Long, name: String): WorkoutExercise {
+        return WorkoutExercise(
+            exerciseId = id,
+            name = name,
+            bodyRegion = "Upper Body",
+            targetMuscleGroup = "Chest",
+            equipment = "Barbell",
+            sets = 3,
+            repRange = "8-12",
+            restSeconds = 75,
+            rationale = "Template test",
+        )
+    }
 }

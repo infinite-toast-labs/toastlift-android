@@ -116,6 +116,7 @@ import dev.toastlabs.toastlift.data.buildTodayCompletionFeedbackAbFlags
 import dev.toastlabs.toastlift.data.buildAdherenceCurrencySnapshot
 import dev.toastlabs.toastlift.data.buildGlobalAdherenceCurrencyTrend
 import dev.toastlabs.toastlift.data.defaultWorkUnitValues
+import dev.toastlabs.toastlift.data.appendDistinctTemplateExercise
 import dev.toastlabs.toastlift.data.resolveMuscleTargetContributions
 import dev.toastlabs.toastlift.data.toPendingWorkoutShare
 import kotlinx.coroutines.Dispatchers
@@ -366,6 +367,7 @@ internal data class AppUiState(
     val todayEditingTemplateName: String = "",
     val todayEditingTemplateItems: List<WorkoutExercise> = emptyList(),
     val templates: List<TemplateSummary> = emptyList(),
+    val templateExerciseIds: Map<Long, Set<Long>> = emptyMap(),
     val history: List<HistorySummary> = emptyList(),
     val historyTopExercise: String? = null,
     val historyTopEquipment: String? = null,
@@ -2014,6 +2016,7 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
             val selectedHistoryDetail = uiState.selectedHistoryDetail
             val libraryPayload = container.catalogRepository.loadLibraryPayload(query, filters)
             val templates = container.workoutRepository.loadTemplates()
+            val templateExerciseIds = container.workoutRepository.loadTemplateExerciseIds()
             val historyStrengthScore = container.workoutRepository.loadStrengthScoreSummary()
             val history = container.workoutRepository.loadHistory(historyStrengthScore)
             val recommendationHistory = container.generatorRepository.loadHistoricalSetsForRecommendations()
@@ -2117,6 +2120,7 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
                 libraryResults = libraryPayload.results,
                 libraryFacets = libraryPayload.facets,
                 templates = templates,
+                templateExerciseIds = templateExerciseIds,
                 history = history,
                 historyTopExercise = historyTopExercise,
                 historyTopEquipment = historyTopEquipment,
@@ -3094,6 +3098,80 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
             )
             refreshAll()
             uiState = uiState.copy(message = "Generated workout saved as a template.")
+        }
+    }
+
+    fun addExerciseToExistingTemplate(templateId: Long, exercise: ExerciseSummary) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val template = container.workoutRepository.loadEditableTemplate(templateId)
+            if (template == null) {
+                uiState = uiState.copy(message = "Could not load that template.")
+                return@launch
+            }
+            val templateExercise = exercise.toWorkoutExercise(
+                goal = uiState.profile?.goal ?: uiState.onboardingDraft.goal,
+                rationale = "Added from the exercise library.",
+            )
+            val draftExercises = when (template.id) {
+                uiState.todayEditingTemplateId -> uiState.todayEditingTemplateItems
+                uiState.editingTemplateId -> uiState.manualWorkoutItems
+                else -> template.exercises
+            }
+            val updatedExercises = appendDistinctTemplateExercise(draftExercises, templateExercise)
+            if (updatedExercises.size == draftExercises.size) {
+                uiState = uiState.copy(message = "${exercise.name} is already in ${template.name}.")
+                return@launch
+            }
+            if (template.id == uiState.todayEditingTemplateId) {
+                uiState = uiState.copy(
+                    todayEditingTemplateItems = updatedExercises,
+                    message = "${exercise.name} added to ${template.name}.",
+                )
+                return@launch
+            }
+            if (template.id == uiState.editingTemplateId) {
+                uiState = uiState.copy(
+                    manualWorkoutItems = updatedExercises,
+                    message = "${exercise.name} added to ${template.name}.",
+                )
+                return@launch
+            }
+            container.workoutRepository.updateTemplate(
+                templateId = template.id,
+                name = template.name,
+                origin = template.origin,
+                exercises = updatedExercises,
+            )
+            uiState = uiState.copy(
+                templates = container.workoutRepository.loadTemplates(),
+                templateExerciseIds = container.workoutRepository.loadTemplateExerciseIds(),
+                message = "${exercise.name} added to ${template.name}.",
+            )
+        }
+    }
+
+    fun createTemplateFromExercise(name: String, exercise: ExerciseSummary) {
+        val trimmedName = name.trim()
+        if (trimmedName.isBlank()) {
+            uiState = uiState.copy(message = "Template name cannot be blank.")
+            return
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            container.workoutRepository.saveTemplate(
+                name = trimmedName,
+                origin = "manual",
+                exercises = listOf(
+                    exercise.toWorkoutExercise(
+                        goal = uiState.profile?.goal ?: uiState.onboardingDraft.goal,
+                        rationale = "Started this template from the exercise library.",
+                    ),
+                ),
+            )
+            uiState = uiState.copy(
+                templates = container.workoutRepository.loadTemplates(),
+                templateExerciseIds = container.workoutRepository.loadTemplateExerciseIds(),
+                message = "Created $trimmedName with ${exercise.name}.",
+            )
         }
     }
 

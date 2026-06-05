@@ -229,9 +229,25 @@ internal fun historyReuseWorkoutPlan(
     )
 }
 
+internal fun distinctTemplateExercises(exercises: List<WorkoutExercise>): List<WorkoutExercise> {
+    return exercises.distinctBy { it.exerciseId }
+}
+
+internal fun appendDistinctTemplateExercise(
+    exercises: List<WorkoutExercise>,
+    exercise: WorkoutExercise,
+): List<WorkoutExercise> {
+    return if (exercises.any { it.exerciseId == exercise.exerciseId }) {
+        exercises
+    } else {
+        exercises + exercise
+    }
+}
+
 class WorkoutRepository(private val database: ToastLiftDatabase, private val catalogRepository: CatalogRepository) {
     fun saveTemplate(name: String, origin: String, exercises: List<WorkoutExercise>) {
-        if (name.isBlank() || exercises.isEmpty()) return
+        val distinctExercises = distinctTemplateExercises(exercises)
+        if (name.isBlank() || distinctExercises.isEmpty()) return
         val db = database.open()
         val now = Instant.now().toString()
         db.beginTransaction()
@@ -244,24 +260,7 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
                 cursor.moveToFirst()
                 cursor.getLong(0)
             }
-            exercises.forEachIndexed { index, exercise ->
-                db.execSQL(
-                    """
-                    INSERT INTO workout_template_exercises (
-                        template_id, sort_order, exercise_id, set_count, rep_range, rest_seconds, rationale
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
-                    """.trimIndent(),
-                    arrayOf(
-                        templateId,
-                        index,
-                        exercise.exerciseId,
-                        exercise.sets,
-                        exercise.repRange,
-                        exercise.restSeconds,
-                        exercise.rationale,
-                    ),
-                )
-            }
+            insertTemplateExercises(db, templateId, distinctExercises)
             db.setTransactionSuccessful()
         } finally {
             db.endTransaction()
@@ -283,6 +282,26 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
             buildList {
                 while (cursor.moveToNext()) {
                     add(TemplateSummary(cursor.getLong(0), cursor.getString(1), cursor.getInt(2)))
+                }
+            }
+        }
+    }
+
+    fun loadTemplateExerciseIds(): Map<Long, Set<Long>> {
+        val db = database.open()
+        return db.rawQuery(
+            """
+            SELECT template_id, exercise_id
+            FROM workout_template_exercises
+            ORDER BY template_id, sort_order
+            """.trimIndent(),
+            null,
+        ).use { cursor ->
+            buildMap<Long, MutableSet<Long>> {
+                while (cursor.moveToNext()) {
+                    val templateId = cursor.getLong(0)
+                    val exerciseId = cursor.getLong(1)
+                    getOrPut(templateId) { linkedSetOf() }.add(exerciseId)
                 }
             }
         }
@@ -373,7 +392,8 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
 
     fun updateTemplate(templateId: Long, name: String, origin: String, exercises: List<WorkoutExercise>) {
         val trimmedName = name.trim()
-        if (trimmedName.isBlank() || exercises.isEmpty()) return
+        val distinctExercises = distinctTemplateExercises(exercises)
+        if (trimmedName.isBlank() || distinctExercises.isEmpty()) return
         val db = database.open()
         db.beginTransaction()
         try {
@@ -385,7 +405,7 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
                 "DELETE FROM workout_template_exercises WHERE template_id = ?",
                 arrayOf(templateId),
             )
-            insertTemplateExercises(db, templateId, exercises)
+            insertTemplateExercises(db, templateId, distinctExercises)
             db.setTransactionSuccessful()
         } finally {
             db.endTransaction()
@@ -2303,7 +2323,7 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
         templateId: Long,
         exercises: List<WorkoutExercise>,
     ) {
-        exercises.forEachIndexed { index, exercise ->
+        distinctTemplateExercises(exercises).forEachIndexed { index, exercise ->
             db.execSQL(
                 """
                 INSERT INTO workout_template_exercises (
