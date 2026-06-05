@@ -51,7 +51,9 @@ class LibraryMuscleTargetFilterTest {
         )
 
         assertTrue(orderBy.startsWith("CASE"))
+        assertTrue(orderBy.contains("lower(COALESCE(e.target_muscle_group, '')) = 'chest'"))
         assertTrue(orderBy.contains("e.prime_mover_muscle"))
+        assertTrue(orderBy.indexOf("= 'chest'") < orderBy.indexOf("e.prime_mover_muscle"))
         assertTrue(orderBy.contains("COALESCE(logged_history.logged_session_count, 0) DESC"))
         assertTrue(orderBy.endsWith("COALESCE(p.is_favorite, 0) DESC, e.name ASC"))
     }

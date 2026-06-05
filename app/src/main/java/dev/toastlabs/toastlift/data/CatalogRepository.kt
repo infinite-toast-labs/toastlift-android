@@ -950,11 +950,13 @@ internal fun libraryMuscleTargetFilterClause(
 }
 
 private fun libraryMuscleTargetOrderBy(filters: LibraryFilters): String? {
-    val terms = selectedMuscleTargetSqlTermGroups(
+    val subcategories = selectedMuscleTargetSubcategories(
         bucketKeys = filters.muscleTargetBucketKeys,
         subcategoryKeys = filters.muscleTargetSubcategoryKeys,
-    ).flatten().distinct()
+    )
+    val terms = subcategories.flatMap(MuscleTargetSubcategory::sqlTerms).distinct()
     if (terms.isEmpty()) return null
+    val exactTargetGroups = subcategories.map { it.label.lowercase() }.distinct()
 
     fun columnsClause(columns: List<String>): String {
         return terms.flatMap { term ->
@@ -962,17 +964,22 @@ private fun libraryMuscleTargetOrderBy(filters: LibraryFilters): String? {
         }.joinToString(prefix = "(", separator = " OR ", postfix = ")")
     }
 
+    val exactTarget = exactTargetGroups
+        .joinToString(prefix = "(", separator = " OR ", postfix = ")") { targetGroup ->
+            "lower(COALESCE(e.target_muscle_group, '')) = '$targetGroup'"
+        }
     val prime = columnsClause(listOf("e.prime_mover_muscle"))
     val target = columnsClause(listOf("e.target_muscle_group"))
     val secondary = columnsClause(listOf("e.secondary_muscle"))
     val tertiary = columnsClause(listOf("e.tertiary_muscle"))
     return """
         CASE
-            WHEN $prime THEN 0
-            WHEN $target THEN 1
-            WHEN $secondary THEN 2
-            WHEN $tertiary THEN 3
-            ELSE 4
+            WHEN $exactTarget THEN 0
+            WHEN $prime THEN 1
+            WHEN $target THEN 2
+            WHEN $secondary THEN 3
+            WHEN $tertiary THEN 4
+            ELSE 5
         END ASC
     """.trimIndent().replace("\n", " ")
 }
@@ -981,9 +988,17 @@ private fun selectedMuscleTargetSqlTermGroups(
     bucketKeys: Set<String>,
     subcategoryKeys: Set<String>,
 ): List<List<String>> {
-    return muscleTargetBucketSubcategoryKeys(bucketKeys, subcategoryKeys)
-        .mapNotNull { key -> muscleTargetSubcategory(key)?.sqlTerms }
+    return selectedMuscleTargetSubcategories(bucketKeys, subcategoryKeys)
+        .map(MuscleTargetSubcategory::sqlTerms)
         .filter { it.isNotEmpty() }
+}
+
+private fun selectedMuscleTargetSubcategories(
+    bucketKeys: Set<String>,
+    subcategoryKeys: Set<String>,
+): List<MuscleTargetSubcategory> {
+    return muscleTargetBucketSubcategoryKeys(bucketKeys, subcategoryKeys)
+        .mapNotNull(::muscleTargetSubcategory)
 }
 
 private fun muscleTargetTermsClause(
