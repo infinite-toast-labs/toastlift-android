@@ -9,7 +9,6 @@ ADB_HOST ?= host.docker.internal
 ADB_PORT ?= 5037
 ADB_SERIAL ?= emulator-5560
 DEVICE_SERIAL ?=
-
 export ANDROID_ADB_HOST := $(ADB_HOST)
 export ANDROID_ADB_PORT := $(ADB_PORT)
 export ANDROID_ADB_SERIAL := $(ADB_SERIAL)
@@ -102,7 +101,18 @@ install-device-debug: check-device build-debug
 	if [[ -z "$$serial" ]]; then \
 		serial="$$( $(ADB) devices | awk 'NR > 1 && $$2 == "device" && $$1 !~ /^emulator-/ { print $$1; exit }' )"; \
 	fi; \
-	$(ADB) -s "$$serial" install -r $(DEBUG_APK)
+	if ! output="$$( $(ADB) -s "$$serial" install -r $(DEBUG_APK) 2>&1 )"; then \
+		echo "$$output" >&2; \
+		if grep -q "INSTALL_FAILED_UPDATE_INCOMPATIBLE" <<< "$$output"; then \
+			echo "Existing $(APP_ID) uses a different signing key than this debug APK." >&2; \
+			echo "Refusing to uninstall because that would delete local app data. Build with the same signing key as the installed app to preserve data." >&2; \
+			exit 1; \
+		else \
+			exit 1; \
+		fi; \
+	else \
+		echo "$$output"; \
+	fi
 
 install-device-debug-no-build: check-device
 	@set -euo pipefail; \
@@ -115,7 +125,18 @@ install-device-debug-no-build: check-device
 	if [[ -z "$$serial" ]]; then \
 		serial="$$( $(ADB) devices | awk 'NR > 1 && $$2 == "device" && $$1 !~ /^emulator-/ { print $$1; exit }' )"; \
 	fi; \
-	$(ADB) -s "$$serial" install -r $(DEBUG_APK)
+	if ! output="$$( $(ADB) -s "$$serial" install -r $(DEBUG_APK) 2>&1 )"; then \
+		echo "$$output" >&2; \
+		if grep -q "INSTALL_FAILED_UPDATE_INCOMPATIBLE" <<< "$$output"; then \
+			echo "Existing $(APP_ID) uses a different signing key than this debug APK." >&2; \
+			echo "Refusing to uninstall because that would delete local app data. Build with the same signing key as the installed app to preserve data." >&2; \
+			exit 1; \
+		else \
+			exit 1; \
+		fi; \
+	else \
+		echo "$$output"; \
+	fi
 
 sync-device-custom-exercises: check-device
 	@set -euo pipefail; \

@@ -830,6 +830,16 @@ class CatalogRepository(private val database: ToastLiftDatabase) {
             args += filters.equipment.sorted()
         }
 
+        if (filters.equipmentLocation != null) {
+            val locationEquipment = normalizeLibraryEquipmentLocationEquipment(filters.equipmentLocationEquipment)
+            clauses += libraryEquipmentLocationFilterClause(locationEquipment)
+            if (locationEquipment.isNotEmpty()) {
+                repeat(3) {
+                    args += locationEquipment
+                }
+            }
+        }
+
         if (excludeDimension != FacetDimension.TargetMuscle && filters.targetMuscles.isNotEmpty()) {
             val placeholders = filters.targetMuscles.joinToString(",") { "?" }
             clauses += "e.target_muscle_group IN ($placeholders)"
@@ -931,6 +941,44 @@ internal fun librarySearchOrderBy(filters: LibraryFilters): String {
     } else {
         originalOrder
     }
+}
+
+internal fun normalizeLibraryEquipmentLocationEquipment(equipment: Collection<String>): List<String> {
+    return equipment
+        .map(String::trim)
+        .filter(String::isNotEmpty)
+        .distinct()
+        .sorted()
+}
+
+internal fun libraryEquipmentLocationFilterClause(
+    equipment: Collection<String>,
+    tableAlias: String = "e",
+): String {
+    val normalizedEquipment = normalizeLibraryEquipmentLocationEquipment(equipment)
+    if (normalizedEquipment.isEmpty()) return "0 = 1"
+    val placeholders = normalizedEquipment.joinToString(",") { "?" }
+    return """
+        (
+            NOT EXISTS (
+                SELECT 1
+                FROM exercise_equipment location_eq
+                WHERE location_eq.exercise_id = $tableAlias.exercise_id
+                  AND location_eq.equipment_name IS NOT NULL
+                  AND trim(location_eq.equipment_name) != ''
+                  AND location_eq.equipment_name NOT IN ($placeholders)
+            )
+            AND (
+                COALESCE($tableAlias.primary_equipment, 'Bodyweight') IN ($placeholders)
+                OR EXISTS (
+                    SELECT 1
+                    FROM exercise_equipment location_match_eq
+                    WHERE location_match_eq.exercise_id = $tableAlias.exercise_id
+                      AND location_match_eq.equipment_name IN ($placeholders)
+                )
+            )
+        )
+    """.trimIndent()
 }
 
 internal fun libraryMuscleTargetFilterClause(

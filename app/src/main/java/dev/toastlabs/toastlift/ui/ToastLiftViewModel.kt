@@ -57,6 +57,7 @@ import dev.toastlabs.toastlift.data.HistorySummary
 import dev.toastlabs.toastlift.data.HistoryDetail
 import dev.toastlabs.toastlift.data.HistoryWorkoutMetric
 import dev.toastlabs.toastlift.data.LibraryFacets
+import dev.toastlabs.toastlift.data.LibraryEquipmentLocation
 import dev.toastlabs.toastlift.data.LibraryFilters
 import dev.toastlabs.toastlift.data.LocationMode
 import dev.toastlabs.toastlift.data.MuscleTargetBucketKey
@@ -794,6 +795,34 @@ internal fun activeSessionMuscleTargetLibraryFilters(
     bucketKey = bucketKey,
     subcategoryKey = subcategoryKey,
 )
+
+internal fun libraryFiltersWithEquipmentLocation(
+    filters: LibraryFilters,
+    locationModes: List<LocationMode>,
+    equipmentByLocation: Map<Long, Set<String>>,
+): LibraryFilters {
+    val location = filters.equipmentLocation ?: return filters.copy(equipmentLocationEquipment = emptySet())
+    val locationModeId = libraryEquipmentLocationModeId(
+        location = location,
+        locationModes = locationModes,
+    )
+    return filters.copy(
+        equipmentLocationEquipment = locationModeId
+            ?.let { equipmentByLocation[it] }
+            .orEmpty(),
+    )
+}
+
+private fun libraryEquipmentLocationModeId(
+    location: LibraryEquipmentLocation,
+    locationModes: List<LocationMode>,
+): Long? {
+    val targetName = location.name.lowercase()
+    return locationModes.firstOrNull { mode ->
+        mode.name.equals(targetName, ignoreCase = true) ||
+            mode.displayName.equals(location.displayName, ignoreCase = true)
+    }?.id
+}
 
 internal fun libraryMuscleTargetFilterSelection(filters: LibraryFilters): LibraryMuscleTargetFilterSelection {
     return LibraryMuscleTargetFilterSelection(
@@ -2101,7 +2130,11 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
             )
 
             val query = uiState.libraryQuery
-            val filters = uiState.libraryFilters
+            val filters = libraryFiltersWithEquipmentLocation(
+                filters = uiState.libraryFilters,
+                locationModes = locationModes,
+                equipmentByLocation = equipmentByLocation,
+            )
             val selectedHistoryDetail = uiState.selectedHistoryDetail
             val libraryPayload = container.catalogRepository.loadLibraryPayload(query, filters)
             val templates = container.workoutRepository.loadTemplates()
@@ -2480,6 +2513,12 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
                     "Updated ${equipment.lowercase()} for ${locationName(locationModeId)}."
                 },
             )
+            val selectedLibraryLocationId = uiState.libraryFilters.equipmentLocation?.let { location ->
+                libraryEquipmentLocationModeId(location, uiState.locationModes)
+            }
+            if (selectedLibraryLocationId == locationModeId) {
+                refreshLibrary()
+            }
         }
     }
 
@@ -2648,6 +2687,17 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
         refreshLibrary()
     }
 
+    fun toggleLibraryEquipmentLocationFilter(location: LibraryEquipmentLocation?) {
+        val updatedLocation = location?.takeUnless { it == uiState.libraryFilters.equipmentLocation }
+        uiState = uiState.copy(
+            libraryFilters = uiState.libraryFilters.copy(
+                equipmentLocation = updatedLocation,
+                equipmentLocationEquipment = emptySet(),
+            ),
+        )
+        refreshLibrary()
+    }
+
     fun toggleLibraryTargetMuscleFilter(targetMuscle: String) {
         val updated = uiState.libraryFilters.targetMuscles.toMutableSet().apply {
             if (!add(targetMuscle)) remove(targetMuscle)
@@ -2778,7 +2828,11 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
 
     private fun refreshLibrary() {
         val query = uiState.libraryQuery
-        val filters = uiState.libraryFilters
+        val filters = libraryFiltersWithEquipmentLocation(
+            filters = uiState.libraryFilters,
+            locationModes = uiState.locationModes,
+            equipmentByLocation = uiState.equipmentByLocation,
+        )
         viewModelScope.launch(Dispatchers.IO) {
             val payload = container.catalogRepository.loadLibraryPayload(
                 query = query,

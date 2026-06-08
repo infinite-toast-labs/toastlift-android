@@ -229,6 +229,7 @@ import dev.toastlabs.toastlift.data.HistoryReuseMode
 import dev.toastlabs.toastlift.data.HistorySummary
 import dev.toastlabs.toastlift.data.HistoryWorkoutMetric
 import dev.toastlabs.toastlift.data.LibraryFacets
+import dev.toastlabs.toastlift.data.LibraryEquipmentLocation
 import dev.toastlabs.toastlift.data.LibraryFilters
 import dev.toastlabs.toastlift.data.LocationMode
 import dev.toastlabs.toastlift.data.MAX_TRAINING_FRESHNESS_BUCKET_EXERCISES
@@ -880,6 +881,7 @@ fun ToastLiftApp(
                     onAddExerciseQueryChange = viewModel::updateLibraryQuery,
                     onToggleAddExerciseFavoritesOnly = viewModel::toggleLibraryFavoritesOnly,
                     onToggleAddExerciseEquipmentFilter = viewModel::toggleLibraryEquipmentFilter,
+                    onToggleAddExerciseEquipmentLocationFilter = viewModel::toggleLibraryEquipmentLocationFilter,
                     onToggleAddExerciseTargetMuscleFilter = viewModel::toggleLibraryTargetMuscleFilter,
                     onToggleAddExercisePrimeMoverFilter = viewModel::toggleLibraryPrimeMoverFilter,
                     onToggleAddExerciseFreshnessMuscleFilter = viewModel::toggleLibraryFreshnessMuscleFilter,
@@ -1073,6 +1075,7 @@ fun ToastLiftApp(
                                         onToggleLibrarySearch = viewModel::toggleLibrarySearch,
                                         onToggleLibraryFavoritesOnly = viewModel::toggleLibraryFavoritesOnly,
                                         onToggleLibraryEquipmentFilter = viewModel::toggleLibraryEquipmentFilter,
+                                        onToggleLibraryEquipmentLocationFilter = viewModel::toggleLibraryEquipmentLocationFilter,
                                         onToggleLibraryTargetMuscleFilter = viewModel::toggleLibraryTargetMuscleFilter,
                                         onToggleLibraryPrimeMoverFilter = viewModel::toggleLibraryPrimeMoverFilter,
                                         onToggleLibraryFreshnessMuscleFilter = viewModel::toggleLibraryFreshnessMuscleFilter,
@@ -1128,6 +1131,7 @@ fun ToastLiftApp(
                                     onToggleLibrarySearch = viewModel::toggleLibrarySearch,
                                     onToggleLibraryFavoritesOnly = viewModel::toggleLibraryFavoritesOnly,
                                     onToggleLibraryEquipmentFilter = viewModel::toggleLibraryEquipmentFilter,
+                                    onToggleLibraryEquipmentLocationFilter = viewModel::toggleLibraryEquipmentLocationFilter,
                                     onToggleLibraryTargetMuscleFilter = viewModel::toggleLibraryTargetMuscleFilter,
                                     onToggleLibraryPrimeMoverFilter = viewModel::toggleLibraryPrimeMoverFilter,
                                     onToggleLibraryFreshnessMuscleFilter = viewModel::toggleLibraryFreshnessMuscleFilter,
@@ -1163,6 +1167,7 @@ fun ToastLiftApp(
                                         onQueryChange = viewModel::updateLibraryQuery,
                                         onToggleFavoritesOnly = viewModel::toggleLibraryFavoritesOnly,
                                         onToggleEquipmentFilter = viewModel::toggleLibraryEquipmentFilter,
+                                        onToggleEquipmentLocationFilter = viewModel::toggleLibraryEquipmentLocationFilter,
                                         onToggleTargetMuscleFilter = viewModel::toggleLibraryTargetMuscleFilter,
                                         onTogglePrimeMoverFilter = viewModel::toggleLibraryPrimeMoverFilter,
                                         onToggleFreshnessMuscleFilter = viewModel::toggleLibraryFreshnessMuscleFilter,
@@ -1415,6 +1420,7 @@ private fun TodayScreen(
     onToggleLibrarySearch: () -> Unit,
     onToggleLibraryFavoritesOnly: () -> Unit,
     onToggleLibraryEquipmentFilter: (String) -> Unit,
+    onToggleLibraryEquipmentLocationFilter: (LibraryEquipmentLocation?) -> Unit,
     onToggleLibraryTargetMuscleFilter: (String) -> Unit,
     onToggleLibraryPrimeMoverFilter: (String) -> Unit,
     onToggleLibraryFreshnessMuscleFilter: (String) -> Unit,
@@ -1486,6 +1492,7 @@ private fun TodayScreen(
             onToggleSearch = onToggleLibrarySearch,
             onToggleFavoritesOnly = onToggleLibraryFavoritesOnly,
             onToggleEquipmentFilter = onToggleLibraryEquipmentFilter,
+            onToggleEquipmentLocationFilter = onToggleLibraryEquipmentLocationFilter,
             onToggleTargetMuscleFilter = onToggleLibraryTargetMuscleFilter,
             onTogglePrimeMoverFilter = onToggleLibraryPrimeMoverFilter,
             onToggleFreshnessMuscleFilter = onToggleLibraryFreshnessMuscleFilter,
@@ -3038,6 +3045,7 @@ private fun GenerateScreen(
     onToggleLibrarySearch: () -> Unit,
     onToggleLibraryFavoritesOnly: () -> Unit,
     onToggleLibraryEquipmentFilter: (String) -> Unit,
+    onToggleLibraryEquipmentLocationFilter: (LibraryEquipmentLocation?) -> Unit,
     onToggleLibraryTargetMuscleFilter: (String) -> Unit,
     onToggleLibraryPrimeMoverFilter: (String) -> Unit,
     onToggleLibraryFreshnessMuscleFilter: (String) -> Unit,
@@ -3106,6 +3114,7 @@ private fun GenerateScreen(
             onToggleSearch = onToggleLibrarySearch,
             onToggleFavoritesOnly = onToggleLibraryFavoritesOnly,
             onToggleEquipmentFilter = onToggleLibraryEquipmentFilter,
+            onToggleEquipmentLocationFilter = onToggleLibraryEquipmentLocationFilter,
             onToggleTargetMuscleFilter = onToggleLibraryTargetMuscleFilter,
             onTogglePrimeMoverFilter = onToggleLibraryPrimeMoverFilter,
             onToggleFreshnessMuscleFilter = onToggleLibraryFreshnessMuscleFilter,
@@ -3143,6 +3152,7 @@ private fun GenerateScreen(
             onToggleSearch = onToggleLibrarySearch,
             onToggleFavoritesOnly = onToggleLibraryFavoritesOnly,
             onToggleEquipmentFilter = onToggleLibraryEquipmentFilter,
+            onToggleEquipmentLocationFilter = onToggleLibraryEquipmentLocationFilter,
             onToggleTargetMuscleFilter = onToggleLibraryTargetMuscleFilter,
             onTogglePrimeMoverFilter = onToggleLibraryPrimeMoverFilter,
             onToggleFreshnessMuscleFilter = onToggleLibraryFreshnessMuscleFilter,
@@ -3371,6 +3381,7 @@ private fun LibraryScreen(
     onQueryChange: (String) -> Unit,
     onToggleFavoritesOnly: () -> Unit,
     onToggleEquipmentFilter: (String) -> Unit,
+    onToggleEquipmentLocationFilter: (LibraryEquipmentLocation?) -> Unit,
     onToggleTargetMuscleFilter: (String) -> Unit,
     onTogglePrimeMoverFilter: (String) -> Unit,
     onToggleFreshnessMuscleFilter: (String) -> Unit,
@@ -3477,6 +3488,7 @@ private fun LibraryScreen(
             onDismiss = { showFilterSheet = false },
             onClearFilters = onClearFilters,
             onToggleEquipment = onToggleEquipmentFilter,
+            onToggleEquipmentLocation = onToggleEquipmentLocationFilter,
             onToggleTargetMuscle = onToggleTargetMuscleFilter,
             onTogglePrimeMover = onTogglePrimeMoverFilter,
             onToggleFreshnessMuscle = onToggleFreshnessMuscleFilter,
@@ -7710,6 +7722,7 @@ private fun AddExercisesFlowScreen(
     onToggleSearch: () -> Unit,
     onToggleFavoritesOnly: () -> Unit,
     onToggleEquipmentFilter: (String) -> Unit,
+    onToggleEquipmentLocationFilter: (LibraryEquipmentLocation?) -> Unit,
     onToggleTargetMuscleFilter: (String) -> Unit,
     onTogglePrimeMoverFilter: (String) -> Unit,
     onToggleFreshnessMuscleFilter: (String) -> Unit,
@@ -7794,6 +7807,7 @@ private fun AddExercisesFlowScreen(
             onToggleSearch = onToggleSearch,
             onToggleFavoritesOnly = onToggleFavoritesOnly,
             onToggleEquipmentFilter = onToggleEquipmentFilter,
+            onToggleEquipmentLocationFilter = onToggleEquipmentLocationFilter,
             onToggleTargetMuscleFilter = onToggleTargetMuscleFilter,
             onTogglePrimeMoverFilter = onTogglePrimeMoverFilter,
             onToggleFreshnessMuscleFilter = onToggleFreshnessMuscleFilter,
@@ -7855,6 +7869,7 @@ private fun BuilderAddExercisesScreen(
     onToggleSearch: () -> Unit,
     onToggleFavoritesOnly: () -> Unit,
     onToggleEquipmentFilter: (String) -> Unit,
+    onToggleEquipmentLocationFilter: (LibraryEquipmentLocation?) -> Unit,
     onToggleTargetMuscleFilter: (String) -> Unit,
     onTogglePrimeMoverFilter: (String) -> Unit,
     onToggleFreshnessMuscleFilter: (String) -> Unit,
@@ -7885,6 +7900,7 @@ private fun BuilderAddExercisesScreen(
             onApplyFilters = { showFilterScreen = false },
             onClearFilters = onClearFilters,
             onToggleEquipment = onToggleEquipmentFilter,
+            onToggleEquipmentLocation = onToggleEquipmentLocationFilter,
             onToggleTargetMuscle = onToggleTargetMuscleFilter,
             onTogglePrimeMover = onTogglePrimeMoverFilter,
             onToggleFreshnessMuscle = onToggleFreshnessMuscleFilter,
@@ -8399,6 +8415,7 @@ private fun BuilderFilterScreen(
     onApplyFilters: () -> Unit,
     onClearFilters: () -> Unit,
     onToggleEquipment: (String) -> Unit,
+    onToggleEquipmentLocation: (LibraryEquipmentLocation?) -> Unit,
     onToggleTargetMuscle: (String) -> Unit,
     onTogglePrimeMover: (String) -> Unit,
     onToggleFreshnessMuscle: (String) -> Unit,
@@ -8448,6 +8465,10 @@ private fun BuilderFilterScreen(
             onToggleSubcategory = onToggleMuscleTargetSubcategory,
             onClear = onClearMuscleTargetFilters,
         )
+        EquipmentLocationFilterSection(
+            selected = filters.equipmentLocation,
+            onToggle = onToggleEquipmentLocation,
+        )
         FilterFacetSection(
             title = "Equipment",
             options = facets.equipment,
@@ -8491,6 +8512,7 @@ private fun LibraryFilterSheet(
     onDismiss: () -> Unit,
     onClearFilters: () -> Unit,
     onToggleEquipment: (String) -> Unit,
+    onToggleEquipmentLocation: (LibraryEquipmentLocation?) -> Unit,
     onToggleTargetMuscle: (String) -> Unit,
     onTogglePrimeMover: (String) -> Unit,
     onToggleFreshnessMuscle: (String) -> Unit,
@@ -8541,6 +8563,12 @@ private fun LibraryFilterSheet(
                     onToggleBucket = onToggleMuscleTargetBucket,
                     onToggleSubcategory = onToggleMuscleTargetSubcategory,
                     onClear = onClearMuscleTargetFilters,
+                )
+            }
+            item {
+                EquipmentLocationFilterSection(
+                    selected = filters.equipmentLocation,
+                    onToggle = onToggleEquipmentLocation,
                 )
             }
             item {
@@ -8708,6 +8736,31 @@ private fun muscleTargetFilterSummary(labels: List<String>): String {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
+private fun EquipmentLocationFilterSection(
+    selected: LibraryEquipmentLocation?,
+    onToggle: (LibraryEquipmentLocation?) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("Location equipment", fontWeight = FontWeight.SemiBold)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            LibraryEquipmentLocation.entries.forEach { location ->
+                ToastLiftFilterChip(
+                    selected = selected == location,
+                    onClick = { onToggle(location) },
+                    label = { Text(location.displayName) },
+                )
+            }
+            ToastLiftFilterChip(
+                selected = false,
+                onClick = { onToggle(null) },
+                label = { Text("All") },
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
 private fun ToggleFilterSection(
     title: String,
     label: String,
@@ -8785,6 +8838,7 @@ private fun ActiveSessionAddExerciseScreen(
     onQueryChange: (String) -> Unit,
     onToggleFavoritesOnly: () -> Unit,
     onToggleEquipmentFilter: (String) -> Unit,
+    onToggleEquipmentLocationFilter: (LibraryEquipmentLocation?) -> Unit,
     onToggleTargetMuscleFilter: (String) -> Unit,
     onTogglePrimeMoverFilter: (String) -> Unit,
     onToggleFreshnessMuscleFilter: (String) -> Unit,
@@ -8834,6 +8888,7 @@ private fun ActiveSessionAddExerciseScreen(
             onToggleSearch = onToggleSearch,
             onToggleFavoritesOnly = onToggleFavoritesOnly,
             onToggleEquipmentFilter = onToggleEquipmentFilter,
+            onToggleEquipmentLocationFilter = onToggleEquipmentLocationFilter,
             onToggleTargetMuscleFilter = onToggleTargetMuscleFilter,
             onTogglePrimeMoverFilter = onTogglePrimeMoverFilter,
             onToggleFreshnessMuscleFilter = onToggleFreshnessMuscleFilter,
@@ -8897,6 +8952,7 @@ private fun ActiveSessionScreen(
     onAddExerciseQueryChange: (String) -> Unit,
     onToggleAddExerciseFavoritesOnly: () -> Unit,
     onToggleAddExerciseEquipmentFilter: (String) -> Unit,
+    onToggleAddExerciseEquipmentLocationFilter: (LibraryEquipmentLocation?) -> Unit,
     onToggleAddExerciseTargetMuscleFilter: (String) -> Unit,
     onToggleAddExercisePrimeMoverFilter: (String) -> Unit,
     onToggleAddExerciseFreshnessMuscleFilter: (String) -> Unit,
@@ -8995,6 +9051,7 @@ private fun ActiveSessionScreen(
             onQueryChange = onAddExerciseQueryChange,
             onToggleFavoritesOnly = onToggleAddExerciseFavoritesOnly,
             onToggleEquipmentFilter = onToggleAddExerciseEquipmentFilter,
+            onToggleEquipmentLocationFilter = onToggleAddExerciseEquipmentLocationFilter,
             onToggleTargetMuscleFilter = onToggleAddExerciseTargetMuscleFilter,
             onTogglePrimeMoverFilter = onToggleAddExercisePrimeMoverFilter,
             onToggleFreshnessMuscleFilter = onToggleAddExerciseFreshnessMuscleFilter,

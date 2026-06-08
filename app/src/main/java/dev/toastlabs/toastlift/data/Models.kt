@@ -93,6 +93,8 @@ data class ExerciseSummary(
 
 data class LibraryFilters(
     val equipment: Set<String> = emptySet(),
+    val equipmentLocation: LibraryEquipmentLocation? = null,
+    val equipmentLocationEquipment: Set<String> = emptySet(),
     val targetMuscles: Set<String> = emptySet(),
     val primeMovers: Set<String> = emptySet(),
     val freshnessMuscleKeys: Set<String> = emptySet(),
@@ -104,6 +106,7 @@ data class LibraryFilters(
 ) {
     fun activeCount(): Int =
         equipment.size +
+            (if (equipmentLocation != null) 1 else 0) +
             targetMuscles.size +
             primeMovers.size +
             freshnessMuscleKeys.size +
@@ -112,6 +115,11 @@ data class LibraryFilters(
             recommendationBiases.size +
             (if (hasLoggedHistoryOnly) 1 else 0) +
             (if (favoritesOnly) 1 else 0)
+}
+
+enum class LibraryEquipmentLocation(val displayName: String) {
+    Home("Home"),
+    Gym("Gym"),
 }
 
 data class FilterOptionCount(
