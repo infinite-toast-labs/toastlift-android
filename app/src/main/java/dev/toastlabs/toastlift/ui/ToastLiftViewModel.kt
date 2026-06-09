@@ -34,6 +34,7 @@ import dev.toastlabs.toastlift.data.EquipmentConflictItem
 import dev.toastlabs.toastlift.data.AdherenceSessionSignal
 import dev.toastlabs.toastlift.data.ExerciseDetail
 import dev.toastlabs.toastlift.data.ExerciseDiscoveryResult
+import dev.toastlabs.toastlift.data.ExerciseFamily
 import dev.toastlabs.toastlift.data.ExerciseHistoryDetail
 import dev.toastlabs.toastlift.data.ExercisePerformanceStats
 import dev.toastlabs.toastlift.data.ExerciseSummary
@@ -361,6 +362,10 @@ internal data class AppUiState(
     val exerciseDiscoveryLoading: Boolean = false,
     val exerciseDiscoveryError: String? = null,
     val exerciseDiscoverySignature: String? = null,
+    val selectedExerciseFamily: ExerciseFamily? = null,
+    val exerciseFamilyLoadingSeed: ExerciseSummary? = null,
+    val exerciseFamilyError: String? = null,
+    val exerciseFamilyTrail: List<ExerciseSummary> = emptyList(),
     val selectedExerciseDetail: ExerciseDetail? = null,
     val generatingExerciseDescriptionId: Long? = null,
     val selectedExerciseHistory: ExerciseHistoryDetail? = null,
@@ -443,6 +448,34 @@ private fun AppUiState.withoutExerciseDiscovery(): AppUiState =
         exerciseDiscoveryError = null,
         exerciseDiscoverySignature = null,
     )
+
+private fun List<ExerciseSummary>.replaceLastFamilySeed(seed: ExerciseSummary): List<ExerciseSummary> {
+    if (isEmpty()) return listOf(seed)
+    return dropLast(1) + seed
+}
+
+private fun ExerciseFamily.withUpdatedExerciseSummary(updated: ExerciseSummary): ExerciseFamily =
+    copy(
+        anchor = if (anchor.summary.id == updated.id) {
+            anchor.copy(summary = updated)
+        } else {
+            anchor
+        },
+        sections = sections.map { section ->
+            section.copy(
+                candidates = section.candidates.map { candidate ->
+                    if (candidate.exercise.id == updated.id) {
+                        candidate.copy(exercise = updated)
+                    } else {
+                        candidate
+                    }
+                },
+            )
+        },
+    )
+
+private fun List<ExerciseSummary>.withUpdatedExerciseSummary(updated: ExerciseSummary): List<ExerciseSummary> =
+    map { if (it.id == updated.id) updated else it }
 
 internal data class WorkoutGenerationRequestContext(
     val previousExerciseIds: Set<Long> = emptySet(),
@@ -2082,6 +2115,7 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
 
     private var customExerciseNameLookupJob: Job? = null
     private var exerciseDiscoveryJob: Job? = null
+    private var exerciseFamilyJob: Job? = null
     private var restTimerJob: Job? = null
     private var restTimerSoundJob: Job? = null
     private val exercisePrescriptionEngine = dev.toastlabs.toastlift.data.ExercisePrescriptionEngine()
@@ -2987,6 +3021,96 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
+    fun openExerciseFamily(exercise: ExerciseSummary) {
+        loadExerciseFamily(
+            seed = exercise,
+            trail = listOf(exercise),
+        )
+    }
+
+    fun exploreExerciseFamily(exercise: ExerciseSummary) {
+        val currentTrail = uiState.exerciseFamilyTrail
+        val existingIndex = currentTrail.indexOfFirst { it.id == exercise.id }
+        val nextTrail = if (existingIndex >= 0) {
+            currentTrail.take(existingIndex + 1)
+        } else {
+            currentTrail + exercise
+        }
+        loadExerciseFamily(
+            seed = exercise,
+            trail = nextTrail.ifEmpty { listOf(exercise) },
+        )
+    }
+
+    fun retryExerciseFamily() {
+        val seed = uiState.exerciseFamilyLoadingSeed
+            ?: uiState.selectedExerciseFamily?.anchor?.summary
+            ?: uiState.exerciseFamilyTrail.lastOrNull()
+            ?: return
+        val trail = uiState.exerciseFamilyTrail.ifEmpty { listOf(seed) }
+        loadExerciseFamily(
+            seed = seed,
+            trail = trail,
+        )
+    }
+
+    fun goBackExerciseFamily() {
+        val previousTrail = uiState.exerciseFamilyTrail.dropLast(1)
+        val seed = previousTrail.lastOrNull() ?: return
+        loadExerciseFamily(
+            seed = seed,
+            trail = previousTrail,
+        )
+    }
+
+    fun dismissExerciseFamily() {
+        exerciseFamilyJob?.cancel()
+        uiState = uiState.copy(
+            selectedExerciseFamily = null,
+            exerciseFamilyLoadingSeed = null,
+            exerciseFamilyError = null,
+            exerciseFamilyTrail = emptyList(),
+        )
+    }
+
+    private fun loadExerciseFamily(
+        seed: ExerciseSummary,
+        trail: List<ExerciseSummary>,
+    ) {
+        exerciseFamilyJob?.cancel()
+        uiState = uiState.copy(
+            selectedExerciseDetail = null,
+            selectedExerciseFamily = null,
+            exerciseFamilyLoadingSeed = seed,
+            exerciseFamilyError = null,
+            exerciseFamilyTrail = trail,
+        )
+        exerciseFamilyJob = viewModelScope.launch(Dispatchers.IO) {
+            val result = runCatching {
+                container.catalogRepository.loadExerciseFamily(seed.id)
+                    ?: error("Could not load ${seed.name}.")
+            }
+            if (uiState.exerciseFamilyLoadingSeed?.id != seed.id) return@launch
+            uiState = result.fold(
+                onSuccess = { family ->
+                    uiState.copy(
+                        selectedExerciseFamily = family,
+                        exerciseFamilyLoadingSeed = null,
+                        exerciseFamilyError = null,
+                        exerciseFamilyTrail = trail.replaceLastFamilySeed(family.anchor.summary),
+                    )
+                },
+                onFailure = { error ->
+                    uiState.copy(
+                        selectedExerciseFamily = null,
+                        exerciseFamilyLoadingSeed = seed,
+                        exerciseFamilyError = error.message ?: "Could not build that exercise family.",
+                    )
+                },
+            )
+        }
+    }
+
     fun showExerciseDetail(exerciseId: Long) {
         viewModelScope.launch(Dispatchers.IO) {
             uiState = uiState.copy(selectedExerciseDetail = container.catalogRepository.getExerciseDetail(exerciseId))
@@ -3097,7 +3221,12 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
         viewModelScope.launch(Dispatchers.IO) {
             container.catalogRepository.toggleFavorite(exercise.id, !exercise.favorite)
             exerciseDiscoveryJob?.cancel()
-            uiState = uiState.withoutExerciseDiscovery()
+            val updatedExercise = exercise.copy(favorite = !exercise.favorite)
+            val stateWithoutDiscovery = uiState.withoutExerciseDiscovery()
+            uiState = stateWithoutDiscovery.copy(
+                selectedExerciseFamily = stateWithoutDiscovery.selectedExerciseFamily?.withUpdatedExerciseSummary(updatedExercise),
+                exerciseFamilyTrail = stateWithoutDiscovery.exerciseFamilyTrail.withUpdatedExerciseSummary(updatedExercise),
+            )
             refreshAll()
             if (uiState.selectedExerciseDetail?.summary?.id == exercise.id) {
                 uiState = uiState.copy(

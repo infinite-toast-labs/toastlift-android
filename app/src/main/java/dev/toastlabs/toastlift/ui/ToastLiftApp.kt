@@ -77,6 +77,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AccountCircle
+import androidx.compose.material.icons.rounded.AccountTree
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
@@ -211,6 +212,9 @@ import dev.toastlabs.toastlift.data.HistoryShareFormat
 import dev.toastlabs.toastlift.data.ExerciseDiscoveryPick
 import dev.toastlabs.toastlift.data.ExerciseDiscoveryResult
 import dev.toastlabs.toastlift.data.ExerciseDiscoverySource
+import dev.toastlabs.toastlift.data.ExerciseFamily
+import dev.toastlabs.toastlift.data.ExerciseFamilyCandidate
+import dev.toastlabs.toastlift.data.ExerciseFamilySection
 import dev.toastlabs.toastlift.data.ExerciseSummary
 import dev.toastlabs.toastlift.data.ExerciseVideoLinks
 import dev.toastlabs.toastlift.data.FORMULA_A_LOWER_HIGH_REPS_FOCUS_KEY
@@ -1187,6 +1191,7 @@ fun ToastLiftApp(
                                         onShowDetail = viewModel::showExerciseDetail,
                                         onAddToBuilder = viewModel::addExerciseToBuilder,
                                         onAddToMyPlan = viewModel::addExerciseToGeneratedWorkout,
+                                        onExploreFamily = viewModel::openExerciseFamily,
                                         onToggleFavorite = viewModel::toggleFavorite,
                                         onOpenExerciseHistory = viewModel::openExerciseHistory,
                                         onOpenExerciseVideos = viewModel::openExerciseVideos,
@@ -1243,11 +1248,41 @@ fun ToastLiftApp(
                     },
                     onDeleteExerciseVideoLink = { linkId -> viewModel.deleteExerciseVideoLink(detail.summary, linkId) },
                     onAddToBuilder = { viewModel.addExerciseToBuilder(detail.summary) },
+                    onExploreFamily = { viewModel.openExerciseFamily(detail.summary) },
                     onAddToMyPlan = if (state.generatedWorkout != null) {
                         { viewModel.addExerciseToGeneratedWorkout(detail.summary) }
                     } else {
                         null
                     },
+                )
+            }
+            if (
+                state.selectedExerciseFamily != null ||
+                state.exerciseFamilyLoadingSeed != null ||
+                state.exerciseFamilyError != null
+            ) {
+                ExerciseFamilySheet(
+                    family = state.selectedExerciseFamily,
+                    loadingSeed = state.exerciseFamilyLoadingSeed,
+                    errorMessage = state.exerciseFamilyError,
+                    trail = state.exerciseFamilyTrail,
+                    templates = state.templates,
+                    templateExerciseIds = effectiveTemplateExerciseIds(state),
+                    onDismiss = viewModel::dismissExerciseFamily,
+                    onRetry = viewModel::retryExerciseFamily,
+                    onBack = viewModel::goBackExerciseFamily,
+                    onExplore = viewModel::exploreExerciseFamily,
+                    onShowDetail = { exerciseId ->
+                        viewModel.dismissExerciseFamily()
+                        viewModel.showExerciseDetail(exerciseId)
+                    },
+                    onAddToBuilder = viewModel::addExerciseToBuilder,
+                    onAddToMyPlan = viewModel::addExerciseToGeneratedWorkout,
+                    onToggleFavorite = viewModel::toggleFavorite,
+                    onOpenExerciseHistory = viewModel::openExerciseHistory,
+                    onOpenExerciseVideos = viewModel::openExerciseVideos,
+                    onAddExerciseToExistingTemplate = viewModel::addExerciseToExistingTemplate,
+                    onCreateTemplateFromExercise = viewModel::createTemplateFromExercise,
                 )
             }
             state.selectedExerciseHistory?.let { detail ->
@@ -3419,6 +3454,7 @@ private fun LibraryScreen(
     onShowDetail: (Long) -> Unit,
     onAddToBuilder: (ExerciseSummary) -> Unit,
     onAddToMyPlan: (ExerciseSummary) -> Unit,
+    onExploreFamily: (ExerciseSummary) -> Unit,
     onToggleFavorite: (ExerciseSummary) -> Unit,
     onOpenExerciseHistory: (Long, String) -> Unit,
     onOpenExerciseVideos: (Long, String) -> Unit,
@@ -3502,6 +3538,7 @@ private fun LibraryScreen(
                         onShowDetail = onShowDetail,
                         onAddToBuilder = onAddToBuilder,
                         onAddToMyPlan = onAddToMyPlan,
+                        onExploreFamily = onExploreFamily,
                         onToggleFavorite = onToggleFavorite,
                         onOpenExerciseHistory = onOpenExerciseHistory,
                         onOpenExerciseVideos = onOpenExerciseVideos,
@@ -3514,6 +3551,7 @@ private fun LibraryScreen(
                         exercise = exercise,
                         onDetails = { onShowDetail(exercise.id) },
                         onAdd = { onAddToBuilder(exercise) },
+                        onExploreFamily = { onExploreFamily(exercise) },
                         onToggleFavorite = { onToggleFavorite(exercise) },
                         onOpenExerciseHistory = { onOpenExerciseHistory(exercise.id, exercise.name) },
                         onOpenExerciseVideos = { onOpenExerciseVideos(exercise.id, exercise.name) },
@@ -3578,6 +3616,379 @@ private fun LibraryScreen(
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
+private fun ExerciseFamilySheet(
+    family: ExerciseFamily?,
+    loadingSeed: ExerciseSummary?,
+    errorMessage: String?,
+    trail: List<ExerciseSummary>,
+    templates: List<TemplateSummary>,
+    templateExerciseIds: Map<Long, Set<Long>>,
+    onDismiss: () -> Unit,
+    onRetry: () -> Unit,
+    onBack: () -> Unit,
+    onExplore: (ExerciseSummary) -> Unit,
+    onShowDetail: (Long) -> Unit,
+    onAddToBuilder: (ExerciseSummary) -> Unit,
+    onAddToMyPlan: (ExerciseSummary) -> Unit,
+    onToggleFavorite: (ExerciseSummary) -> Unit,
+    onOpenExerciseHistory: (Long, String) -> Unit,
+    onOpenExerciseVideos: (Long, String) -> Unit,
+    onAddExerciseToExistingTemplate: (Long, ExerciseSummary) -> Unit,
+    onCreateTemplateFromExercise: (String, ExerciseSummary) -> Unit,
+) {
+    var existingTemplateTarget by remember { mutableStateOf<ExerciseSummary?>(null) }
+    var newTemplateTarget by remember { mutableStateOf<ExerciseSummary?>(null) }
+    val activeExercise = family?.anchor?.summary ?: loadingSeed ?: trail.lastOrNull()
+
+    ToastLiftModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.92f)
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.Top,
+            ) {
+                if (trail.size > 1) {
+                    IconButton(onClick = onBack) {
+                        Icon(
+                            imageVector = Icons.Rounded.KeyboardArrowLeft,
+                            contentDescription = "Back to previous family",
+                        )
+                    }
+                }
+                LeadingBadge(
+                    label = "FAM",
+                    accent = accentForKey(activeExercise?.equipment ?: "family"),
+                )
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        activeExercise?.name ?: "Exercise family",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    Text(
+                        familySubtitle(family, loadingSeed, errorMessage),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                IconButton(onClick = onDismiss) {
+                    Icon(imageVector = Icons.Rounded.Close, contentDescription = "Close family explorer")
+                }
+            }
+
+            if (trail.size > 1) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    trail.takeLast(4).forEachIndexed { index, exercise ->
+                        val isCurrent = index == trail.takeLast(4).lastIndex
+                        MiniTag(
+                            exercise.name,
+                            accent = if (isCurrent) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+                        )
+                    }
+                }
+            }
+
+            when {
+                errorMessage != null -> ExerciseFamilyMessageState(
+                    title = "Could not build this family",
+                    message = errorMessage,
+                    primaryLabel = "Retry",
+                    onPrimary = onRetry,
+                    secondaryLabel = "Close",
+                    onSecondary = onDismiss,
+                )
+                loadingSeed != null -> ExerciseFamilyLoadingState(seed = loadingSeed)
+                family != null && family.sections.isEmpty() -> ExerciseFamilyMessageState(
+                    title = "No close relatives yet",
+                    message = "This exercise does not have enough shared muscle, equipment, or movement data to build a useful family.",
+                    primaryLabel = "Details",
+                    onPrimary = { onShowDetail(family.anchor.summary.id) },
+                    secondaryLabel = "Close",
+                    onSecondary = onDismiss,
+                )
+                family != null -> {
+                    FamilyAnchorSnapshot(family = family)
+                    family.sections.forEach { section ->
+                        ExerciseFamilySectionBlock(
+                            section = section,
+                            onExplore = onExplore,
+                            onShowDetail = onShowDetail,
+                            onAddToBuilder = onAddToBuilder,
+                            onAddToMyPlan = onAddToMyPlan,
+                            onToggleFavorite = onToggleFavorite,
+                            onOpenExerciseHistory = onOpenExerciseHistory,
+                            onOpenExerciseVideos = onOpenExerciseVideos,
+                            onAddToExistingTemplate = { existingTemplateTarget = it },
+                            onCreateTemplateFromExercise = { newTemplateTarget = it },
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(18.dp))
+        }
+    }
+
+    existingTemplateTarget?.let { exercise ->
+        ExerciseTemplatePickerDialog(
+            exercise = exercise,
+            templates = templates,
+            templateExerciseIds = templateExerciseIds,
+            onDismiss = { existingTemplateTarget = null },
+            onSelectTemplate = { template ->
+                existingTemplateTarget = null
+                onAddExerciseToExistingTemplate(template.id, exercise)
+            },
+            onCreateNewTemplate = {
+                existingTemplateTarget = null
+                newTemplateTarget = exercise
+            },
+        )
+    }
+
+    newTemplateTarget?.let { exercise ->
+        TemplateNameDialog(
+            title = "Add to new template",
+            initialValue = "",
+            confirmLabel = "Create",
+            onDismiss = { newTemplateTarget = null },
+            onConfirm = { name ->
+                newTemplateTarget = null
+                onCreateTemplateFromExercise(name, exercise)
+            },
+        )
+    }
+}
+
+private fun familySubtitle(
+    family: ExerciseFamily?,
+    loadingSeed: ExerciseSummary?,
+    errorMessage: String?,
+): String {
+    return when {
+        errorMessage != null -> "Relationship map paused"
+        loadingSeed != null -> "Building related exercise branches"
+        family == null -> "Progressions, regressions, and cousins"
+        family.relatedExerciseCount == 0 -> "No close catalog relatives"
+        else -> "${family.relatedExerciseCount} related exercises across ${family.sections.size} branch${if (family.sections.size == 1) "" else "es"}"
+    }
+}
+
+@Composable
+private fun ExerciseFamilyLoadingState(seed: ExerciseSummary) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.36f), RoundedCornerShape(8.dp))
+            .padding(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+        Text(
+            "Mapping ${seed.targetMuscleGroup}, ${seed.equipment}, and movement-pattern relatives.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
+private fun ExerciseFamilyMessageState(
+    title: String,
+    message: String,
+    primaryLabel: String,
+    onPrimary: () -> Unit,
+    secondaryLabel: String,
+    onSecondary: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.36f), RoundedCornerShape(8.dp))
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+        Text(message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = onPrimary) {
+                Text(primaryLabel)
+            }
+            TextButton(onClick = onSecondary) {
+                Text(secondaryLabel)
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun FamilyAnchorSnapshot(family: ExerciseFamily) {
+    val anchor = family.anchor
+    FeatureCard(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.58f), showTopAccent = false) {
+        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Current branch", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+            ExerciseAttributeText(exercise = anchor.summary)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                MiniTag(anchor.summary.difficulty)
+                MiniTag(anchor.summary.mechanics ?: "Open chain")
+                anchor.primeMover?.let { MiniTag("Prime: $it", accent = MaterialTheme.colorScheme.primaryContainer) }
+                anchor.movementPatterns.take(2).forEach { MiniTag(it) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ExerciseFamilySectionBlock(
+    section: ExerciseFamilySection,
+    onExplore: (ExerciseSummary) -> Unit,
+    onShowDetail: (Long) -> Unit,
+    onAddToBuilder: (ExerciseSummary) -> Unit,
+    onAddToMyPlan: (ExerciseSummary) -> Unit,
+    onToggleFavorite: (ExerciseSummary) -> Unit,
+    onOpenExerciseHistory: (Long, String) -> Unit,
+    onOpenExerciseVideos: (Long, String) -> Unit,
+    onAddToExistingTemplate: (ExerciseSummary) -> Unit,
+    onCreateTemplateFromExercise: (ExerciseSummary) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(section.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text(section.subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        section.candidates.forEach { candidate ->
+            ExerciseFamilyCandidateCard(
+                candidate = candidate,
+                onExplore = { onExplore(candidate.exercise) },
+                onShowDetail = { onShowDetail(candidate.exercise.id) },
+                onAddToBuilder = { onAddToBuilder(candidate.exercise) },
+                onAddToMyPlan = { onAddToMyPlan(candidate.exercise) },
+                onToggleFavorite = { onToggleFavorite(candidate.exercise) },
+                onOpenExerciseHistory = { onOpenExerciseHistory(candidate.exercise.id, candidate.exercise.name) },
+                onOpenExerciseVideos = { onOpenExerciseVideos(candidate.exercise.id, candidate.exercise.name) },
+                onAddToExistingTemplate = { onAddToExistingTemplate(candidate.exercise) },
+                onCreateTemplateFromExercise = { onCreateTemplateFromExercise(candidate.exercise) },
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ExerciseFamilyCandidateCard(
+    candidate: ExerciseFamilyCandidate,
+    onExplore: () -> Unit,
+    onShowDetail: () -> Unit,
+    onAddToBuilder: () -> Unit,
+    onAddToMyPlan: () -> Unit,
+    onToggleFavorite: () -> Unit,
+    onOpenExerciseHistory: () -> Unit,
+    onOpenExerciseVideos: () -> Unit,
+    onAddToExistingTemplate: () -> Unit,
+    onCreateTemplateFromExercise: () -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val haptics = LocalHapticFeedback.current
+    val shape = RoundedCornerShape(8.dp)
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.16f), shape)
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.26f))
+            .clickable(onClick = onShowDetail)
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.Top,
+        ) {
+            LeadingBadge(
+                label = equipmentBadgeLabel(candidate.exercise.equipment),
+                accent = accentForKey(candidate.exercise.equipment),
+            )
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text(candidate.exercise.name, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                Text(candidate.relationshipLabel, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                ExerciseAttributeText(exercise = candidate.exercise)
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(
+                    onClick = {
+                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        onExplore()
+                    },
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.AccountTree,
+                        contentDescription = "Explore ${candidate.exercise.name} family",
+                    )
+                }
+                IconButton(onClick = onAddToBuilder) {
+                    Icon(
+                        imageVector = Icons.Rounded.FitnessCenter,
+                        contentDescription = "Add ${candidate.exercise.name} to builder",
+                    )
+                }
+                IconButton(onClick = onToggleFavorite) {
+                    Icon(
+                        imageVector = if (candidate.exercise.favorite) Icons.Rounded.Star else Icons.Rounded.StarOutline,
+                        contentDescription = if (candidate.exercise.favorite) {
+                            "Unfavorite ${candidate.exercise.name}"
+                        } else {
+                            "Favorite ${candidate.exercise.name}"
+                        },
+                        tint = if (candidate.exercise.favorite) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Box {
+                    IconButton(onClick = { expanded = true }) {
+                        Text(
+                            "⋮",
+                            modifier = Modifier.semantics { contentDescription = "Exercise actions" },
+                            style = MaterialTheme.typography.titleLarge,
+                        )
+                    }
+                    DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                        DropdownMenuItem(text = { Text("Explore family") }, onClick = { expanded = false; onExplore() })
+                        DropdownMenuItem(text = { Text("Details") }, onClick = { expanded = false; onShowDetail() })
+                        DropdownMenuItem(text = { Text("Add to builder") }, onClick = { expanded = false; onAddToBuilder() })
+                        DropdownMenuItem(text = { Text("Add to My Plan") }, onClick = { expanded = false; onAddToMyPlan() })
+                        DropdownMenuItem(text = { Text("Add to existing template") }, onClick = { expanded = false; onAddToExistingTemplate() })
+                        DropdownMenuItem(text = { Text("Add to new template") }, onClick = { expanded = false; onCreateTemplateFromExercise() })
+                        DropdownMenuItem(text = { Text("Exercise history") }, onClick = { expanded = false; onOpenExerciseHistory() })
+                        DropdownMenuItem(text = { Text("Videos") }, onClick = { expanded = false; onOpenExerciseVideos() })
+                        DropdownMenuItem(
+                            text = { Text(if (candidate.exercise.favorite) "Unfavorite" else "Favorite") },
+                            onClick = { expanded = false; onToggleFavorite() },
+                        )
+                    }
+                }
+            }
+        }
+        Text(candidate.reason, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            candidate.sharedSignals.take(4).forEach { MiniTag(it) }
+            if (candidate.exercise.loggedSessionCount == 0) {
+                MiniTag("New to you")
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
 private fun ExerciseDiscoveryPanel(
     result: ExerciseDiscoveryResult?,
     isLoading: Boolean,
@@ -3589,6 +4000,7 @@ private fun ExerciseDiscoveryPanel(
     onShowDetail: (Long) -> Unit,
     onAddToBuilder: (ExerciseSummary) -> Unit,
     onAddToMyPlan: (ExerciseSummary) -> Unit,
+    onExploreFamily: (ExerciseSummary) -> Unit,
     onToggleFavorite: (ExerciseSummary) -> Unit,
     onOpenExerciseHistory: (Long, String) -> Unit,
     onOpenExerciseVideos: (Long, String) -> Unit,
@@ -3683,6 +4095,7 @@ private fun ExerciseDiscoveryPanel(
                             onShowDetail = { onShowDetail(pick.exercise.id) },
                             onAddToBuilder = { onAddToBuilder(pick.exercise) },
                             onAddToMyPlan = { onAddToMyPlan(pick.exercise) },
+                            onExploreFamily = { onExploreFamily(pick.exercise) },
                             onToggleFavorite = { onToggleFavorite(pick.exercise) },
                             onOpenExerciseHistory = { onOpenExerciseHistory(pick.exercise.id, pick.exercise.name) },
                             onOpenExerciseVideos = { onOpenExerciseVideos(pick.exercise.id, pick.exercise.name) },
@@ -3756,6 +4169,7 @@ private fun ExerciseDiscoveryPickRow(
     onShowDetail: () -> Unit,
     onAddToBuilder: () -> Unit,
     onAddToMyPlan: () -> Unit,
+    onExploreFamily: () -> Unit,
     onToggleFavorite: () -> Unit,
     onOpenExerciseHistory: () -> Unit,
     onOpenExerciseVideos: () -> Unit,
@@ -3830,6 +4244,7 @@ private fun ExerciseDiscoveryPickRow(
                     }
                     DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                         DropdownMenuItem(text = { Text("Details") }, onClick = { expanded = false; onShowDetail() })
+                        DropdownMenuItem(text = { Text("Explore family") }, onClick = { expanded = false; onExploreFamily() })
                         DropdownMenuItem(text = { Text("Add to builder") }, onClick = { expanded = false; onAddToBuilder() })
                         DropdownMenuItem(text = { Text("Add to My Plan") }, onClick = { expanded = false; onAddToMyPlan() })
                         DropdownMenuItem(text = { Text("Add to existing template") }, onClick = { expanded = false; onAddToExistingTemplate() })
@@ -7315,6 +7730,7 @@ private fun ExerciseListCard(
     exercise: ExerciseSummary,
     onDetails: () -> Unit,
     onAdd: () -> Unit,
+    onExploreFamily: () -> Unit,
     onToggleFavorite: () -> Unit,
     onOpenExerciseHistory: () -> Unit,
     onOpenExerciseVideos: () -> Unit,
@@ -7364,6 +7780,7 @@ private fun ExerciseListCard(
                     }
                     DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                         DropdownMenuItem(text = { Text("Details") }, onClick = { expanded = false; onDetails() })
+                        DropdownMenuItem(text = { Text("Explore family") }, onClick = { expanded = false; onExploreFamily() })
                         DropdownMenuItem(text = { Text("Add to builder") }, onClick = { expanded = false; onAdd() })
                         DropdownMenuItem(text = { Text("Add to existing template") }, onClick = { expanded = false; onAddToExistingTemplate() })
                         DropdownMenuItem(text = { Text("Add to new template") }, onClick = { expanded = false; onCreateTemplateFromExercise() })
@@ -13193,6 +13610,7 @@ private fun ExerciseDetailSheet(
     onSaveExerciseVideoLink: (Long?, String, String) -> Unit,
     onDeleteExerciseVideoLink: (Long) -> Unit,
     onAddToBuilder: () -> Unit,
+    onExploreFamily: () -> Unit,
     onAddToMyPlan: (() -> Unit)?,
 ) {
     val context = LocalContext.current
@@ -13345,6 +13763,18 @@ private fun ExerciseDetailSheet(
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text("Description")
+                    }
+                    OutlinedButton(
+                        onClick = onExploreFamily,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.AccountTree,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Explore family")
                     }
                 }
             }

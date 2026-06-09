@@ -380,6 +380,96 @@ class CatalogRepository(private val database: ToastLiftDatabase) {
         )
     }
 
+    fun loadExerciseFamily(exerciseId: Long): ExerciseFamily? {
+        val anchor = getExerciseDetail(exerciseId) ?: return null
+        val candidates = loadExerciseFamilyCandidateProfiles(exerciseId)
+        return buildExerciseFamily(
+            anchor = anchor,
+            candidates = candidates,
+        )
+    }
+
+    private fun loadExerciseFamilyCandidateProfiles(anchorExerciseId: Long): List<ExerciseFamilyProfile> {
+        val db = database.open()
+        return db.rawQuery(
+            """
+            SELECT
+                e.exercise_id,
+                e.name,
+                e.difficulty_level,
+                e.body_region,
+                e.target_muscle_group,
+                COALESCE(e.primary_equipment, 'Bodyweight'),
+                e.secondary_equipment,
+                e.mechanics,
+                COALESCE(p.is_favorite, 0),
+                COALESCE(p.is_hidden, 0),
+                COALESCE(p.is_banned, 0),
+                COALESCE(p.preference_score_delta, 0),
+                COALESCE(logged_history.logged_session_count, 0),
+                e.prime_mover_muscle,
+                e.secondary_muscle,
+                e.tertiary_muscle,
+                e.posture,
+                e.laterality,
+                e.primary_exercise_classification,
+                (
+                    SELECT GROUP_CONCAT(mp.movement_pattern, '||')
+                    FROM exercise_movement_patterns mp
+                    WHERE mp.exercise_id = e.exercise_id
+                    ORDER BY mp.sequence_no
+                ) AS movement_patterns,
+                (
+                    SELECT GROUP_CONCAT(pm.plane_of_motion, '||')
+                    FROM exercise_planes_of_motion pm
+                    WHERE pm.exercise_id = e.exercise_id
+                    ORDER BY pm.sequence_no
+                ) AS planes_of_motion
+            FROM exercises e
+            LEFT JOIN exercise_preferences p ON p.exercise_id = e.exercise_id
+            ${loggedSessionCountJoin()}
+            WHERE e.exercise_id != ?
+              AND COALESCE(p.is_hidden, 0) = 0
+              AND COALESCE(p.is_banned, 0) = 0
+            ORDER BY e.name
+            """.trimIndent(),
+            arrayOf(anchorExerciseId.toString()),
+        ).use { cursor ->
+            buildList {
+                while (cursor.moveToNext()) {
+                    add(
+                        ExerciseFamilyProfile(
+                            summary = ExerciseSummary(
+                                id = cursor.getLong(0),
+                                name = cursor.getString(1),
+                                difficulty = cursor.getString(2),
+                                bodyRegion = cursor.getString(3),
+                                targetMuscleGroup = cursor.getString(4),
+                                equipment = cursor.getString(5),
+                                secondaryEquipment = cursor.getStringOrNull(6),
+                                mechanics = cursor.getStringOrNull(7),
+                                favorite = cursor.getInt(8) == 1,
+                                hidden = cursor.getInt(9) == 1,
+                                banned = cursor.getInt(10) == 1,
+                                preferenceScoreDelta = cursor.getDouble(11),
+                                recommendationBias = RecommendationBias.fromScoreDelta(cursor.getDouble(11)),
+                                loggedSessionCount = cursor.getInt(12),
+                            ),
+                            primeMover = cursor.getStringOrNull(13),
+                            secondaryMuscle = cursor.getStringOrNull(14),
+                            tertiaryMuscle = cursor.getStringOrNull(15),
+                            posture = cursor.getStringOrNull(16),
+                            laterality = cursor.getStringOrNull(17),
+                            classification = cursor.getStringOrNull(18),
+                            movementPatterns = splitCatalogList(cursor.getStringOrNull(19)),
+                            planesOfMotion = splitCatalogList(cursor.getStringOrNull(20)),
+                        ),
+                    )
+                }
+            }
+        }
+    }
+
     fun toggleFavorite(exerciseId: Long, favorite: Boolean) {
         val db = database.open()
         val now = java.time.Instant.now().toString()
@@ -678,6 +768,13 @@ class CatalogRepository(private val database: ToastLiftDatabase) {
                 while (cursor.moveToNext()) add(cursor.getString(0))
             }
         }
+
+    private fun splitCatalogList(value: String?): List<String> =
+        value
+            ?.split("||")
+            ?.map { it.trim() }
+            ?.filter { it.isNotBlank() }
+            .orEmpty()
 
     private fun SQLiteDatabase.columnNames(table: String): Set<String> =
         rawQuery("PRAGMA table_info($table)", null).use { cursor ->
