@@ -3028,6 +3028,20 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
         )
     }
 
+    fun openExerciseFamily(exerciseId: Long) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val exercise = container.catalogRepository.exerciseById(exerciseId)
+            if (exercise == null) {
+                uiState = uiState.copy(message = "Could not load that exercise family.")
+                return@launch
+            }
+            loadExerciseFamily(
+                seed = exercise,
+                trail = listOf(exercise),
+            )
+        }
+    }
+
     fun exploreExerciseFamily(exercise: ExerciseSummary) {
         val currentTrail = uiState.exerciseFamilyTrail
         val existingIndex = currentTrail.indexOfFirst { it.id == exercise.id }
@@ -3236,6 +3250,30 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
+    fun toggleFavorite(exerciseId: Long) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val exercise = container.catalogRepository.exerciseById(exerciseId)
+            if (exercise == null) {
+                uiState = uiState.copy(message = "Could not load that exercise.")
+                return@launch
+            }
+            container.catalogRepository.toggleFavorite(exercise.id, !exercise.favorite)
+            exerciseDiscoveryJob?.cancel()
+            val updatedExercise = exercise.copy(favorite = !exercise.favorite)
+            val stateWithoutDiscovery = uiState.withoutExerciseDiscovery()
+            uiState = stateWithoutDiscovery.copy(
+                selectedExerciseFamily = stateWithoutDiscovery.selectedExerciseFamily?.withUpdatedExerciseSummary(updatedExercise),
+                exerciseFamilyTrail = stateWithoutDiscovery.exerciseFamilyTrail.withUpdatedExerciseSummary(updatedExercise),
+            )
+            refreshAll()
+            if (uiState.selectedExerciseDetail?.summary?.id == exercise.id) {
+                uiState = uiState.copy(
+                    selectedExerciseDetail = container.catalogRepository.getExerciseDetail(exercise.id),
+                )
+            }
+        }
+    }
+
     fun saveExerciseNote(exercise: ExerciseSummary, noteInput: String) {
         viewModelScope.launch(Dispatchers.IO) {
             val normalizedNote = normalizeExerciseNote(noteInput)
@@ -3341,6 +3379,22 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
         )
     }
 
+    fun addWorkoutExerciseToBuilder(exercise: WorkoutExercise) {
+        val updated = appendDistinctTemplateExercise(
+            uiState.manualWorkoutItems,
+            exercise.copy(rationale = "Added manually from a saved template."),
+        )
+        uiState = uiState.copy(
+            manualWorkoutItems = updated,
+            selectedTab = MainTab.Generate,
+            message = if (updated.size == uiState.manualWorkoutItems.size) {
+                "${exercise.name} is already in the manual builder."
+            } else {
+                "${exercise.name} added to the manual builder."
+            },
+        )
+    }
+
     fun addExercisesToBuilder(exercises: List<ExerciseSummary>) {
         if (exercises.isEmpty()) return
         val existingIds = uiState.manualWorkoutItems.map { it.exerciseId }.toSet()
@@ -3401,6 +3455,41 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
                     signalType = WorkoutFeedbackSignalType.GENERATED_PLAN_MANUAL_ADD,
                 )
                 refreshRecommendationBiasState(exercise.id)
+            }
+        }
+    }
+
+    fun addWorkoutExerciseToGeneratedWorkout(exercise: WorkoutExercise) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val workout = uiState.generatedWorkout
+            if (workout == null) {
+                uiState = uiState.copy(message = "Generate a workout before adding to My Plan.")
+                return@launch
+            }
+            if (workout.exercises.any { it.exerciseId == exercise.exerciseId }) {
+                uiState = uiState.copy(message = "${exercise.name} is already in My Plan.")
+                return@launch
+            }
+            val addedExercise = exercise.copy(rationale = "Added to My Plan from a saved template.")
+            val updatedWorkout = workout.withExercises(
+                exercises = workout.exercises + addedExercise,
+                fallbackMinutes = uiState.profile?.durationMinutes,
+            )
+            val projectedAnalytics = projectedAnalyticsFor(updatedWorkout)
+            uiState = uiState.copy(
+                generatedWorkout = updatedWorkout,
+                projectedMuscleInsights = projectedAnalytics.muscles,
+                projectedMovementInsights = projectedAnalytics.movements,
+                selectedTab = MainTab.Generate,
+                message = "${exercise.name} added to My Plan.",
+            )
+            if (workout.origin == "generated") {
+                container.workoutRepository.recordGeneratedWorkoutFeedbackSignal(
+                    workout = workout,
+                    exercise = addedExercise,
+                    signalType = WorkoutFeedbackSignalType.GENERATED_PLAN_MANUAL_ADD,
+                )
+                refreshRecommendationBiasState(exercise.exerciseId)
             }
         }
     }
@@ -3792,6 +3881,65 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
         )
     }
 
+    fun addWorkoutExerciseToExistingTemplate(templateId: Long, exercise: WorkoutExercise) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val template = container.workoutRepository.loadEditableTemplate(templateId)
+            if (template == null) {
+                uiState = uiState.copy(message = "Could not load that template.")
+                return@launch
+            }
+            val draftExercises = when (template.id) {
+                uiState.todayEditingTemplateId -> uiState.todayEditingTemplateItems
+                uiState.editingTemplateId -> uiState.manualWorkoutItems
+                else -> template.exercises
+            }
+            val updatedExercises = appendDistinctTemplateExercise(draftExercises, exercise)
+            if (updatedExercises.size == draftExercises.size) {
+                uiState = uiState.copy(message = "${exercise.name} is already in ${template.name}.")
+                return@launch
+            }
+            if (template.id == uiState.todayEditingTemplateId) {
+                uiState = uiState.copy(
+                    todayEditingTemplateItems = updatedExercises,
+                    message = "${exercise.name} added to ${template.name}.",
+                )
+                return@launch
+            }
+            if (template.id == uiState.editingTemplateId) {
+                uiState = uiState.copy(
+                    manualWorkoutItems = updatedExercises,
+                    message = "${exercise.name} added to ${template.name}.",
+                )
+                return@launch
+            }
+            container.workoutRepository.updateTemplate(
+                templateId = template.id,
+                name = template.name,
+                origin = template.origin,
+                exercises = updatedExercises,
+            )
+            refreshAll()
+            uiState = uiState.copy(message = "${exercise.name} added to ${template.name}.")
+        }
+    }
+
+    fun createTemplateFromWorkoutExercise(name: String, exercise: WorkoutExercise) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val trimmedName = name.trim()
+            if (trimmedName.isBlank()) {
+                uiState = uiState.copy(message = "Template name cannot be blank.")
+                return@launch
+            }
+            container.workoutRepository.saveTemplate(
+                name = trimmedName,
+                origin = "manual",
+                exercises = listOf(exercise.copy(rationale = "Started this template from a saved template exercise.")),
+            )
+            refreshAll()
+            uiState = uiState.copy(message = "Template created.")
+        }
+    }
+
     fun saveTodayTemplate() {
         viewModelScope.launch(Dispatchers.IO) {
             val editingTemplateId = uiState.todayEditingTemplateId
@@ -3817,6 +3965,27 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
+    fun saveTodayTemplateAs(name: String, exercises: List<WorkoutExercise>) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val trimmedName = name.trim()
+            if (trimmedName.isBlank()) {
+                uiState = uiState.copy(message = "Template name cannot be blank.")
+                return@launch
+            }
+            if (exercises.isEmpty()) {
+                uiState = uiState.copy(message = "No filtered exercises to save.")
+                return@launch
+            }
+            container.workoutRepository.saveTemplate(
+                name = trimmedName,
+                origin = uiState.todayEditingTemplateOrigin ?: "manual",
+                exercises = exercises,
+            )
+            refreshAll()
+            uiState = uiState.copy(message = "Template saved as $trimmedName.")
+        }
+    }
+
     fun startTodayTemplateWorkout() {
         uiState.todayEditingTemplateId ?: return
         val profile = uiState.profile ?: return
@@ -3831,6 +4000,45 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
             estimatedMinutes = profile.durationMinutes,
             origin = uiState.todayEditingTemplateOrigin ?: "manual",
             exercises = uiState.todayEditingTemplateItems,
+        )
+        viewModelScope.launch(Dispatchers.IO) {
+            val session = buildActiveSession(workout)
+            container.workoutRepository.clearAbandonedWorkout()
+            container.workoutRepository.saveActiveSession(session, null)
+            syncActiveWorkoutNotification(session)
+            refreshAll()
+            val activeSessionExerciseDetailsById = loadActiveSessionExerciseDetails(session)
+            uiState = uiState.copy(
+                todayEditingTemplateId = null,
+                todayEditingTemplateOrigin = null,
+                todayEditingTemplateName = "",
+                todayEditingTemplateItems = emptyList(),
+                activeSession = session,
+                activeSessionExerciseDetailsById = activeSessionExerciseDetailsById,
+                activeSessionExerciseIndex = null,
+                activeSessionAddExerciseVisible = false,
+                skippedExerciseFeedbackPrompt = null,
+                customExerciseDraft = null,
+                message = "Starting ${workout.title}.",
+            )
+        }
+    }
+
+    fun startTodayTemplateViewWorkout(exercises: List<WorkoutExercise>) {
+        uiState.todayEditingTemplateId ?: return
+        val profile = uiState.profile ?: return
+        val visibleExercises = exercises.distinctBy { it.exerciseId }
+        if (visibleExercises.isEmpty()) {
+            uiState = uiState.copy(message = "No filtered exercises to start.")
+            return
+        }
+        val workout = WorkoutPlan(
+            title = uiState.todayEditingTemplateName.ifBlank { "Template Workout" },
+            subtitle = "Filtered template • ${profile.durationMinutes} min",
+            locationModeId = profile.activeLocationModeId,
+            estimatedMinutes = profile.durationMinutes,
+            origin = uiState.todayEditingTemplateOrigin ?: "manual",
+            exercises = visibleExercises,
         )
         viewModelScope.launch(Dispatchers.IO) {
             val session = buildActiveSession(workout)

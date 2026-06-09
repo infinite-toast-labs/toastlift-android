@@ -1076,7 +1076,9 @@ fun ToastLiftApp(
                                         onRemoveTemplateExercise = viewModel::removeTodayTemplateExercise,
                                         onAddExercisesToTemplate = viewModel::addExercisesToTodayTemplate,
                                         onSaveTemplateEdits = viewModel::saveTodayTemplate,
+                                        onSaveFilteredTemplate = viewModel::saveTodayTemplateAs,
                                         onStartEditedTemplate = viewModel::startTodayTemplateWorkout,
+                                        onStartFilteredTemplate = viewModel::startTodayTemplateViewWorkout,
                                         onCloseTemplateEditor = viewModel::closeTodayTemplateEditor,
                                         onLibraryQueryChange = viewModel::updateLibraryQuery,
                                         onToggleLibrarySearch = viewModel::toggleLibrarySearch,
@@ -1104,6 +1106,12 @@ fun ToastLiftApp(
                                         onPendingSelectionConsumed = viewModel::clearPendingAddExercisePickerSelection,
                                         onAddExerciseToExistingTemplate = viewModel::addExerciseToExistingTemplate,
                                         onCreateTemplateFromExercise = viewModel::createTemplateFromExercise,
+                                        onAddWorkoutExerciseToExistingTemplate = viewModel::addWorkoutExerciseToExistingTemplate,
+                                        onCreateTemplateFromWorkoutExercise = viewModel::createTemplateFromWorkoutExercise,
+                                        onAddTemplateExerciseToBuilder = viewModel::addWorkoutExerciseToBuilder,
+                                        onAddTemplateExerciseToMyPlan = viewModel::addWorkoutExerciseToGeneratedWorkout,
+                                        onOpenExerciseFamily = viewModel::openExerciseFamily,
+                                        onToggleFavorite = viewModel::toggleFavorite,
                                         onOpenExerciseHistory = viewModel::openExerciseHistory,
                                         onOpenExerciseVideos = viewModel::openExerciseVideos,
                                         onOpenHistoryWorkout = viewModel::openHistoryWorkout,
@@ -1456,7 +1464,9 @@ private fun TodayScreen(
     onRemoveTemplateExercise: (Long) -> Unit,
     onAddExercisesToTemplate: (List<ExerciseSummary>) -> Unit,
     onSaveTemplateEdits: () -> Unit,
+    onSaveFilteredTemplate: (String, List<WorkoutExercise>) -> Unit,
     onStartEditedTemplate: () -> Unit,
+    onStartFilteredTemplate: (List<WorkoutExercise>) -> Unit,
     onCloseTemplateEditor: () -> Unit,
     onLibraryQueryChange: (String) -> Unit,
     onToggleLibrarySearch: () -> Unit,
@@ -1484,6 +1494,12 @@ private fun TodayScreen(
     onPendingSelectionConsumed: () -> Unit,
     onAddExerciseToExistingTemplate: (Long, ExerciseSummary) -> Unit,
     onCreateTemplateFromExercise: (String, ExerciseSummary) -> Unit,
+    onAddWorkoutExerciseToExistingTemplate: (Long, WorkoutExercise) -> Unit,
+    onCreateTemplateFromWorkoutExercise: (String, WorkoutExercise) -> Unit,
+    onAddTemplateExerciseToBuilder: (WorkoutExercise) -> Unit,
+    onAddTemplateExerciseToMyPlan: (WorkoutExercise) -> Unit,
+    onOpenExerciseFamily: (Long) -> Unit,
+    onToggleFavorite: (Long) -> Unit,
     onOpenExerciseHistory: (Long, String) -> Unit,
     onOpenExerciseVideos: (Long, String) -> Unit,
     onOpenHistoryWorkout: (Long) -> Unit,
@@ -1514,8 +1530,8 @@ private fun TodayScreen(
     val history = state.history
     val totalMinutes = history.sumOf { it.durationSeconds } / 60
 
-    LaunchedEffect(showTemplateAddScreen) {
-        onFullscreenFlowChange(showTemplateAddScreen)
+    LaunchedEffect(showTemplateAddScreen, state.todayEditingTemplateId) {
+        onFullscreenFlowChange(showTemplateAddScreen || state.todayEditingTemplateId != null)
     }
 
     DisposableEffect(Unit) {
@@ -1569,6 +1585,36 @@ private fun TodayScreen(
             onSortChange = onTrainingFreshnessSortChange,
             onOpenLibraryFreshnessMuscle = onOpenLibraryFreshnessMuscle,
             onBack = { showTrainingFreshnessDashboard = false },
+        )
+        return
+    }
+
+    state.todayEditingTemplateId?.let { templateId ->
+        TodayTemplateEditorScreen(
+            templateId = templateId,
+            title = state.todayEditingTemplateName,
+            items = state.todayEditingTemplateItems,
+            templates = state.templates,
+            templateExerciseIds = effectiveTemplateExerciseIds(state),
+            recommendationBiasByExerciseId = state.recommendationBiasByExerciseId,
+            hasMyPlan = state.generatedWorkout != null,
+            onBack = onCloseTemplateEditor,
+            onTitleChange = onTemplateNameChange,
+            onRemoveExercise = onRemoveTemplateExercise,
+            onAddExercise = { showTemplateAddScreen = true },
+            onSaveTemplate = onSaveTemplateEdits,
+            onSaveFilteredTemplate = onSaveFilteredTemplate,
+            onStartWorkout = onStartEditedTemplate,
+            onStartFilteredWorkout = onStartFilteredTemplate,
+            onShowExerciseDetail = onShowExerciseDetail,
+            onOpenExerciseHistory = onOpenExerciseHistory,
+            onOpenExerciseVideos = onOpenExerciseVideos,
+            onOpenExerciseFamily = onOpenExerciseFamily,
+            onToggleFavorite = onToggleFavorite,
+            onAddToBuilder = onAddTemplateExerciseToBuilder,
+            onAddToMyPlan = onAddTemplateExerciseToMyPlan,
+            onAddToExistingTemplate = onAddWorkoutExerciseToExistingTemplate,
+            onCreateTemplateFromExercise = onCreateTemplateFromWorkoutExercise,
         )
         return
     }
@@ -1775,23 +1821,551 @@ private fun TodayScreen(
         )
     }
 
-    state.todayEditingTemplateId?.let {
-        ManualBuilderSheet(
-            title = state.todayEditingTemplateName,
-            isEditingTemplate = true,
-            items = state.todayEditingTemplateItems,
-            recommendationBiasByExerciseId = state.recommendationBiasByExerciseId,
-            onDismiss = onCloseTemplateEditor,
-            protectBackGesture = true,
-            onRemoveExercise = onRemoveTemplateExercise,
-            onAddExercise = { showTemplateAddScreen = true },
-            onOpenExerciseHistory = onOpenExerciseHistory,
-            onOpenExerciseVideos = onOpenExerciseVideos,
-            onSaveTemplate = onSaveTemplateEdits,
-            onStartWorkout = onStartEditedTemplate,
-            onTitleChange = onTemplateNameChange,
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun TodayTemplateEditorScreen(
+    templateId: Long,
+    title: String,
+    items: List<WorkoutExercise>,
+    templates: List<TemplateSummary>,
+    templateExerciseIds: Map<Long, Set<Long>>,
+    recommendationBiasByExerciseId: Map<Long, RecommendationBias>,
+    hasMyPlan: Boolean,
+    onBack: () -> Unit,
+    onTitleChange: (String) -> Unit,
+    onRemoveExercise: (Long) -> Unit,
+    onAddExercise: () -> Unit,
+    onSaveTemplate: () -> Unit,
+    onSaveFilteredTemplate: (String, List<WorkoutExercise>) -> Unit,
+    onStartWorkout: () -> Unit,
+    onStartFilteredWorkout: (List<WorkoutExercise>) -> Unit,
+    onShowExerciseDetail: (Long) -> Unit,
+    onOpenExerciseHistory: (Long, String) -> Unit,
+    onOpenExerciseVideos: (Long, String) -> Unit,
+    onOpenExerciseFamily: (Long) -> Unit,
+    onToggleFavorite: (Long) -> Unit,
+    onAddToBuilder: (WorkoutExercise) -> Unit,
+    onAddToMyPlan: (WorkoutExercise) -> Unit,
+    onAddToExistingTemplate: (Long, WorkoutExercise) -> Unit,
+    onCreateTemplateFromExercise: (String, WorkoutExercise) -> Unit,
+) {
+    BackHandler(onBack = onBack)
+    var query by rememberSaveable(templateId) { mutableStateOf("") }
+    var selectedRegions by remember(templateId) { mutableStateOf(emptySet<String>()) }
+    var selectedTargets by remember(templateId) { mutableStateOf(emptySet<String>()) }
+    var selectedEquipment by remember(templateId) { mutableStateOf(emptySet<String>()) }
+    var saveAsDialogItems by remember { mutableStateOf<List<WorkoutExercise>?>(null) }
+    var existingTemplateTarget by remember { mutableStateOf<WorkoutExercise?>(null) }
+    var newTemplateTarget by remember { mutableStateOf<WorkoutExercise?>(null) }
+    val regionOptions = remember(items) {
+        items.map { it.bodyRegion }.filter { it.isNotBlank() }.distinct().sorted()
+    }
+    val targetOptions = remember(items) {
+        items.map { it.targetMuscleGroup }.filter { it.isNotBlank() }.distinct().sorted()
+    }
+    val equipmentOptions = remember(items) {
+        items.map { it.equipment }.filter { it.isNotBlank() }.distinct().sorted()
+    }
+    val filteredItems = remember(items, query, selectedRegions, selectedTargets, selectedEquipment) {
+        filterTemplateExercises(
+            exercises = items,
+            query = query,
+            selectedRegions = selectedRegions,
+            selectedTargets = selectedTargets,
+            selectedEquipment = selectedEquipment,
         )
     }
+    val hasFilters = query.isNotBlank() ||
+        selectedRegions.isNotEmpty() ||
+        selectedTargets.isNotEmpty() ||
+        selectedEquipment.isNotEmpty()
+    val activeFilterCount = selectedRegions.size + selectedTargets.size + selectedEquipment.size +
+        if (query.isNotBlank()) 1 else 0
+
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        item {
+            HistoryDetailHeader(title = "Edit template", onBack = onBack)
+        }
+        item {
+            FeatureCard {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    OutlinedTextField(
+                        value = title,
+                        onValueChange = onTitleChange,
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        label = { Text("Template name") },
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        OutlinedButton(onClick = onAddExercise, modifier = Modifier.weight(1f)) {
+                            Text("Add Exercise")
+                        }
+                        Button(
+                            onClick = onStartWorkout,
+                            modifier = Modifier.weight(1f),
+                            enabled = items.isNotEmpty(),
+                        ) {
+                            Text("Start")
+                        }
+                    }
+                }
+            }
+        }
+        item {
+            TemplateEditorFilterPanel(
+                query = query,
+                onQueryChange = { query = it },
+                regionOptions = regionOptions,
+                selectedRegions = selectedRegions,
+                onToggleRegion = { selectedRegions = selectedRegions.toggleValue(it) },
+                targetOptions = targetOptions,
+                selectedTargets = selectedTargets,
+                onToggleTarget = { selectedTargets = selectedTargets.toggleValue(it) },
+                equipmentOptions = equipmentOptions,
+                selectedEquipment = selectedEquipment,
+                onToggleEquipment = { selectedEquipment = selectedEquipment.toggleValue(it) },
+                activeFilterCount = activeFilterCount,
+                onClear = {
+                    query = ""
+                    selectedRegions = emptySet()
+                    selectedTargets = emptySet()
+                    selectedEquipment = emptySet()
+                },
+            )
+        }
+        if (hasFilters && filteredItems.isNotEmpty()) {
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    OutlinedButton(
+                        onClick = { saveAsDialogItems = filteredItems },
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text("Save as")
+                    }
+                    Button(
+                        onClick = { onStartFilteredWorkout(filteredItems) },
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text("Start view")
+                    }
+                }
+            }
+        }
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    "${filteredItems.size} of ${items.size} exercises",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                OutlinedButton(
+                    onClick = onSaveTemplate,
+                    enabled = items.isNotEmpty(),
+                ) {
+                    Text("Update")
+                }
+            }
+        }
+        if (filteredItems.isEmpty()) {
+            item {
+                FeatureCard {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Text("No exercises match", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                        Text(
+                            "Clear the search or filters to show this template's exercises.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+        } else {
+            items(filteredItems, key = { it.exerciseId }) { item ->
+                TemplateEditorExerciseRow(
+                    exercise = item,
+                    recommendationBias = recommendationBiasByExerciseId[item.exerciseId] ?: RecommendationBias.Neutral,
+                    hasMyPlan = hasMyPlan,
+                    onShowDetail = { onShowExerciseDetail(item.exerciseId) },
+                    onRemove = { onRemoveExercise(item.exerciseId) },
+                    onOpenExerciseHistory = { onOpenExerciseHistory(item.exerciseId, item.name) },
+                    onOpenExerciseVideos = { onOpenExerciseVideos(item.exerciseId, item.name) },
+                    onOpenExerciseFamily = { onOpenExerciseFamily(item.exerciseId) },
+                    onToggleFavorite = { onToggleFavorite(item.exerciseId) },
+                    onAddToBuilder = { onAddToBuilder(item) },
+                    onAddToMyPlan = { onAddToMyPlan(item) },
+                    onAddToExistingTemplate = { existingTemplateTarget = item },
+                    onCreateTemplateFromExercise = { newTemplateTarget = item },
+                )
+            }
+        }
+        item {
+            Spacer(modifier = Modifier.height(32.dp))
+        }
+    }
+
+    saveAsDialogItems?.let { visibleItems ->
+        TemplateNameDialog(
+            title = "Save filtered template",
+            initialValue = filteredTemplateName(title, visibleItems),
+            confirmLabel = "Save",
+            onDismiss = { saveAsDialogItems = null },
+            onConfirm = { name ->
+                saveAsDialogItems = null
+                onSaveFilteredTemplate(name, visibleItems)
+            },
+        )
+    }
+
+    existingTemplateTarget?.let { exercise ->
+        WorkoutExerciseTemplatePickerDialog(
+            exercise = exercise,
+            templates = templates,
+            templateExerciseIds = templateExerciseIds,
+            onDismiss = { existingTemplateTarget = null },
+            onSelectTemplate = { template ->
+                existingTemplateTarget = null
+                onAddToExistingTemplate(template.id, exercise)
+            },
+            onCreateNewTemplate = {
+                existingTemplateTarget = null
+                newTemplateTarget = exercise
+            },
+        )
+    }
+
+    newTemplateTarget?.let { exercise ->
+        TemplateNameDialog(
+            title = "Add to new template",
+            initialValue = "",
+            confirmLabel = "Create",
+            onDismiss = { newTemplateTarget = null },
+            onConfirm = { name ->
+                newTemplateTarget = null
+                onCreateTemplateFromExercise(name, exercise)
+            },
+        )
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun TemplateEditorFilterPanel(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    regionOptions: List<String>,
+    selectedRegions: Set<String>,
+    onToggleRegion: (String) -> Unit,
+    targetOptions: List<String>,
+    selectedTargets: Set<String>,
+    onToggleTarget: (String) -> Unit,
+    equipmentOptions: List<String>,
+    selectedEquipment: Set<String>,
+    onToggleEquipment: (String) -> Unit,
+    activeFilterCount: Int,
+    onClear: () -> Unit,
+) {
+    CompactSectionCard(
+        title = if (activeFilterCount == 0) "Filters" else "Filters $activeFilterCount",
+        subtitle = "Search and narrow this template's current exercises.",
+        menuItems = if (activeFilterCount == 0) emptyList() else listOf("Clear filters" to onClear),
+    ) {
+        OutlinedTextField(
+            value = query,
+            onValueChange = onQueryChange,
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            placeholder = { Text("Search template exercises") },
+            leadingIcon = {
+                Icon(imageVector = Icons.Rounded.Search, contentDescription = null)
+            },
+            trailingIcon = {
+                if (query.isNotBlank()) {
+                    IconButton(onClick = { onQueryChange("") }) {
+                        Icon(imageVector = Icons.Rounded.Close, contentDescription = "Clear search")
+                    }
+                }
+            },
+        )
+        TemplateEditorChipGroup(
+            title = "Body",
+            options = regionOptions,
+            selected = selectedRegions,
+            onToggle = onToggleRegion,
+        )
+        TemplateEditorChipGroup(
+            title = "Target",
+            options = targetOptions,
+            selected = selectedTargets,
+            onToggle = onToggleTarget,
+        )
+        TemplateEditorChipGroup(
+            title = "Equipment",
+            options = equipmentOptions,
+            selected = selectedEquipment,
+            onToggle = onToggleEquipment,
+        )
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun TemplateEditorChipGroup(
+    title: String,
+    options: List<String>,
+    selected: Set<String>,
+    onToggle: (String) -> Unit,
+) {
+    if (options.isEmpty()) return
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(title, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            options.forEach { option ->
+                ToastLiftFilterChip(
+                    selected = option in selected,
+                    onClick = { onToggle(option) },
+                    label = { Text(option) },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun TemplateEditorExerciseRow(
+    exercise: WorkoutExercise,
+    recommendationBias: RecommendationBias,
+    hasMyPlan: Boolean,
+    onShowDetail: () -> Unit,
+    onRemove: () -> Unit,
+    onOpenExerciseHistory: () -> Unit,
+    onOpenExerciseVideos: () -> Unit,
+    onOpenExerciseFamily: () -> Unit,
+    onToggleFavorite: () -> Unit,
+    onAddToBuilder: () -> Unit,
+    onAddToMyPlan: () -> Unit,
+    onAddToExistingTemplate: () -> Unit,
+    onCreateTemplateFromExercise: () -> Unit,
+) {
+    FeatureCard(
+        modifier = Modifier.clickable(onClick = onShowDetail),
+        accentKey = exercise.name,
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(14.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Row(
+                modifier = Modifier.weight(1f),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                LeadingBadge(label = equipmentBadgeLabel(exercise.equipment), accent = accentForKey(exercise.equipment))
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Text(exercise.name, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Text(
+                        "${exercise.sets} sets • ${exercise.repRange} reps • ${exercise.equipment}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Text(
+                        listOf(exercise.bodyRegion, exercise.targetMuscleGroup).filter { it.isNotBlank() }.joinToString(" • "),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+            Text(
+                text = "Remove",
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier
+                    .clickable(onClick = onRemove)
+                    .padding(8.dp),
+            )
+            TemplateExerciseOverflow(
+                recommendationBias = recommendationBias,
+                hasMyPlan = hasMyPlan,
+                onShowDetail = onShowDetail,
+                onOpenExerciseHistory = onOpenExerciseHistory,
+                onOpenExerciseVideos = onOpenExerciseVideos,
+                onOpenExerciseFamily = onOpenExerciseFamily,
+                onToggleFavorite = onToggleFavorite,
+                onAddToBuilder = onAddToBuilder,
+                onAddToMyPlan = onAddToMyPlan,
+                onAddToExistingTemplate = onAddToExistingTemplate,
+                onCreateTemplateFromExercise = onCreateTemplateFromExercise,
+            )
+        }
+    }
+}
+
+@Composable
+private fun TemplateExerciseOverflow(
+    recommendationBias: RecommendationBias,
+    hasMyPlan: Boolean,
+    onShowDetail: () -> Unit,
+    onOpenExerciseHistory: () -> Unit,
+    onOpenExerciseVideos: () -> Unit,
+    onOpenExerciseFamily: () -> Unit,
+    onToggleFavorite: () -> Unit,
+    onAddToBuilder: () -> Unit,
+    onAddToMyPlan: () -> Unit,
+    onAddToExistingTemplate: () -> Unit,
+    onCreateTemplateFromExercise: () -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            RecommendationBiasIndicator(recommendationBias)
+            IconButton(onClick = { expanded = true }) {
+                Text(
+                    "⋮",
+                    modifier = Modifier.semantics { contentDescription = "Exercise actions" },
+                    style = MaterialTheme.typography.titleLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            DropdownMenuItem(text = { Text("Details") }, onClick = { expanded = false; onShowDetail() })
+            DropdownMenuItem(text = { Text("Explore family") }, onClick = { expanded = false; onOpenExerciseFamily() })
+            DropdownMenuItem(text = { Text("Add to builder") }, onClick = { expanded = false; onAddToBuilder() })
+            if (hasMyPlan) {
+                DropdownMenuItem(text = { Text("Add to My Plan") }, onClick = { expanded = false; onAddToMyPlan() })
+            }
+            DropdownMenuItem(text = { Text("Add to existing template") }, onClick = { expanded = false; onAddToExistingTemplate() })
+            DropdownMenuItem(text = { Text("Add to new template") }, onClick = { expanded = false; onCreateTemplateFromExercise() })
+            DropdownMenuItem(text = { Text("Exercise history") }, onClick = { expanded = false; onOpenExerciseHistory() })
+            DropdownMenuItem(text = { Text("Videos") }, onClick = { expanded = false; onOpenExerciseVideos() })
+            DropdownMenuItem(text = { Text("Toggle favorite") }, onClick = { expanded = false; onToggleFavorite() })
+        }
+    }
+}
+
+@Composable
+private fun WorkoutExerciseTemplatePickerDialog(
+    exercise: WorkoutExercise,
+    templates: List<TemplateSummary>,
+    templateExerciseIds: Map<Long, Set<Long>>,
+    onDismiss: () -> Unit,
+    onSelectTemplate: (TemplateSummary) -> Unit,
+    onCreateNewTemplate: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Add to existing template") },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Text(
+                    exercise.name,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                if (templates.isEmpty()) {
+                    Text(
+                        "No saved templates yet.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else {
+                    templates.forEach { template ->
+                        val alreadyPresent = templateExerciseIds[template.id]?.contains(exercise.exerciseId) == true
+                        OutlinedButton(
+                            onClick = { onSelectTemplate(template) },
+                            enabled = !alreadyPresent,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Column(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalAlignment = Alignment.Start,
+                            ) {
+                                Text(template.name, fontWeight = FontWeight.SemiBold)
+                                Text(
+                                    if (alreadyPresent) {
+                                        "Already contains this exercise"
+                                    } else {
+                                        "${template.exerciseCount} exercise${if (template.exerciseCount == 1) "" else "s"}"
+                                    },
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                            }
+                        }
+                    }
+                }
+                TextButton(onClick = onCreateNewTemplate, modifier = Modifier.fillMaxWidth()) {
+                    Text("Create new template")
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        },
+    )
+}
+
+private fun filterTemplateExercises(
+    exercises: List<WorkoutExercise>,
+    query: String,
+    selectedRegions: Set<String>,
+    selectedTargets: Set<String>,
+    selectedEquipment: Set<String>,
+): List<WorkoutExercise> {
+    val normalizedQuery = query.trim()
+    return exercises.filter { exercise ->
+        val matchesQuery = normalizedQuery.isBlank() ||
+            exercise.name.contains(normalizedQuery, ignoreCase = true) ||
+            exercise.bodyRegion.contains(normalizedQuery, ignoreCase = true) ||
+            exercise.targetMuscleGroup.contains(normalizedQuery, ignoreCase = true) ||
+            exercise.equipment.contains(normalizedQuery, ignoreCase = true)
+        matchesQuery &&
+            (selectedRegions.isEmpty() || exercise.bodyRegion in selectedRegions) &&
+            (selectedTargets.isEmpty() || exercise.targetMuscleGroup in selectedTargets) &&
+            (selectedEquipment.isEmpty() || exercise.equipment in selectedEquipment)
+    }
+}
+
+private fun Set<String>.toggleValue(value: String): Set<String> {
+    return if (value in this) this - value else this + value
+}
+
+private fun filteredTemplateName(baseName: String, exercises: List<WorkoutExercise>): String {
+    val bodyRegion = exercises.map { it.bodyRegion }.filter { it.isNotBlank() }.distinct().singleOrNull()
+    val target = exercises.map { it.targetMuscleGroup }.filter { it.isNotBlank() }.distinct().singleOrNull()
+    val suffix = bodyRegion ?: target ?: "Filtered"
+    return "${baseName.ifBlank { "Template" }} - $suffix"
 }
 
 @Composable
@@ -4710,6 +5284,10 @@ internal data class MilestoneProgress(
     val target: Int,
     val unit: String,
     val achievedCount: Int,
+    val thresholds: List<Int>,
+    val awardedThresholds: List<Int>,
+    val celebrationThreshold: Int?,
+    val celebrationDaysRemaining: Int,
 )
 
 internal enum class HistoryStatsFilter(val label: String, val days: Long?) {
@@ -6596,11 +7174,58 @@ private fun HistoryDetailHeader(title: String, onBack: () -> Unit) {
 private fun MilestoneRewardCard(milestone: MilestoneProgress) {
     val achieved = milestone.current >= milestone.target
     val spec = milestoneRewardSpec(milestone)
+    val isCelebrating = milestone.celebrationThreshold != null
+    val celebrationPulse by rememberInfiniteTransition(label = "milestone-celebration-pulse")
+        .animateFloat(
+            initialValue = 0.34f,
+            targetValue = 0.86f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(900, easing = FastOutSlowInEasing),
+                repeatMode = RepeatMode.Reverse,
+            ),
+            label = "milestone-celebration-alpha",
+        )
+    var showAwardedMedals by remember { mutableStateOf(false) }
     FeatureCard(
+        modifier = Modifier
+            .clickable { showAwardedMedals = true }
+            .semantics(mergeDescendants = true) {
+                contentDescription = "View ${milestone.title} milestone medals"
+                role = Role.Button
+            },
         containerColor = MaterialTheme.colorScheme.surface,
+        border = if (isCelebrating) BorderStroke(1.dp, spec.accent.start.copy(alpha = celebrationPulse)) else null,
+        elevation = if (isCelebrating) 8.dp else 0.dp,
         accentKey = "milestone ${milestone.title}",
     ) {
         Column {
+            if (isCelebrating) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(spec.accent.glow.copy(alpha = 0.58f))
+                        .padding(horizontal = 14.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Star,
+                        contentDescription = null,
+                        tint = spec.accent.start,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Text(
+                        "Medal week",
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    Text(
+                        "${milestone.celebrationDaysRemaining} day${if (milestone.celebrationDaysRemaining == 1) "" else "s"} left",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
             Row(
                 modifier = Modifier.padding(16.dp),
                 horizontalArrangement = Arrangement.spacedBy(16.dp),
@@ -6622,22 +7247,106 @@ private fun MilestoneRewardCard(milestone: MilestoneProgress) {
                         if (achieved) {
                             MiniTag("Unlocked", accent = spec.accent.end.copy(alpha = 0.2f))
                         }
+                        milestone.celebrationThreshold?.let {
+                            MiniTag("Celebrating ${formatMilestoneValue(it, milestone.unit)}", accent = spec.accent.glow.copy(alpha = 0.72f))
+                        }
                     }
                     Text(milestone.title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                     Text(
                         spec.message,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                    Text(
+                        "${milestone.awardedThresholds.size} of ${milestone.thresholds.size} medals awarded",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                     ProgressPill(
                         current = milestone.current,
                         target = milestone.target,
-                        label = "${milestone.current} / ${milestone.target} ${milestone.unit}",
+                        label = milestone.celebrationThreshold?.let { "Medal earned: ${formatMilestoneValue(it, milestone.unit)}" }
+                            ?: "${formatMilestoneValue(milestone.current, milestone.unit)} / ${formatMilestoneValue(milestone.target, milestone.unit)}",
                         accent = spec.accent,
                     )
                 }
             }
         }
     }
+    if (showAwardedMedals) {
+        MilestoneAwardsDialog(
+            milestone = milestone,
+            spec = spec,
+            onDismiss = { showAwardedMedals = false },
+        )
+    }
+}
+
+@Composable
+private fun MilestoneAwardsDialog(
+    milestone: MilestoneProgress,
+    spec: RewardVisualSpec,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("${milestone.title} medals") },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Text(
+                    "Current: ${formatMilestoneValue(milestone.current, milestone.unit)}",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                milestone.thresholds.forEach { threshold ->
+                    val awarded = threshold in milestone.awardedThresholds
+                    val isCurrentTarget = !awarded && threshold == milestone.target
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(
+                                if (awarded) spec.accent.glow.copy(alpha = 0.42f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.36f),
+                                RoundedCornerShape(8.dp),
+                            )
+                            .padding(10.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        RewardMedallion(
+                            icon = spec.icon,
+                            accent = spec.accent,
+                            achieved = awarded,
+                            showRibbons = false,
+                            modifier = Modifier.size(34.dp),
+                            iconSize = 16.dp,
+                        )
+                        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text(
+                                formatMilestoneValue(threshold, milestone.unit),
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                            Text(
+                                when {
+                                    awarded -> "Awarded"
+                                    isCurrentTarget -> "Current target"
+                                    else -> "Locked"
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Close")
+            }
+        },
+    )
 }
 
 @Composable
@@ -6827,9 +7536,45 @@ internal fun buildHistoryDashboardData(
         streakWeeks = streakWeeks,
         monthlyVolume = monthlyVolume,
         milestoneProgress = listOf(
-            buildMilestoneProgress("Volume", totalVolume.toInt(), listOf(10_000, 25_000, 50_000, 100_000), "lb"),
-            buildMilestoneProgress("Workouts", totalWorkouts, listOf(10, 20, 50, 100), "workouts"),
-            buildMilestoneProgress("Minutes", totalMinutes, listOf(300, 600, 1_200, 2_400), "min"),
+            buildMilestoneProgress(
+                title = "Volume",
+                current = totalVolume.toInt(),
+                thresholds = listOf(50_000, 100_000, 500_000, 750_000, 1_000_000, 2_000_000, 5_000_000, 10_000_000),
+                unit = "lb",
+                reachedDates = milestoneReachedDates(
+                    metrics = metrics,
+                    thresholds = listOf(50_000, 100_000, 500_000, 750_000, 1_000_000, 2_000_000, 5_000_000, 10_000_000),
+                    zoneId = zoneId,
+                    contribution = { it.totalVolume },
+                ),
+                today = today,
+            ),
+            buildMilestoneProgress(
+                title = "Workouts",
+                current = totalWorkouts,
+                thresholds = listOf(1, 10, 25, 50, 100, 250, 500, 1_000, 2_500, 5_000, 10_000),
+                unit = "workouts",
+                reachedDates = milestoneReachedDates(
+                    metrics = metrics,
+                    thresholds = listOf(1, 10, 25, 50, 100, 250, 500, 1_000, 2_500, 5_000, 10_000),
+                    zoneId = zoneId,
+                    contribution = { 1.0 },
+                ),
+                today = today,
+            ),
+            buildMilestoneProgress(
+                title = "Minutes",
+                current = totalMinutes,
+                thresholds = listOf(300, 600, 1_200, 2_400),
+                unit = "min",
+                reachedDates = milestoneReachedDates(
+                    metrics = metrics,
+                    thresholds = listOf(300, 600, 1_200, 2_400),
+                    zoneId = zoneId,
+                    contribution = { it.durationSeconds / 60.0 },
+                ),
+                today = today,
+            ),
         ),
         strengthScore = strengthScore,
         workoutMetrics = metrics,
@@ -6841,14 +7586,52 @@ private fun buildMilestoneProgress(
     current: Int,
     thresholds: List<Int>,
     unit: String,
+    reachedDates: Map<Int, LocalDate> = emptyMap(),
+    today: LocalDate = LocalDate.now(),
 ): MilestoneProgress {
+    val awardedThresholds = thresholds.filter { current >= it }
+    val latestAwardedThreshold = awardedThresholds.lastOrNull()
+    val latestAwardedDate = latestAwardedThreshold?.let(reachedDates::get)
+    val daysSinceAward = latestAwardedDate?.let { today.toEpochDay() - it.toEpochDay() }
+    val isCelebrating = latestAwardedThreshold != null && daysSinceAward != null && daysSinceAward in 0L..6L
+    val target = if (isCelebrating && latestAwardedThreshold != null) latestAwardedThreshold else nextMilestone(current, thresholds)
     return MilestoneProgress(
         title = title,
         current = current,
-        target = nextMilestone(current, thresholds),
+        target = target,
         unit = unit,
-        achievedCount = thresholds.count { current >= it },
+        achievedCount = awardedThresholds.size,
+        thresholds = thresholds,
+        awardedThresholds = awardedThresholds,
+        celebrationThreshold = latestAwardedThreshold.takeIf { isCelebrating },
+        celebrationDaysRemaining = if (isCelebrating) (7 - daysSinceAward!!.toInt()).coerceIn(1, 7) else 0,
     )
+}
+
+private fun milestoneReachedDates(
+    metrics: List<HistoryWorkoutMetric>,
+    thresholds: List<Int>,
+    zoneId: ZoneId,
+    contribution: (HistoryWorkoutMetric) -> Double,
+): Map<Int, LocalDate> {
+    if (metrics.isEmpty() || thresholds.isEmpty()) return emptyMap()
+    val sortedThresholds = thresholds.sorted()
+    val reachedDates = linkedMapOf<Int, LocalDate>()
+    var thresholdIndex = 0
+    var cumulative = 0.0
+    metrics
+        .mapNotNull { metric ->
+            historyWorkoutMetricStartedLocalDate(metric, zoneId)?.let { date -> metric to date }
+        }
+        .sortedWith(compareBy<Pair<HistoryWorkoutMetric, LocalDate>> { it.second }.thenBy { it.first.id })
+        .forEach { (metric, date) ->
+            cumulative += contribution(metric)
+            while (thresholdIndex < sortedThresholds.size && cumulative >= sortedThresholds[thresholdIndex]) {
+                reachedDates[sortedThresholds[thresholdIndex]] = date
+                thresholdIndex += 1
+            }
+        }
+    return reachedDates
 }
 
 private fun effectiveHistoryWorkoutMetrics(
@@ -7141,6 +7924,15 @@ private fun calculateLongestStreak(workoutsByWeek: Map<LocalDate, Int>, weeklyGo
 
 private fun nextMilestone(current: Int, thresholds: List<Int>): Int =
     thresholds.firstOrNull { current < it } ?: thresholds.last()
+
+private fun formatMilestoneValue(value: Int, unit: String): String {
+    return when (unit) {
+        "lb" -> "${formatCompactNumber(value.toDouble())} lb"
+        "workouts" -> "${formatCompactNumber(value.toDouble())} workout${if (value == 1) "" else "s"}"
+        "min" -> "${formatCompactNumber(value.toDouble())} min"
+        else -> "${formatCompactNumber(value.toDouble())} $unit"
+    }
+}
 
 @Composable
 private fun HistoryDateSeparator(label: String) {
@@ -14666,7 +15458,15 @@ private fun TemplateListRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Row(
-            modifier = Modifier.weight(1f),
+            modifier = Modifier
+                .weight(1f)
+                .clip(RoundedCornerShape(8.dp))
+                .clickable(onClick = onEdit)
+                .semantics(mergeDescendants = true) {
+                    contentDescription = "Edit ${template.name}"
+                    role = Role.Button
+                }
+                .padding(vertical = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {

@@ -41,7 +41,67 @@ class HistoryStatsPresentationTest {
         assertEquals(20, recentHistory.size)
         assertEquals(25, dashboard.totalWorkouts)
         assertEquals(25, dashboard.milestoneProgress.first { it.title == "Workouts" }.current)
-        assertEquals(2, dashboard.milestoneProgress.first { it.title == "Workouts" }.achievedCount)
+        assertEquals(3, dashboard.milestoneProgress.first { it.title == "Workouts" }.achievedCount)
+        assertEquals(25, dashboard.milestoneProgress.first { it.title == "Workouts" }.target)
+        assertEquals(listOf(1, 10, 25), dashboard.milestoneProgress.first { it.title == "Workouts" }.awardedThresholds)
+        assertEquals(25, dashboard.milestoneProgress.first { it.title == "Workouts" }.celebrationThreshold)
+        assertEquals(7, dashboard.milestoneProgress.first { it.title == "Workouts" }.celebrationDaysRemaining)
+    }
+
+    @Test
+    fun dashboardVolumeMilestonesUseStackedLifetimeThresholds() {
+        val today = LocalDate.of(2026, 4, 30)
+        val metrics = listOf(
+            historyMetric(id = 1L, completedDate = today.minusDays(2), totalVolume = 300_000.0),
+            historyMetric(id = 2L, completedDate = today.minusDays(1), totalVolume = 460_000.0),
+        )
+
+        val dashboard = buildHistoryDashboardData(
+            history = emptyList(),
+            historyWorkoutMetrics = metrics,
+            weeklyGoal = 3,
+            topExercise = null,
+            topEquipment = null,
+            strengthScore = null,
+            today = today,
+            zoneId = ZoneId.of("UTC"),
+        )
+
+        val volume = dashboard.milestoneProgress.first { it.title == "Volume" }
+        assertEquals(760_000, volume.current)
+        assertEquals(750_000, volume.target)
+        assertEquals(
+            listOf(50_000, 100_000, 500_000, 750_000),
+            volume.awardedThresholds,
+        )
+        assertEquals(750_000, volume.celebrationThreshold)
+        assertEquals(6, volume.celebrationDaysRemaining)
+    }
+
+    @Test
+    fun dashboardMilestoneProgressAdvancesAfterSevenDayCelebrationWindow() {
+        val today = LocalDate.of(2026, 4, 30)
+        val metrics = listOf(
+            historyMetric(id = 1L, completedDate = today.minusDays(12), totalVolume = 300_000.0),
+            historyMetric(id = 2L, completedDate = today.minusDays(10), totalVolume = 460_000.0),
+        )
+
+        val dashboard = buildHistoryDashboardData(
+            history = emptyList(),
+            historyWorkoutMetrics = metrics,
+            weeklyGoal = 3,
+            topExercise = null,
+            topEquipment = null,
+            strengthScore = null,
+            today = today,
+            zoneId = ZoneId.of("UTC"),
+        )
+
+        val volume = dashboard.milestoneProgress.first { it.title == "Volume" }
+        assertEquals(760_000, volume.current)
+        assertEquals(1_000_000, volume.target)
+        assertEquals(null, volume.celebrationThreshold)
+        assertEquals(0, volume.celebrationDaysRemaining)
     }
 
     @Test
