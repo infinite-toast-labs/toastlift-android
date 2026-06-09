@@ -1114,6 +1114,7 @@ fun ToastLiftApp(
                                         onRunCheckpoint = viewModel::runPendingCheckpoint,
                                         onTrainingFreshnessFilterChange = viewModel::setTrainingFreshnessFilter,
                                         onTrainingFreshnessSortChange = viewModel::setTrainingFreshnessSort,
+                                        onOpenLibraryFreshnessMuscle = viewModel::openLibraryForFreshnessMuscle,
                                     )
 
                                 MainTab.Generate -> GenerateScreen(
@@ -1459,6 +1460,7 @@ private fun TodayScreen(
     onRunCheckpoint: () -> Unit,
     onTrainingFreshnessFilterChange: (TrainingFreshnessFilter) -> Unit,
     onTrainingFreshnessSortChange: (TrainingFreshnessSort) -> Unit,
+    onOpenLibraryFreshnessMuscle: (String, String) -> Unit,
 ) {
     var renameTarget by remember { mutableStateOf<TemplateSummary?>(null) }
     var deleteTarget by remember { mutableStateOf<TemplateSummary?>(null) }
@@ -1524,6 +1526,7 @@ private fun TodayScreen(
             sort = state.trainingFreshnessSort,
             onFilterChange = onTrainingFreshnessFilterChange,
             onSortChange = onTrainingFreshnessSortChange,
+            onOpenLibraryFreshnessMuscle = onOpenLibraryFreshnessMuscle,
             onBack = { showTrainingFreshnessDashboard = false },
         )
         return
@@ -2621,6 +2624,7 @@ private fun TrainingFreshnessDashboardScreen(
     sort: TrainingFreshnessSort,
     onFilterChange: (TrainingFreshnessFilter) -> Unit,
     onSortChange: (TrainingFreshnessSort) -> Unit,
+    onOpenLibraryFreshnessMuscle: (String, String) -> Unit,
     onBack: () -> Unit,
 ) {
     val filteredRows = remember(summary, filter, sort) {
@@ -2699,7 +2703,10 @@ private fun TrainingFreshnessDashboardScreen(
             }
         } else {
             items(filteredRows, key = { it.key }) { row ->
-                TrainingFreshnessMuscleCard(row = row)
+                TrainingFreshnessMuscleCard(
+                    row = row,
+                    onOpenLibraryFreshnessMuscle = onOpenLibraryFreshnessMuscle,
+                )
             }
         }
         item {
@@ -2709,9 +2716,18 @@ private fun TrainingFreshnessDashboardScreen(
 }
 
 @Composable
-private fun TrainingFreshnessMuscleCard(row: TrainingFreshnessMuscleRow) {
+private fun TrainingFreshnessMuscleCard(
+    row: TrainingFreshnessMuscleRow,
+    onOpenLibraryFreshnessMuscle: (String, String) -> Unit,
+) {
     val accent = trainingFreshnessAccent(row.status)
     FeatureCard(
+        modifier = Modifier
+            .clickable { onOpenLibraryFreshnessMuscle(row.key, row.label) }
+            .semantics(mergeDescendants = true) {
+                contentDescription = "Open Library filtered to ${row.label}"
+                role = Role.Button
+            },
         border = BorderStroke(1.dp, accent.start.copy(alpha = 0.16f)),
     ) {
         Column(

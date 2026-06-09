@@ -2825,6 +2825,25 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
         refreshLibrary()
     }
 
+    fun openLibraryForFreshnessMuscle(muscleKey: String, muscleLabel: String) {
+        val filters = libraryFiltersWithActiveEquipmentLocation(
+            filters = activeSessionFreshnessLibraryFilters(
+                muscleKey = muscleKey,
+                muscleLabel = muscleLabel,
+            ),
+            activeLocationModeId = uiState.profile?.activeLocationModeId,
+            locationModes = uiState.locationModes,
+        )
+        uiState = uiState.copy(
+            selectedTab = MainTab.Library,
+            librarySearchVisible = false,
+            libraryQuery = "",
+            libraryFilters = filters,
+            message = null,
+        )
+        refreshLibrary()
+    }
+
     fun clearLibraryFilters() {
         uiState = uiState.copy(libraryFilters = LibraryFilters())
         refreshLibrary()
