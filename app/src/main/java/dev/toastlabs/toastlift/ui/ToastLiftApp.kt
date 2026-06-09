@@ -208,6 +208,9 @@ import dev.toastlabs.toastlift.data.AdherenceCurrencyTrendPoint
 import dev.toastlabs.toastlift.data.elapsedDurationSeconds
 import dev.toastlabs.toastlift.data.averageTimeBetweenSetCompletionsSeconds
 import dev.toastlabs.toastlift.data.HistoryShareFormat
+import dev.toastlabs.toastlift.data.ExerciseDiscoveryPick
+import dev.toastlabs.toastlift.data.ExerciseDiscoveryResult
+import dev.toastlabs.toastlift.data.ExerciseDiscoverySource
 import dev.toastlabs.toastlift.data.ExerciseSummary
 import dev.toastlabs.toastlift.data.ExerciseVideoLinks
 import dev.toastlabs.toastlift.data.FORMULA_A_LOWER_HIGH_REPS_FOCUS_KEY
@@ -1179,8 +1182,11 @@ fun ToastLiftApp(
                                         onClearFreshnessMuscleFilters = viewModel::clearLibraryFreshnessMuscleFilters,
                                         onClearMuscleTargetFilters = viewModel::clearLibraryMuscleTargetFilters,
                                         onClearFilters = viewModel::clearLibraryFilters,
+                                        onDiscoverExercises = viewModel::generateExerciseDiscovery,
+                                        onClearExerciseDiscovery = viewModel::clearExerciseDiscovery,
                                         onShowDetail = viewModel::showExerciseDetail,
                                         onAddToBuilder = viewModel::addExerciseToBuilder,
+                                        onAddToMyPlan = viewModel::addExerciseToGeneratedWorkout,
                                         onToggleFavorite = viewModel::toggleFavorite,
                                         onOpenExerciseHistory = viewModel::openExerciseHistory,
                                         onOpenExerciseVideos = viewModel::openExerciseVideos,
@@ -3408,8 +3414,11 @@ private fun LibraryScreen(
     onClearFreshnessMuscleFilters: () -> Unit,
     onClearMuscleTargetFilters: () -> Unit,
     onClearFilters: () -> Unit,
+    onDiscoverExercises: () -> Unit,
+    onClearExerciseDiscovery: () -> Unit,
     onShowDetail: (Long) -> Unit,
     onAddToBuilder: (ExerciseSummary) -> Unit,
+    onAddToMyPlan: (ExerciseSummary) -> Unit,
     onToggleFavorite: (ExerciseSummary) -> Unit,
     onOpenExerciseHistory: (Long, String) -> Unit,
     onOpenExerciseVideos: (Long, String) -> Unit,
@@ -3481,6 +3490,25 @@ private fun LibraryScreen(
                 }
             }
             LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxSize()) {
+                item(key = "exercise-discovery") {
+                    ExerciseDiscoveryPanel(
+                        result = state.exerciseDiscoveryResult,
+                        isLoading = state.exerciseDiscoveryLoading,
+                        errorMessage = state.exerciseDiscoveryError,
+                        activeFilterCount = state.libraryFilters.activeCount(),
+                        onDiscover = onDiscoverExercises,
+                        onClear = onClearExerciseDiscovery,
+                        onClearFilters = onClearFilters,
+                        onShowDetail = onShowDetail,
+                        onAddToBuilder = onAddToBuilder,
+                        onAddToMyPlan = onAddToMyPlan,
+                        onToggleFavorite = onToggleFavorite,
+                        onOpenExerciseHistory = onOpenExerciseHistory,
+                        onOpenExerciseVideos = onOpenExerciseVideos,
+                        onAddToExistingTemplate = { existingTemplateTarget = it },
+                        onCreateTemplateFromExercise = { newTemplateTarget = it },
+                    )
+                }
                 items(state.libraryResults, key = { it.id }) { exercise ->
                     ExerciseListCard(
                         exercise = exercise,
@@ -3545,6 +3573,326 @@ private fun LibraryScreen(
                 onCreateTemplateFromExercise(name, exercise)
             },
         )
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ExerciseDiscoveryPanel(
+    result: ExerciseDiscoveryResult?,
+    isLoading: Boolean,
+    errorMessage: String?,
+    activeFilterCount: Int,
+    onDiscover: () -> Unit,
+    onClear: () -> Unit,
+    onClearFilters: () -> Unit,
+    onShowDetail: (Long) -> Unit,
+    onAddToBuilder: (ExerciseSummary) -> Unit,
+    onAddToMyPlan: (ExerciseSummary) -> Unit,
+    onToggleFavorite: (ExerciseSummary) -> Unit,
+    onOpenExerciseHistory: (Long, String) -> Unit,
+    onOpenExerciseVideos: (Long, String) -> Unit,
+    onAddToExistingTemplate: (ExerciseSummary) -> Unit,
+    onCreateTemplateFromExercise: (ExerciseSummary) -> Unit,
+) {
+    FeatureCard(
+        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
+        accentKey = "exercise discovery",
+    ) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.Top,
+            ) {
+                LeadingBadge(
+                    label = "AI",
+                    accent = accentForKey("exercise discovery"),
+                )
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("Exercise discovery", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        discoveryHeaderSubtitle(result, activeFilterCount),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                if (isLoading) {
+                    CircularProgressIndicator(modifier = Modifier.size(28.dp), strokeWidth = 2.dp)
+                } else if (result == null) {
+                    Button(onClick = onDiscover) {
+                        Icon(
+                            imageVector = Icons.Rounded.AutoAwesome,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Discover")
+                    }
+                } else {
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        IconButton(onClick = onDiscover) {
+                            Icon(
+                                imageVector = Icons.Rounded.AutoAwesome,
+                                contentDescription = "Refresh discovery picks",
+                            )
+                        }
+                        IconButton(onClick = onClear) {
+                            Icon(
+                                imageVector = Icons.Rounded.Close,
+                                contentDescription = "Clear discovery picks",
+                            )
+                        }
+                    }
+                }
+            }
+
+            result?.let { discovery ->
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    MiniTag(discoverySourceLabel(discovery.source))
+                    MiniTag("${discovery.picks.size} ranked")
+                    MiniTag("${discovery.zeroSessionCandidateCount} new matches")
+                    if (discovery.appliedFilterLabels.isNotEmpty()) {
+                        MiniTag(compactDiscoveryFilterLabel(discovery.appliedFilterLabels))
+                    }
+                }
+            }
+
+            when {
+                isLoading -> ExerciseDiscoveryLoadingState()
+                errorMessage != null -> ExerciseDiscoveryMessageState(
+                    title = "Discovery paused",
+                    message = errorMessage,
+                    primaryLabel = "Retry",
+                    onPrimary = onDiscover,
+                    secondaryLabel = if (activeFilterCount > 0) "Clear filters" else null,
+                    onSecondary = onClearFilters,
+                )
+                result != null && result.picks.isEmpty() -> ExerciseDiscoveryMessageState(
+                    title = "No good matches",
+                    message = result.emptyReason ?: "No eligible discovery picks match this Library context.",
+                    primaryLabel = "Retry",
+                    onPrimary = onDiscover,
+                    secondaryLabel = if (activeFilterCount > 0) "Clear filters" else null,
+                    onSecondary = onClearFilters,
+                )
+                result != null -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    result.picks.forEachIndexed { index, pick ->
+                        ExerciseDiscoveryPickRow(
+                            pick = pick,
+                            onShowDetail = { onShowDetail(pick.exercise.id) },
+                            onAddToBuilder = { onAddToBuilder(pick.exercise) },
+                            onAddToMyPlan = { onAddToMyPlan(pick.exercise) },
+                            onToggleFavorite = { onToggleFavorite(pick.exercise) },
+                            onOpenExerciseHistory = { onOpenExerciseHistory(pick.exercise.id, pick.exercise.name) },
+                            onOpenExerciseVideos = { onOpenExerciseVideos(pick.exercise.id, pick.exercise.name) },
+                            onAddToExistingTemplate = { onAddToExistingTemplate(pick.exercise) },
+                            onCreateTemplateFromExercise = { onCreateTemplateFromExercise(pick.exercise) },
+                        )
+                        if (index < result.picks.lastIndex) {
+                            Divider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.12f))
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ExerciseDiscoveryLoadingState() {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.34f), RoundedCornerShape(8.dp))
+            .padding(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+        Text(
+            "Ranking unseen and low-exposure exercises against your history.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
+private fun ExerciseDiscoveryMessageState(
+    title: String,
+    message: String,
+    primaryLabel: String,
+    onPrimary: () -> Unit,
+    secondaryLabel: String?,
+    onSecondary: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.34f), RoundedCornerShape(8.dp))
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+        Text(message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = onPrimary) {
+                Text(primaryLabel)
+            }
+            secondaryLabel?.let { label ->
+                TextButton(onClick = onSecondary) {
+                    Text(label)
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ExerciseDiscoveryPickRow(
+    pick: ExerciseDiscoveryPick,
+    onShowDetail: () -> Unit,
+    onAddToBuilder: () -> Unit,
+    onAddToMyPlan: () -> Unit,
+    onToggleFavorite: () -> Unit,
+    onOpenExerciseHistory: () -> Unit,
+    onOpenExerciseVideos: () -> Unit,
+    onAddToExistingTemplate: () -> Unit,
+    onCreateTemplateFromExercise: () -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val shape = RoundedCornerShape(8.dp)
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.16f), shape)
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.28f))
+            .clickable(onClick = onShowDetail)
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.Top,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(34.dp)
+                    .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.82f), CircleShape),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    "#${pick.rank}",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(pick.exercise.name, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                ExerciseAttributeText(exercise = pick.exercise)
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onAddToBuilder) {
+                    Icon(
+                        imageVector = Icons.Rounded.FitnessCenter,
+                        contentDescription = "Add ${pick.exercise.name} to builder",
+                    )
+                }
+                IconButton(onClick = onAddToMyPlan) {
+                    Icon(
+                        imageVector = Icons.Rounded.AutoAwesome,
+                        contentDescription = "Add ${pick.exercise.name} to My Plan",
+                    )
+                }
+                IconButton(onClick = onToggleFavorite) {
+                    Icon(
+                        imageVector = if (pick.exercise.favorite) Icons.Rounded.Star else Icons.Rounded.StarOutline,
+                        contentDescription = if (pick.exercise.favorite) {
+                            "Unfavorite ${pick.exercise.name}"
+                        } else {
+                            "Favorite ${pick.exercise.name}"
+                        },
+                        tint = if (pick.exercise.favorite) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Box {
+                    IconButton(onClick = { expanded = true }) {
+                        Text(
+                            "⋮",
+                            modifier = Modifier.semantics { contentDescription = "Exercise actions" },
+                            style = MaterialTheme.typography.titleLarge,
+                        )
+                    }
+                    DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                        DropdownMenuItem(text = { Text("Details") }, onClick = { expanded = false; onShowDetail() })
+                        DropdownMenuItem(text = { Text("Add to builder") }, onClick = { expanded = false; onAddToBuilder() })
+                        DropdownMenuItem(text = { Text("Add to My Plan") }, onClick = { expanded = false; onAddToMyPlan() })
+                        DropdownMenuItem(text = { Text("Add to existing template") }, onClick = { expanded = false; onAddToExistingTemplate() })
+                        DropdownMenuItem(text = { Text("Add to new template") }, onClick = { expanded = false; onCreateTemplateFromExercise() })
+                        DropdownMenuItem(text = { Text("Exercise history") }, onClick = { expanded = false; onOpenExerciseHistory() })
+                        DropdownMenuItem(text = { Text("Videos") }, onClick = { expanded = false; onOpenExerciseVideos() })
+                        DropdownMenuItem(
+                            text = { Text(if (pick.exercise.favorite) "Unfavorite" else "Favorite") },
+                            onClick = { expanded = false; onToggleFavorite() },
+                        )
+                    }
+                }
+            }
+        }
+
+        Text(
+            pick.reason,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        Text(
+            pick.whyNow,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            MiniTag(exerciseDiscoveryAngleLabel(pick.discoveryAngle))
+            MiniTag(if (pick.exercise.loggedSessionCount == 0) "0 sessions" else "${pick.exercise.loggedSessionCount} sessions")
+            MiniTag("${(pick.confidence * 100).roundToInt()}% fit")
+            pick.evidence.take(2).forEach { MiniTag(it) }
+        }
+    }
+}
+
+private fun discoveryHeaderSubtitle(result: ExerciseDiscoveryResult?, activeFilterCount: Int): String {
+    return when {
+        result == null && activeFilterCount == 0 -> "Fresh picks from your full Library context."
+        result == null -> "Fresh picks using $activeFilterCount active filter${if (activeFilterCount == 1) "" else "s"}."
+        result.appliedFilterLabels.isEmpty() -> "${result.performedExerciseCount} logged exercises compared against the Library."
+        else -> compactDiscoveryFilterLabel(result.appliedFilterLabels)
+    }
+}
+
+private fun discoverySourceLabel(source: ExerciseDiscoverySource): String = when (source) {
+    ExerciseDiscoverySource.GEMINI -> "Gemini ranked"
+    ExerciseDiscoverySource.DETERMINISTIC_FALLBACK -> "Offline ranked"
+}
+
+private fun compactDiscoveryFilterLabel(labels: List<String>): String {
+    if (labels.isEmpty()) return "Whole Library"
+    val visible = labels.take(2).joinToString(", ")
+    val remaining = labels.size - 2
+    return if (remaining > 0) "$visible +$remaining" else visible
+}
+
+private fun exerciseDiscoveryAngleLabel(angle: String): String {
+    return when (angle) {
+        "new_to_you" -> "New to you"
+        "undertrained_mover" -> "Underused mover"
+        "equipment_variety" -> "Equipment variety"
+        "movement_pattern_gap" -> "Pattern gap"
+        "low_exposure_rotation" -> "Low exposure"
+        else -> "Discovery"
     }
 }
 

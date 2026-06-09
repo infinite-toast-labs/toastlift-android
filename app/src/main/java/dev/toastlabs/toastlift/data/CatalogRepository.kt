@@ -50,6 +50,10 @@ private fun loggedSessionCountJoin(exerciseIdColumn: String = "e.exercise_id"): 
     ) logged_history ON logged_history.exercise_id = $exerciseIdColumn
 """.trimIndent()
 
+private const val EXERCISE_DISCOVERY_PERFORMED_CONTEXT_LIMIT = 2_000
+private const val EXERCISE_DISCOVERY_ZERO_SESSION_CANDIDATE_LIMIT = 2_000
+private const val EXERCISE_DISCOVERY_LOW_EXPOSURE_CANDIDATE_LIMIT = 500
+
 class CatalogRepository(private val database: ToastLiftDatabase) {
     private enum class FacetDimension {
         Equipment,
@@ -130,6 +134,37 @@ class CatalogRepository(private val database: ToastLiftDatabase) {
         return LibrarySearchPayload(
             results = searchExercises(query = query, filters = filters),
             facets = loadLibraryFacets(query = query, filters = filters),
+        )
+    }
+
+    internal fun loadExerciseDiscoveryContext(query: String, filters: LibraryFilters): ExerciseDiscoveryContext {
+        val normalizedQuery = normalizeQuery(query)
+        val clause = buildExerciseFilterClause(normalizedQuery, filters)
+        return ExerciseDiscoveryContext(
+            query = query.trim(),
+            filters = filters,
+            appliedFilterLabels = buildExerciseDiscoveryFilterLabels(query.trim(), filters),
+            performedExercises = loadPerformedExerciseDiscoveryExercises(
+                limit = EXERCISE_DISCOVERY_PERFORMED_CONTEXT_LIMIT,
+            ),
+            zeroSessionCandidates = loadFilteredExerciseDiscoveryExercises(
+                clause = clause,
+                loggedSessionPredicate = "COALESCE(logged_history.logged_session_count, 0) = 0",
+                orderBy = librarySearchOrderBy(filters),
+                limit = EXERCISE_DISCOVERY_ZERO_SESSION_CANDIDATE_LIMIT,
+            ),
+            lowExposureCandidates = loadFilteredExerciseDiscoveryExercises(
+                clause = clause,
+                loggedSessionPredicate = "COALESCE(logged_history.logged_session_count, 0) > 0",
+                orderBy = "COALESCE(logged_history.logged_session_count, 0) ASC, ${librarySearchOrderBy(filters)}",
+                limit = EXERCISE_DISCOVERY_LOW_EXPOSURE_CANDIDATE_LIMIT,
+            ),
+            totalPerformedExercises = countPerformedExerciseDiscoveryExercises(),
+            totalMatchingExercises = countFilteredExerciseDiscoveryExercises(clause),
+            totalZeroSessionCandidates = countFilteredExerciseDiscoveryExercises(
+                clause = clause,
+                loggedSessionPredicate = "COALESCE(logged_history.logged_session_count, 0) = 0",
+            ),
         )
     }
 
@@ -778,6 +813,240 @@ class CatalogRepository(private val database: ToastLiftDatabase) {
             clause.args,
         ).use { cursor ->
             if (cursor.moveToFirst()) cursor.getInt(0) else 0
+        }
+    }
+
+    private data class ExerciseDiscoveryRow(
+        val summary: ExerciseSummary,
+        val primeMover: String?,
+        val secondaryMuscle: String?,
+        val tertiaryMuscle: String?,
+        val posture: String?,
+        val laterality: String?,
+        val classification: String?,
+    )
+
+    private fun loadPerformedExerciseDiscoveryExercises(limit: Int): List<ExerciseDiscoveryExercise> {
+        val db = database.open()
+        return loadExerciseDiscoveryExercises(
+            sql = """
+                ${exerciseDiscoverySelectSql()}
+                WHERE COALESCE(p.is_hidden, 0) = 0
+                  AND COALESCE(p.is_banned, 0) = 0
+                  AND COALESCE(logged_history.logged_session_count, 0) > 0
+                ORDER BY COALESCE(logged_history.logged_session_count, 0) DESC, COALESCE(p.is_favorite, 0) DESC, e.name ASC
+                LIMIT ?
+            """.trimIndent(),
+            args = arrayOf(limit.toString()),
+            db = db,
+        )
+    }
+
+    private fun loadFilteredExerciseDiscoveryExercises(
+        clause: SqlClause,
+        loggedSessionPredicate: String,
+        orderBy: String,
+        limit: Int,
+    ): List<ExerciseDiscoveryExercise> {
+        val db = database.open()
+        return loadExerciseDiscoveryExercises(
+            sql = """
+                ${exerciseDiscoverySelectSql()}
+                WHERE ${clause.whereClause}
+                  AND $loggedSessionPredicate
+                ORDER BY $orderBy
+                LIMIT ?
+            """.trimIndent(),
+            args = clause.args + limit.toString(),
+            db = db,
+        )
+    }
+
+    private fun countPerformedExerciseDiscoveryExercises(): Int {
+        val db = database.open()
+        return db.rawQuery(
+            """
+            SELECT COUNT(DISTINCT e.exercise_id)
+            FROM exercises e
+            LEFT JOIN exercise_preferences p ON p.exercise_id = e.exercise_id
+            ${loggedSessionCountJoin()}
+            WHERE COALESCE(p.is_hidden, 0) = 0
+              AND COALESCE(p.is_banned, 0) = 0
+              AND COALESCE(logged_history.logged_session_count, 0) > 0
+            """.trimIndent(),
+            null,
+        ).use { cursor ->
+            if (cursor.moveToFirst()) cursor.getInt(0) else 0
+        }
+    }
+
+    private fun countFilteredExerciseDiscoveryExercises(
+        clause: SqlClause,
+        loggedSessionPredicate: String? = null,
+    ): Int {
+        val db = database.open()
+        return db.rawQuery(
+            buildString {
+                append(
+                    """
+                    SELECT COUNT(DISTINCT e.exercise_id)
+                    FROM exercises e
+                    LEFT JOIN exercise_preferences p ON p.exercise_id = e.exercise_id
+                    """.trimIndent(),
+                )
+                if (loggedSessionPredicate != null) {
+                    append('\n')
+                    append(loggedSessionCountJoin())
+                }
+                append("\nWHERE ${clause.whereClause}")
+                if (loggedSessionPredicate != null) {
+                    append("\n  AND $loggedSessionPredicate")
+                }
+            },
+            clause.args,
+        ).use { cursor ->
+            if (cursor.moveToFirst()) cursor.getInt(0) else 0
+        }
+    }
+
+    private fun loadExerciseDiscoveryExercises(
+        sql: String,
+        args: Array<String>,
+        db: SQLiteDatabase,
+    ): List<ExerciseDiscoveryExercise> {
+        val rows = db.rawQuery(sql, args).use { cursor ->
+            buildList {
+                while (cursor.moveToNext()) {
+                    add(
+                        ExerciseDiscoveryRow(
+                            summary = ExerciseSummary(
+                                id = cursor.getLong(0),
+                                name = cursor.getString(1),
+                                difficulty = cursor.getString(2),
+                                bodyRegion = cursor.getString(3),
+                                targetMuscleGroup = cursor.getString(4),
+                                equipment = cursor.getString(5),
+                                secondaryEquipment = cursor.getStringOrNull(6),
+                                mechanics = cursor.getStringOrNull(7),
+                                favorite = cursor.getInt(8) == 1,
+                                hidden = cursor.getInt(9) == 1,
+                                banned = cursor.getInt(10) == 1,
+                                preferenceScoreDelta = cursor.getDouble(11),
+                                recommendationBias = RecommendationBias.fromScoreDelta(cursor.getDouble(11)),
+                                loggedSessionCount = cursor.getInt(12),
+                            ),
+                            primeMover = cursor.getStringOrNull(13),
+                            secondaryMuscle = cursor.getStringOrNull(14),
+                            tertiaryMuscle = cursor.getStringOrNull(15),
+                            posture = cursor.getStringOrNull(16),
+                            laterality = cursor.getStringOrNull(17),
+                            classification = cursor.getStringOrNull(18),
+                        ),
+                    )
+                }
+            }
+        }
+        val exerciseIds = rows.map { it.summary.id }
+        val movementPatterns = loadExerciseDiscoveryStringLists(
+            db = db,
+            tableName = "exercise_movement_patterns",
+            valueColumn = "movement_pattern",
+            orderColumn = "sequence_no",
+            exerciseIds = exerciseIds,
+        )
+        val planesOfMotion = loadExerciseDiscoveryStringLists(
+            db = db,
+            tableName = "exercise_planes_of_motion",
+            valueColumn = "plane_of_motion",
+            orderColumn = "sequence_no",
+            exerciseIds = exerciseIds,
+        )
+        return rows.map { row ->
+            ExerciseDiscoveryExercise(
+                summary = row.summary,
+                primeMover = row.primeMover,
+                secondaryMuscle = row.secondaryMuscle,
+                tertiaryMuscle = row.tertiaryMuscle,
+                posture = row.posture,
+                laterality = row.laterality,
+                classification = row.classification,
+                movementPatterns = movementPatterns[row.summary.id].orEmpty(),
+                planesOfMotion = planesOfMotion[row.summary.id].orEmpty(),
+            )
+        }
+    }
+
+    private fun loadExerciseDiscoveryStringLists(
+        db: SQLiteDatabase,
+        tableName: String,
+        valueColumn: String,
+        orderColumn: String,
+        exerciseIds: List<Long>,
+    ): Map<Long, List<String>> {
+        if (exerciseIds.isEmpty()) return emptyMap()
+        val values = mutableMapOf<Long, MutableList<String>>()
+        exerciseIds.distinct().chunked(400).forEach { chunk ->
+            val placeholders = chunk.joinToString(",") { "?" }
+            db.rawQuery(
+                """
+                SELECT exercise_id, $valueColumn
+                FROM $tableName
+                WHERE exercise_id IN ($placeholders)
+                  AND $valueColumn IS NOT NULL
+                  AND trim($valueColumn) != ''
+                ORDER BY exercise_id, $orderColumn
+                """.trimIndent(),
+                chunk.map(Long::toString).toTypedArray(),
+            ).use { cursor ->
+                while (cursor.moveToNext()) {
+                    values.getOrPut(cursor.getLong(0)) { mutableListOf() } += cursor.getString(1)
+                }
+            }
+        }
+        return values
+    }
+
+    private fun exerciseDiscoverySelectSql(): String {
+        return """
+            SELECT
+                e.exercise_id,
+                e.name,
+                e.difficulty_level,
+                e.body_region,
+                e.target_muscle_group,
+                COALESCE(e.primary_equipment, 'Bodyweight'),
+                e.secondary_equipment,
+                e.mechanics,
+                COALESCE(p.is_favorite, 0),
+                COALESCE(p.is_hidden, 0),
+                COALESCE(p.is_banned, 0),
+                COALESCE(p.preference_score_delta, 0),
+                COALESCE(logged_history.logged_session_count, 0),
+                e.prime_mover_muscle,
+                e.secondary_muscle,
+                e.tertiary_muscle,
+                e.posture,
+                e.laterality,
+                e.primary_exercise_classification
+            FROM exercises e
+            LEFT JOIN exercise_preferences p ON p.exercise_id = e.exercise_id
+            ${loggedSessionCountJoin()}
+        """.trimIndent()
+    }
+
+    private fun buildExerciseDiscoveryFilterLabels(query: String, filters: LibraryFilters): List<String> {
+        return buildList {
+            query.takeIf { it.isNotBlank() }?.let { add("Search: $it") }
+            filters.equipmentLocation?.let { add("${it.displayName} equipment") }
+            filters.equipment.sorted().forEach { add("Equipment: $it") }
+            filters.targetMuscles.sorted().forEach { add("Target: $it") }
+            filters.primeMovers.sorted().forEach { add("Primary mover: $it") }
+            filters.freshnessMuscleKeys.sorted().forEach { add("Freshness muscle: $it") }
+            filters.muscleTargetBucketKeys.sorted().forEach { add("Muscle target bucket: $it") }
+            filters.muscleTargetSubcategoryKeys.sorted().forEach { add("Muscle target: $it") }
+            filters.recommendationBiases.sortedBy { it.name }.forEach { add(it.filterLabel) }
+            if (filters.hasLoggedHistoryOnly) add("Logged before")
+            if (filters.favoritesOnly) add("Favorites only")
         }
     }
 

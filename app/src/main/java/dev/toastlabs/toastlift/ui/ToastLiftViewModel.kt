@@ -33,6 +33,7 @@ import dev.toastlabs.toastlift.data.DailyCoachMessage
 import dev.toastlabs.toastlift.data.EquipmentConflictItem
 import dev.toastlabs.toastlift.data.AdherenceSessionSignal
 import dev.toastlabs.toastlift.data.ExerciseDetail
+import dev.toastlabs.toastlift.data.ExerciseDiscoveryResult
 import dev.toastlabs.toastlift.data.ExerciseHistoryDetail
 import dev.toastlabs.toastlift.data.ExercisePerformanceStats
 import dev.toastlabs.toastlift.data.ExerciseSummary
@@ -356,6 +357,10 @@ internal data class AppUiState(
     val libraryFilters: LibraryFilters = LibraryFilters(),
     val libraryFacets: LibraryFacets = LibraryFacets(),
     val libraryResults: List<ExerciseSummary> = emptyList(),
+    val exerciseDiscoveryResult: ExerciseDiscoveryResult? = null,
+    val exerciseDiscoveryLoading: Boolean = false,
+    val exerciseDiscoveryError: String? = null,
+    val exerciseDiscoverySignature: String? = null,
     val selectedExerciseDetail: ExerciseDetail? = null,
     val generatingExerciseDescriptionId: Long? = null,
     val selectedExerciseHistory: ExerciseHistoryDetail? = null,
@@ -430,6 +435,14 @@ internal data class AppUiState(
     val equipmentConflicts: List<EquipmentConflictItem> = emptyList(),
     val programReadiness: ReadinessContext = ReadinessContext(),
 )
+
+private fun AppUiState.withoutExerciseDiscovery(): AppUiState =
+    copy(
+        exerciseDiscoveryResult = null,
+        exerciseDiscoveryLoading = false,
+        exerciseDiscoveryError = null,
+        exerciseDiscoverySignature = null,
+    )
 
 internal data class WorkoutGenerationRequestContext(
     val previousExerciseIds: Set<Long> = emptySet(),
@@ -2068,6 +2081,7 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
         private set
 
     private var customExerciseNameLookupJob: Job? = null
+    private var exerciseDiscoveryJob: Job? = null
     private var restTimerJob: Job? = null
     private var restTimerSoundJob: Job? = null
     private val exercisePrescriptionEngine = dev.toastlabs.toastlift.data.ExercisePrescriptionEngine()
@@ -2537,6 +2551,8 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
                 libraryEquipmentLocationModeId(location, uiState.locationModes)
             }
             if (selectedLibraryLocationId == locationModeId) {
+                exerciseDiscoveryJob?.cancel()
+                uiState = uiState.withoutExerciseDiscovery()
                 refreshLibrary()
             }
         }
@@ -2666,8 +2682,78 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
         )
     }
 
+    fun generateExerciseDiscovery() {
+        val query = uiState.libraryQuery
+        val filters = libraryFiltersWithEquipmentLocation(
+            filters = uiState.libraryFilters,
+            locationModes = uiState.locationModes,
+            equipmentByLocation = uiState.equipmentByLocation,
+        )
+        val signature = exerciseDiscoverySignature(query, filters)
+        exerciseDiscoveryJob?.cancel()
+        uiState = uiState.copy(
+            exerciseDiscoveryLoading = true,
+            exerciseDiscoveryError = null,
+            exerciseDiscoverySignature = signature,
+        )
+        exerciseDiscoveryJob = viewModelScope.launch(Dispatchers.IO) {
+            val result = runCatching {
+                val context = container.catalogRepository.loadExerciseDiscoveryContext(
+                    query = query,
+                    filters = filters,
+                )
+                container.exerciseDiscoveryService.generate(context)
+            }
+            if (uiState.exerciseDiscoverySignature != signature) return@launch
+            uiState = result.fold(
+                onSuccess = { discovery ->
+                    uiState.copy(
+                        exerciseDiscoveryResult = discovery,
+                        exerciseDiscoveryLoading = false,
+                        exerciseDiscoveryError = null,
+                    )
+                },
+                onFailure = {
+                    uiState.copy(
+                        exerciseDiscoveryResult = null,
+                        exerciseDiscoveryLoading = false,
+                        exerciseDiscoveryError = "Could not rank exercises. Try again after broadening the filters.",
+                    )
+                },
+            )
+        }
+    }
+
+    fun clearExerciseDiscovery() {
+        exerciseDiscoveryJob?.cancel()
+        uiState = uiState.withoutExerciseDiscovery()
+    }
+
+    private fun updateLibraryContext(transform: (AppUiState) -> AppUiState) {
+        exerciseDiscoveryJob?.cancel()
+        uiState = transform(uiState).withoutExerciseDiscovery()
+    }
+
+    private fun exerciseDiscoverySignature(query: String, filters: LibraryFilters): String {
+        return buildList {
+            add(query.trim())
+            add("equipment=${filters.equipment.sorted().joinToString(",")}")
+            add("location=${filters.equipmentLocation?.name.orEmpty()}")
+            add("locationEquipment=${filters.equipmentLocationEquipment.sorted().joinToString(",")}")
+            add("targets=${filters.targetMuscles.sorted().joinToString(",")}")
+            add("prime=${filters.primeMovers.sorted().joinToString(",")}")
+            add("fresh=${filters.freshnessMuscleKeys.sorted().joinToString(",")}")
+            add("buckets=${filters.muscleTargetBucketKeys.sorted().joinToString(",")}")
+            add("subcategories=${filters.muscleTargetSubcategoryKeys.sorted().joinToString(",")}")
+            add("bias=${filters.recommendationBiases.sortedBy { it.name }.joinToString(",") { it.name }}")
+            add("logged=${filters.hasLoggedHistoryOnly}")
+            add("favorites=${filters.favoritesOnly}")
+        }.joinToString("|")
+    }
+
     fun updateLibraryQuery(query: String) {
-        uiState = uiState.copy(libraryQuery = query)
+        if (query == uiState.libraryQuery) return
+        updateLibraryContext { it.copy(libraryQuery = query) }
         refreshLibrary()
     }
 
@@ -2683,19 +2769,23 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
             return
         }
 
-        uiState = uiState.copy(
-            librarySearchVisible = false,
-            libraryQuery = "",
-        )
+        updateLibraryContext {
+            it.copy(
+                librarySearchVisible = false,
+                libraryQuery = "",
+            )
+        }
         refreshLibrary()
     }
 
     fun toggleLibraryFavoritesOnly() {
-        uiState = uiState.copy(
-            libraryFilters = uiState.libraryFilters.copy(
-                favoritesOnly = !uiState.libraryFilters.favoritesOnly,
-            ),
-        )
+        updateLibraryContext { state ->
+            state.copy(
+                libraryFilters = state.libraryFilters.copy(
+                    favoritesOnly = !state.libraryFilters.favoritesOnly,
+                ),
+            )
+        }
         refreshLibrary()
     }
 
@@ -2703,18 +2793,20 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
         val updated = uiState.libraryFilters.equipment.toMutableSet().apply {
             if (!add(equipment)) remove(equipment)
         }
-        uiState = uiState.copy(libraryFilters = uiState.libraryFilters.copy(equipment = updated))
+        updateLibraryContext { it.copy(libraryFilters = it.libraryFilters.copy(equipment = updated)) }
         refreshLibrary()
     }
 
     fun toggleLibraryEquipmentLocationFilter(location: LibraryEquipmentLocation?) {
         val updatedLocation = location?.takeUnless { it == uiState.libraryFilters.equipmentLocation }
-        uiState = uiState.copy(
-            libraryFilters = uiState.libraryFilters.copy(
-                equipmentLocation = updatedLocation,
-                equipmentLocationEquipment = emptySet(),
-            ),
-        )
+        updateLibraryContext { state ->
+            state.copy(
+                libraryFilters = state.libraryFilters.copy(
+                    equipmentLocation = updatedLocation,
+                    equipmentLocationEquipment = emptySet(),
+                ),
+            )
+        }
         refreshLibrary()
     }
 
@@ -2722,7 +2814,7 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
         val updated = uiState.libraryFilters.targetMuscles.toMutableSet().apply {
             if (!add(targetMuscle)) remove(targetMuscle)
         }
-        uiState = uiState.copy(libraryFilters = uiState.libraryFilters.copy(targetMuscles = updated))
+        updateLibraryContext { it.copy(libraryFilters = it.libraryFilters.copy(targetMuscles = updated)) }
         refreshLibrary()
     }
 
@@ -2730,7 +2822,7 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
         val updated = uiState.libraryFilters.primeMovers.toMutableSet().apply {
             if (!add(primeMover)) remove(primeMover)
         }
-        uiState = uiState.copy(libraryFilters = uiState.libraryFilters.copy(primeMovers = updated))
+        updateLibraryContext { it.copy(libraryFilters = it.libraryFilters.copy(primeMovers = updated)) }
         refreshLibrary()
     }
 
@@ -2742,9 +2834,7 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
         } else {
             selectedKeys + key
         }
-        uiState = uiState.copy(
-            libraryFilters = uiState.libraryFilters.copy(freshnessMuscleKeys = updated),
-        )
+        updateLibraryContext { it.copy(libraryFilters = it.libraryFilters.copy(freshnessMuscleKeys = updated)) }
         refreshLibrary()
     }
 
@@ -2760,12 +2850,14 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
         } else {
             selectedSubcategories
         }
-        uiState = uiState.copy(
-            libraryFilters = filters.copy(
-                muscleTargetBucketKeys = updatedBuckets,
-                muscleTargetSubcategoryKeys = updatedSubcategories,
-            ),
-        )
+        updateLibraryContext {
+            it.copy(
+                libraryFilters = filters.copy(
+                    muscleTargetBucketKeys = updatedBuckets,
+                    muscleTargetSubcategoryKeys = updatedSubcategories,
+                ),
+            )
+        }
         refreshLibrary()
     }
 
@@ -2778,9 +2870,9 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
         } else {
             selection.subcategoryKeys + key
         }
-        uiState = uiState.copy(
-            libraryFilters = filters.copy(muscleTargetSubcategoryKeys = updated),
-        )
+        updateLibraryContext {
+            it.copy(libraryFilters = filters.copy(muscleTargetSubcategoryKeys = updated))
+        }
         refreshLibrary()
     }
 
@@ -2789,18 +2881,18 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
         val updated = uiState.libraryFilters.recommendationBiases.toMutableSet().apply {
             if (!add(bias)) remove(bias)
         }
-        uiState = uiState.copy(
-            libraryFilters = uiState.libraryFilters.copy(recommendationBiases = updated),
-        )
+        updateLibraryContext { it.copy(libraryFilters = it.libraryFilters.copy(recommendationBiases = updated)) }
         refreshLibrary()
     }
 
     fun toggleLibraryLoggedHistoryFilter() {
-        uiState = uiState.copy(
-            libraryFilters = uiState.libraryFilters.copy(
-                hasLoggedHistoryOnly = !uiState.libraryFilters.hasLoggedHistoryOnly,
-            ),
-        )
+        updateLibraryContext { state ->
+            state.copy(
+                libraryFilters = state.libraryFilters.copy(
+                    hasLoggedHistoryOnly = !state.libraryFilters.hasLoggedHistoryOnly,
+                ),
+            )
+        }
         refreshLibrary()
     }
 
@@ -2815,13 +2907,15 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
             activeLocationModeId = uiState.profile?.activeLocationModeId,
             locationModes = uiState.locationModes,
         )
-        uiState = uiState.copy(
-            selectedTab = MainTab.Library,
-            librarySearchVisible = false,
-            libraryQuery = "",
-            libraryFilters = filters,
-            message = null,
-        )
+        updateLibraryContext {
+            it.copy(
+                selectedTab = MainTab.Library,
+                librarySearchVisible = false,
+                libraryQuery = "",
+                libraryFilters = filters,
+                message = null,
+            )
+        }
         refreshLibrary()
     }
 
@@ -2834,39 +2928,43 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
             activeLocationModeId = uiState.profile?.activeLocationModeId,
             locationModes = uiState.locationModes,
         )
-        uiState = uiState.copy(
-            selectedTab = MainTab.Library,
-            librarySearchVisible = false,
-            libraryQuery = "",
-            libraryFilters = filters,
-            message = null,
-        )
+        updateLibraryContext {
+            it.copy(
+                selectedTab = MainTab.Library,
+                librarySearchVisible = false,
+                libraryQuery = "",
+                libraryFilters = filters,
+                message = null,
+            )
+        }
         refreshLibrary()
     }
 
     fun clearLibraryFilters() {
-        uiState = uiState.copy(libraryFilters = LibraryFilters())
+        updateLibraryContext { it.copy(libraryFilters = LibraryFilters()) }
         refreshLibrary()
     }
 
     fun clearLibraryMuscleTargetFilters() {
         val filters = uiState.libraryFilters
         if (filters.muscleTargetBucketKeys.isEmpty() && filters.muscleTargetSubcategoryKeys.isEmpty()) return
-        uiState = uiState.copy(
-            libraryFilters = filters.copy(
-                muscleTargetBucketKeys = emptySet(),
-                muscleTargetSubcategoryKeys = emptySet(),
-            ),
-        )
+        updateLibraryContext {
+            it.copy(
+                libraryFilters = filters.copy(
+                    muscleTargetBucketKeys = emptySet(),
+                    muscleTargetSubcategoryKeys = emptySet(),
+                ),
+            )
+        }
         refreshLibrary()
     }
 
     fun clearLibraryFreshnessMuscleFilters() {
         val filters = uiState.libraryFilters
         if (filters.freshnessMuscleKeys.isEmpty()) return
-        uiState = uiState.copy(
-            libraryFilters = filters.copy(freshnessMuscleKeys = emptySet()),
-        )
+        updateLibraryContext {
+            it.copy(libraryFilters = filters.copy(freshnessMuscleKeys = emptySet()))
+        }
         refreshLibrary()
     }
 
@@ -2998,6 +3096,8 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
     fun toggleFavorite(exercise: ExerciseSummary) {
         viewModelScope.launch(Dispatchers.IO) {
             container.catalogRepository.toggleFavorite(exercise.id, !exercise.favorite)
+            exerciseDiscoveryJob?.cancel()
+            uiState = uiState.withoutExerciseDiscovery()
             refreshAll()
             if (uiState.selectedExerciseDetail?.summary?.id == exercise.id) {
                 uiState = uiState.copy(
@@ -3076,6 +3176,8 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
         viewModelScope.launch(Dispatchers.IO) {
             val nextBias = if (selectedBias == currentBias) RecommendationBias.Neutral else selectedBias
             container.catalogRepository.setRecommendationBias(exerciseId, nextBias)
+            exerciseDiscoveryJob?.cancel()
+            uiState = uiState.withoutExerciseDiscovery()
             refreshLibrary()
             refreshRecommendationBiasState(exerciseId)
         }
@@ -3085,6 +3187,8 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
         if (exercise.preferenceScoreDelta == 0.0) return
         viewModelScope.launch(Dispatchers.IO) {
             container.catalogRepository.resetRecommendationPreferenceScore(exercise.id)
+            exerciseDiscoveryJob?.cancel()
+            uiState = uiState.withoutExerciseDiscovery()
             refreshLibrary()
             refreshRecommendationBiasState(exercise.id)
             if (uiState.selectedExerciseDetail?.summary?.id == exercise.id) {
