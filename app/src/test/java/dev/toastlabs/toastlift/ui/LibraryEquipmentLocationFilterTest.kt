@@ -36,4 +36,34 @@ class LibraryEquipmentLocationFilterTest {
 
         assertTrue(filters.equipmentLocationEquipment.isEmpty())
     }
+
+    @Test
+    fun libraryFiltersWithActiveEquipmentLocation_appliesActiveGymLocationToMuscleTargetShortcut() {
+        val filters = libraryFiltersWithActiveEquipmentLocation(
+            filters = muscleTargetLibraryFilters(bucketKey = null, subcategoryKey = "Chest"),
+            activeLocationModeId = 2L,
+            locationModes = listOf(
+                LocationMode(id = 1L, name = "home", displayName = "Home"),
+                LocationMode(id = 2L, name = "gym", displayName = "Gym"),
+            ),
+        )
+
+        assertEquals(setOf("chest"), filters.muscleTargetSubcategoryKeys)
+        assertEquals(LibraryEquipmentLocation.Gym, filters.equipmentLocation)
+        assertTrue(filters.equipmentLocationEquipment.isEmpty())
+    }
+
+    @Test
+    fun libraryFiltersWithActiveEquipmentLocation_leavesFiltersUnchangedWhenNoActiveLocationMatches() {
+        val base = LibraryFilters()
+        val filters = libraryFiltersWithActiveEquipmentLocation(
+            filters = base,
+            activeLocationModeId = 99L,
+            locationModes = listOf(
+                LocationMode(id = 1L, name = "home", displayName = "Home"),
+            ),
+        )
+
+        assertEquals(base, filters)
+    }
 }

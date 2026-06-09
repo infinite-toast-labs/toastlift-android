@@ -813,15 +813,35 @@ internal fun libraryFiltersWithEquipmentLocation(
     )
 }
 
+internal fun libraryFiltersWithActiveEquipmentLocation(
+    filters: LibraryFilters,
+    activeLocationModeId: Long?,
+    locationModes: List<LocationMode>,
+): LibraryFilters {
+    val activeMode = activeLocationModeId
+        ?.let { id -> locationModes.firstOrNull { it.id == id } }
+        ?: return filters
+    val equipmentLocation = libraryEquipmentLocationForMode(activeMode) ?: return filters
+    return filters.copy(
+        equipmentLocation = equipmentLocation,
+        equipmentLocationEquipment = emptySet(),
+    )
+}
+
 private fun libraryEquipmentLocationModeId(
     location: LibraryEquipmentLocation,
     locationModes: List<LocationMode>,
 ): Long? {
-    val targetName = location.name.lowercase()
     return locationModes.firstOrNull { mode ->
-        mode.name.equals(targetName, ignoreCase = true) ||
-            mode.displayName.equals(location.displayName, ignoreCase = true)
+        libraryEquipmentLocationForMode(mode) == location
     }?.id
+}
+
+private fun libraryEquipmentLocationForMode(mode: LocationMode): LibraryEquipmentLocation? {
+    return LibraryEquipmentLocation.entries.firstOrNull { location ->
+        mode.name.equals(location.name, ignoreCase = true) ||
+            mode.displayName.equals(location.displayName, ignoreCase = true)
+    }
 }
 
 internal fun libraryMuscleTargetFilterSelection(filters: LibraryFilters): LibraryMuscleTargetFilterSelection {
@@ -2790,11 +2810,16 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
             subcategoryKey = subcategoryKey,
         )
         if (targetFilters.muscleTargetBucketKeys.isEmpty() && targetFilters.muscleTargetSubcategoryKeys.isEmpty()) return
+        val filters = libraryFiltersWithActiveEquipmentLocation(
+            filters = targetFilters,
+            activeLocationModeId = uiState.profile?.activeLocationModeId,
+            locationModes = uiState.locationModes,
+        )
         uiState = uiState.copy(
             selectedTab = MainTab.Library,
             librarySearchVisible = false,
             libraryQuery = "",
-            libraryFilters = targetFilters,
+            libraryFilters = filters,
             message = null,
         )
         refreshLibrary()
