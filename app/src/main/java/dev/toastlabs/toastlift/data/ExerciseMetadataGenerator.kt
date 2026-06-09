@@ -69,7 +69,10 @@ class GeminiExerciseMetadataGenerator : ExerciseMetadataGenerator {
                     JSONObject().put(
                         "parts",
                         JSONArray().put(
-                            JSONObject().put("text", buildPrompt(exerciseName.trim(), taxonomy, nearbyExercises)),
+                            JSONObject().put(
+                                "text",
+                                buildCustomExerciseMetadataPrompt(exerciseName.trim(), taxonomy, nearbyExercises),
+                            ),
                         ),
                     ),
                 ),
@@ -119,112 +122,6 @@ class GeminiExerciseMetadataGenerator : ExerciseMetadataGenerator {
         } finally {
             connection.disconnect()
         }
-    }
-
-    private fun buildPrompt(
-        exerciseName: String,
-        taxonomy: CustomExerciseTaxonomy,
-        nearbyExercises: List<ExerciseSummary>,
-    ): String {
-        val nearby = if (nearbyExercises.isEmpty()) {
-            "None"
-        } else {
-            nearbyExercises.joinToString("\n") {
-                "- ${it.name} | bodyRegion=${it.bodyRegion} | target=${it.targetMuscleGroup} | equipment=${it.equipment}"
-            }
-        }
-        return """
-            You are helping fill a local SQLite exercise catalog for a workout app.
-            Given only an exercise name, infer the best structured metadata for the exercise.
-            
-            Exercise name:
-            $exerciseName
-            
-            Nearby existing exercises:
-            $nearby
-            
-            Use existing canonical values when possible.
-            Do not invent new values for these closed-set fields:
-            - difficultyLevel
-            - bodyRegion
-            - targetMuscleGroup
-            - primaryEquipment
-            - secondaryEquipment
-            - forceType
-            - mechanics
-            - laterality
-            - armUsage
-            - armPattern
-            - legPattern
-            - combinationType
-            - classification
-            - movementPatterns
-            - planesOfMotion
-            
-            Closed-set options:
-            difficultyLevel=${taxonomy.difficultyLevels}
-            bodyRegion=${taxonomy.bodyRegions}
-            targetMuscleGroup=${taxonomy.targetMuscles}
-            primaryEquipment=${taxonomy.equipmentOptions}
-            secondaryEquipment=${taxonomy.equipmentOptions + ""}
-            posture=${taxonomy.postures}
-            armUsage=${taxonomy.armUsageOptions}
-            armPattern=${taxonomy.armPatternOptions}
-            grip=${taxonomy.gripOptions}
-            loadPositionEnding=${taxonomy.loadPositionOptions}
-            legPattern=${taxonomy.legPatternOptions}
-            footElevation=${taxonomy.footElevationOptions}
-            combinationType=${taxonomy.combinationTypeOptions}
-            forceType=${taxonomy.forceTypeOptions}
-            mechanics=${taxonomy.mechanicsOptions}
-            laterality=${taxonomy.lateralityOptions}
-            classification=${taxonomy.classificationOptions}
-            movementPatterns=${taxonomy.movementPatternOptions}
-            planesOfMotion=${taxonomy.planeOfMotionOptions}
-            primeMovers=${taxonomy.primeMovers}
-            
-            Return only JSON with this exact shape:
-            {
-              "name": "string",
-              "difficultyLevel": "string",
-              "bodyRegion": "string",
-              "targetMuscleGroup": "string",
-              "primeMoverMuscle": "string",
-              "secondaryMuscle": "string",
-              "tertiaryMuscle": "string",
-              "primaryEquipment": "string",
-              "primaryItemCount": 1,
-              "secondaryEquipment": "string",
-              "secondaryItemCount": 0,
-              "posture": "string",
-              "armUsage": "string",
-              "armPattern": "string",
-              "grip": "string",
-              "loadPositionEnding": "string",
-              "legPattern": "string",
-              "footElevation": "string",
-              "combinationType": "string",
-              "forceType": "string",
-              "mechanics": "string",
-              "laterality": "string",
-              "classification": "string",
-              "movementPatterns": ["string"],
-              "planesOfMotion": ["string"],
-              "shortDemoLabel": "string",
-              "shortDemoUrl": "string",
-              "inDepthLabel": "string",
-              "inDepthUrl": "string",
-              "synonyms": ["string"]
-            }
-            
-            Requirements:
-            - Prefer generic equipment categories like "Machine" instead of brand-specific equipment.
-            - Keep URLs blank unless you are reasonably confident.
-            - Use 1-3 movement patterns.
-            - Use 1-3 planes of motion.
-            - If the exercise is a machine chest press, likely mechanics is Compound and forceType is Push.
-            - Return empty strings instead of nulls for optional scalar fields.
-        """.trimIndent()
     }
 
     private fun parseResponse(rawText: String): GeneratedCustomExerciseMetadata {
@@ -293,4 +190,110 @@ class GeminiExerciseMetadataGenerator : ExerciseMetadataGenerator {
         }
         throw IllegalStateException("Could not parse Gemini JSON response: $rawText")
     }
+}
+
+internal fun buildCustomExerciseMetadataPrompt(
+    exerciseName: String,
+    taxonomy: CustomExerciseTaxonomy,
+    nearbyExercises: List<ExerciseSummary>,
+): String {
+    val nearby = if (nearbyExercises.isEmpty()) {
+        "None"
+    } else {
+        nearbyExercises.joinToString("\n") {
+            "- ${it.name} | bodyRegion=${it.bodyRegion} | target=${it.targetMuscleGroup} | equipment=${it.equipment}"
+        }
+    }
+    return """
+        You are helping fill a local SQLite exercise catalog for a workout app.
+        Given only an exercise name, infer the best structured metadata for the exercise.
+        
+        Exercise name:
+        $exerciseName
+        
+        Nearby existing exercises:
+        $nearby
+        
+        Use existing canonical values when possible.
+        Do not invent new values for these closed-set fields:
+        - difficultyLevel
+        - bodyRegion
+        - targetMuscleGroup
+        - primaryEquipment
+        - secondaryEquipment
+        - forceType
+        - mechanics
+        - laterality
+        - armUsage
+        - armPattern
+        - legPattern
+        - combinationType
+        - classification
+        - movementPatterns
+        - planesOfMotion
+        
+        Closed-set options:
+        difficultyLevel=${taxonomy.difficultyLevels}
+        bodyRegion=${taxonomy.bodyRegions}
+        targetMuscleGroup=${taxonomy.targetMuscles}
+        primaryEquipment=${taxonomy.equipmentOptions}
+        secondaryEquipment=${taxonomy.equipmentOptions + ""}
+        posture=${taxonomy.postures}
+        armUsage=${taxonomy.armUsageOptions}
+        armPattern=${taxonomy.armPatternOptions}
+        grip=${taxonomy.gripOptions}
+        loadPositionEnding=${taxonomy.loadPositionOptions}
+        legPattern=${taxonomy.legPatternOptions}
+        footElevation=${taxonomy.footElevationOptions}
+        combinationType=${taxonomy.combinationTypeOptions}
+        forceType=${taxonomy.forceTypeOptions}
+        mechanics=${taxonomy.mechanicsOptions}
+        laterality=${taxonomy.lateralityOptions}
+        classification=${taxonomy.classificationOptions}
+        movementPatterns=${taxonomy.movementPatternOptions}
+        planesOfMotion=${taxonomy.planeOfMotionOptions}
+        primeMovers=${taxonomy.primeMovers}
+        
+        Return only JSON with this exact shape:
+        {
+          "name": "string",
+          "difficultyLevel": "string",
+          "bodyRegion": "string",
+          "targetMuscleGroup": "string",
+          "primeMoverMuscle": "string",
+          "secondaryMuscle": "string",
+          "tertiaryMuscle": "string",
+          "primaryEquipment": "string",
+          "primaryItemCount": 1,
+          "secondaryEquipment": "string",
+          "secondaryItemCount": 0,
+          "posture": "string",
+          "armUsage": "string",
+          "armPattern": "string",
+          "grip": "string",
+          "loadPositionEnding": "string",
+          "legPattern": "string",
+          "footElevation": "string",
+          "combinationType": "string",
+          "forceType": "string",
+          "mechanics": "string",
+          "laterality": "string",
+          "classification": "string",
+          "movementPatterns": ["string"],
+          "planesOfMotion": ["string"],
+          "shortDemoLabel": "string",
+          "shortDemoUrl": "string",
+          "inDepthLabel": "string",
+          "inDepthUrl": "string",
+          "synonyms": ["string"]
+        }
+        
+        Requirements:
+        - Prefer generic equipment categories like "Machine" instead of brand-specific equipment.
+        - Keep URLs blank unless you are reasonably confident.
+        - Use 1-3 movement patterns.
+        - Use 1-3 planes of motion.
+        - If the exercise is a machine chest press, likely mechanics is Compound and forceType is Push.
+        - Return empty strings instead of nulls for optional scalar fields.
+    """.trimIndent()
 }
