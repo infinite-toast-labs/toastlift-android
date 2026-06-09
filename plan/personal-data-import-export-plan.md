@@ -4,7 +4,7 @@
 
 The current JSON export is not sufficient for a full fresh-install restore. It is a useful machine-readable snapshot and includes most completed workout history, but it is not a full-fidelity backup format and there is no import flow today.
 
-A second table-by-table audit found additional restore gaps beyond the first pass: incomplete child-row primary keys, missing raw JSON snapshot fields, incomplete active/abandoned session columns, adaptive program rows missing from the delete-all-personal-data path, and no custom-exercise conflict/remap policy for imports.
+A second table-by-table audit found additional restore gaps beyond the first pass: incomplete child-row primary keys, missing raw JSON snapshot fields, incomplete active/abandoned session columns, adaptive program rows missing from the delete-all-personal-data path, and no custom-exercise conflict/remap policy for imports. Later goal-focused passes added import preflight, non-empty-database safety, atomic file writes, OS/remote-data scope, and restore-after-delete caveats.
 
 For a user with long-term workout history, do not rely on the existing export alone before uninstalling. The safest near-term path remains installing updates with the same signing key so Android preserves app data.
 
@@ -130,6 +130,219 @@ These are lower risk than workout history, but they should be either exported or
 - `user_profile.user_id` is not exported. It is always `1`, so this is low risk, but a table round-trip test should account for it.
 - SQLite `sqlite_sequence` values are not exported. This is usually acceptable if imports preserve explicit IDs and then verify future inserts, but a replace-style import should ensure autoincrement sequences cannot collide.
 - Active/abandoned set fields are stored as TEXT for reps and weight. An importer must preserve these as raw strings and not coerce them through numeric parsing.
+
+## Fourth-Pass Findings
+
+This pass focused on lower-level privacy/delete semantics, SQLite side effects, OS backup behavior, and scheduled/background state.
+
+### No Additional Durable App Storage Found
+
+Another storage sweep found:
+
+- no SharedPreferences user-data storage
+- no DataStore usage
+- no WorkManager jobs
+- no AlarmManager scheduled jobs
+
+Notifications are immediate local notifications only. The active workout notification is already cancelled by the current delete path, and the rest timer is an in-memory coroutine/UI state rather than durable scheduled work.
+
+### SQLite Deletes May Leave Recoverable Bytes
+
+The delete-data plan currently says which rows to delete, but not how to deal with SQLite's physical storage behavior.
+
+Plain `DELETE FROM` removes logical rows, but deleted content can remain in:
+
+- free pages inside `toastlift.db`
+- `toastlift.db-wal`
+- `toastlift.db-shm`
+- rollback journal files such as `toastlift.db-journal`, depending on SQLite journal mode/device state
+
+If the feature is meant to be a strong local privacy wipe, the implementation should explicitly handle this.
+
+Recommended plan:
+
+- Run the logical delete transaction first.
+- Checkpoint/truncate WAL after the transaction, for example via `PRAGMA wal_checkpoint(TRUNCATE)` if WAL is active.
+- Run `VACUUM` or an equivalent database rebuild after deletion to purge freed pages.
+- Consider `PRAGMA secure_delete = ON` before delete operations if acceptable for performance.
+- Verify on-device that database sidecar files do not retain old user data after deletion.
+
+Important implementation constraint:
+
+- `VACUUM` cannot run inside an active transaction, so the delete flow needs a carefully staged transaction/checkpoint/vacuum sequence and clear error reporting if compaction fails.
+
+### `sqlite_sequence` Can Leak Approximate Prior Use
+
+The plan already notes `sqlite_sequence` for import collision handling. For delete-data correctness, it also matters as residual metadata.
+
+After deleting user rows, `sqlite_sequence` can still contain high values for user-owned AUTOINCREMENT tables, which may reveal approximate prior counts for workouts, templates, sets, links, restrictions, program rows, and other personal activity.
+
+Recommended plan:
+
+- After deleting user-owned rows, reset `sqlite_sequence` entries for user-owned AUTOINCREMENT tables.
+- Keep or restore only sequence state required by system-owned/bundled data.
+- Add a post-delete assertion that user-owned sequence entries are absent or reset.
+
+### Android Backup Rules Need Sidecar Review
+
+The app's backup rules include:
+
+- `toastlift.db`
+- `toastlift.db-wal`
+- `toastlift.db-shm`
+- `custom_exercises_snapshot.json`
+
+They do not explicitly include `toastlift.db-journal`. If the app ever uses rollback-journal mode or a journal file exists during backup, backup/restore consistency needs to be verified.
+
+Recommended plan:
+
+- Confirm the database journal mode used in production.
+- Either include all relevant SQLite sidecar files or rely on Android's database-domain behavior only after testing.
+- Add a backup/restore smoke test that exercises data written shortly before backup, including active workout and custom exercises.
+
+### Manual JSON Exports Are Plain External Copies
+
+The in-app export writes a user-selected JSON document. That exported file is outside the app's storage and cannot be deleted by the app's delete-personal-data action.
+
+Recommended plan:
+
+- Treat exported JSON as a plain-text personal data file.
+- Make export UI copy clear that the file may contain workout history, profile settings, custom exercises, notes, and links.
+- Make delete UI copy clear that previously exported files are not deleted by the app.
+- If stronger privacy is required later, consider optional encrypted export with user-managed passphrase.
+
+## Fifth-Pass Goal Audit Findings
+
+This pass checked the plan against the actual user goals: survive a fresh install without losing long-term workout logs, avoid destructive import surprises, and make delete-personal-data honest about what it can and cannot remove.
+
+### Import Needs A Dry-Run Preflight
+
+The plan says import should validate required sections before mutating the database, but that needs to be an explicit dry-run phase.
+
+Required behavior:
+
+- Parse and validate the entire JSON backup before any delete, insert, snapshot rewrite, or UI state reset.
+- Enforce a practical file-size/read limit and fail with a clear message for oversized files instead of trying to load unbounded JSON into memory.
+- Build a complete import plan first: schema version, catalog compatibility result, exercise ID remap, location/split remap, row counts, date range, custom exercise count, template count, active workout presence, and active program presence.
+- Reject unsupported future schema versions, malformed JSON, required-section omissions, broken parent/child references, duplicate primary keys inside a section, and unresolved bundled/custom exercise references.
+- Show the preflight summary before import and make the destructive scope clear.
+- Add tests proving failed preflight leaves the database and `custom_exercises_snapshot.json` unchanged.
+
+### Replace Import Must Protect Existing Data
+
+The practical first implementation should be a replace-style import, but replacement is dangerous if run against a device that already contains years of logs.
+
+Required policy:
+
+- On first launch with no `user_profile` and no user-owned rows, allow restore as the primary onboarding path.
+- On an existing/non-empty install, never silently wipe current data.
+- Either require the user to export a fresh local rescue backup first, or create a timestamped in-app rescue export before replacing data.
+- Show counts for both current data and backup data before replacement.
+- If rescue export creation fails, do not proceed with destructive replacement.
+- Prefer applying the backup to an empty temporary database first, then swap/apply to the live database only after validation succeeds.
+
+### Import Must Be All-Or-Nothing Across DB And Files
+
+The database transaction is not enough by itself because custom exercise restore also depends on `custom_exercises_snapshot.json`.
+
+Required behavior:
+
+- Restore all database rows in one transaction.
+- Regenerate `custom_exercises_snapshot.json` from restored custom exercise rows only after the database transaction succeeds.
+- Write the snapshot atomically: write a temporary file, flush/sync if practical, then rename/replace.
+- If snapshot regeneration fails, surface a partial-restore error and do not report success.
+- Export should only report success after the Storage Access Framework stream is fully written and closed.
+
+### Stable System Keys Are Needed Anywhere IDs Reference System Rows
+
+The earlier location-mode finding covered profile and equipment inventory. The same issue applies to every exported row that stores `location_mode_id`, and to training split references.
+
+Required change:
+
+- Add `location_mode_key`/display name snapshots for completed workouts, active workout, abandoned workout, profile active location, and equipment inventory rows.
+- Add `split_program_key` or stable split name snapshots for `user_profile.preferred_split_program_id` and `training_programs.split_program_id`.
+- Import by stable key first, then numeric ID only for old exports.
+- Preserve `planned_sessions.actual_workout_id` links by preserving completed workout IDs or remapping program session links after completed workout import.
+
+### Program Export Needs Exact Raw Fields
+
+The plan already says adaptive program data is missing, but the future schema should be explicit about lossless program fields.
+
+Program export/import must preserve:
+
+- `training_programs.success_criteria_json` and `adaptation_policy_json` as raw strings.
+- integer timestamp fields such as `training_programs.created_at`, `last_reviewed_at`, `program_checkpoints.completed_at`, and `program_events.created_at` without converting them through ISO strings.
+- `program_events.payload_json` as raw strings.
+- `planned_sessions.status_updated_at_utc`, `actual_workout_id`, `coach_brief`, `completion_ratio`, `completion_credit`, and `completion_truth`.
+- `program_exercise_slots.sfr_score` and `evolution_target_exercise_id`, with exercise remapping applied.
+
+### Custom Exercise Import Must Restore Raw Rows
+
+Custom exercise import should not run the normal draft save path or re-canonicalize values through the current UI taxonomy. The backup is the source of truth for the user's custom exercise rows.
+
+Required behavior:
+
+- Insert backed-up custom `exercises` and child taxonomy rows with their stored values and IDs, subject only to explicit conflict/remap policy.
+- Preserve custom URLs, labels, synonyms, generated/manual prompt metadata, timestamps, and child-row sequence numbers exactly.
+- Include custom `exercise_work_units` if any custom exercise ever has them.
+- Regenerate the snapshot from restored rows after import instead of importing a possibly stale snapshot file verbatim.
+
+### Remote Provider Data Is Out Of Local Delete Scope
+
+The app sends some personal-context prompt data to Gemini-backed generators:
+
+- daily coach prompt payload can include profile values, recent workout titles, recent exercise names, active program title/status, coach brief, and next exercise names.
+- exercise description generation sends exercise detail/catalog context.
+- custom exercise metadata generation sends the user-entered exercise name plus nearby catalog matches.
+
+No persisted remote account or analytics SDK was found in the app code, but local delete cannot delete logs or retention held by third-party API providers.
+
+Required plan/UI copy:
+
+- Do not claim delete-personal-data removes data already sent to external AI/API providers.
+- Privacy copy should classify Gemini generation as data leaving the device when those features are used.
+- If legal/privacy requirements demand provider-side deletion, that needs a separate provider/data-retention process outside the local wipe.
+
+### OS-Managed Notification Settings Are Not In The JSON Backup
+
+The app creates Android notification channels for rest timer and active workout notifications. Users can modify channel behavior in Android system settings. Those OS-managed channel preferences are not stored in the app database, not included in the JSON export, and not cleared by the current app-level delete path.
+
+Required plan:
+
+- Treat notification channel preferences as OS-managed settings, not app JSON backup data.
+- Do not promise a JSON import will restore Android notification channel sound/importance settings.
+- Do not claim app-level delete resets notification channel settings unless the implementation explicitly deletes/recreates channels and the UX says so.
+
+### OS Backup Can Reintroduce Data After Delete Or Before Import
+
+Android backup is enabled for the database and snapshot file. That is good for device migration, but it complicates privacy and import semantics.
+
+Required validation:
+
+- Test fresh install with Android auto-restore enabled before manual JSON import. If data is auto-restored, the import flow must detect a non-empty database and use the existing-data replacement policy.
+- Test delete followed by uninstall/reinstall/auto-restore. If old backup data can return, the delete UI must avoid saying cloud/device-transfer backups were erased.
+- Consider a restore-after-delete product policy if stronger privacy is required, such as excluding backups, adding a local deletion marker, or documenting that local delete is device-local only.
+
+### Fresh-Install Import Must Fit The Onboarding Flow
+
+The expected UX is not just a Profile-screen import button. On a clean install the app currently routes to onboarding when `profile == null`.
+
+Required behavior:
+
+- On the first screen, offer import before forcing onboarding setup.
+- A successful import that restores `user_profile` should skip onboarding and load the restored profile, equipment, history, active workout, templates, and program state.
+- A failed import should leave the app in the same first-run/onboarding state with no partial restored rows.
+- Profile-screen import should be available later, but must follow the non-empty database replacement/merge policy.
+
+### Backup Schema Needs Migration Governance
+
+The plan has a regression guard, but schema governance should be explicit because this app evolves by adding columns in `ToastLiftDatabase.ensureColumn()`.
+
+Required process:
+
+- Any new user-owned table or column must be classified as export-required, delete-required, import-derived, or system-owned in the same change.
+- Backup schema versions should have migration readers for old JSON exports, or old exports should fail with a clear unsupported-version message.
+- Unknown fields from newer exports should not be silently ignored if they affect lossless restore.
 
 ## Delete Personal Data Correctness Plan
 
@@ -287,8 +500,11 @@ Required behavior:
 - Start one database transaction.
 - Delete all user-owned database rows.
 - Commit only if all database deletes succeed.
+- Checkpoint/truncate database journals and compact the database after logical deletion if the feature needs a strong local wipe.
+- Reset user-owned `sqlite_sequence` entries.
 - Delete app-private user files after the database transaction succeeds.
 - If file deletion fails, surface an error and do not claim full deletion.
+- If database compaction/checkpoint fails, surface an error or use wording that does not overclaim physical erasure.
 - Refresh UI only after persistent deletion succeeds.
 
 SQLite foreign keys should remain enabled during deletion. If explicit child-first deletes are used, disabling foreign keys should not be necessary.
@@ -307,6 +523,7 @@ Plan options:
 - Keep Android backup enabled, but make the UI wording precise: deletion removes data stored by the app on this device.
 - Add product/legal review for whether backup behavior needs a stronger user-facing warning.
 - Consider whether future privacy requirements need backup exclusion, backup invalidation, or a documented restore-after-delete policy.
+- Do not claim the app can remove data already written to user-selected external JSON exports or retained by third-party API providers.
 
 ### UI Copy Requirements
 
@@ -322,6 +539,8 @@ The confirmation dialog should say what will be deleted using user-facing catego
 - adaptive program state
 
 The dialog should not overclaim deletion from cloud backups or external exports. If the app continues to support manual JSON exports, the copy should make clear that files the user previously exported are outside the app's control.
+
+If AI-backed generation remains enabled, privacy copy should also avoid claiming that local deletion removes data already sent to the external generation provider.
 
 ### Verification Tests
 
@@ -349,8 +568,11 @@ Post-delete assertions:
 - bundled exercises remain
 - `training_split_programs`, `location_modes`, and `import_metadata` remain
 - `custom_exercises_snapshot.json` does not exist
+- user-owned `sqlite_sequence` entries are absent or reset
+- `toastlift.db-wal`, `toastlift.db-shm`, and possible journal files do not retain deleted personal data after the wipe flow completes
 - active workout notification and rest timer are cancelled
 - UI state no longer references deleted active session, custom draft, export payload, or workout share
+- delete/uninstall/reinstall with Android auto-restore does not contradict the user-facing delete wording
 
 Add a regression guard that fails if a new user-owned table is added without being classified as delete-required, export-required, or system-owned.
 
@@ -385,7 +607,8 @@ Expected future UX:
 
 - On fresh launch, offer `Import existing data` alongside onboarding.
 - From Profile, offer `Import data from JSON`.
-- Import should run in a single transaction and either fully succeed or leave the existing database unchanged.
+- Import should run a dry-run preflight first, then restore all database rows in a single transaction and either fully succeed or leave the existing database unchanged.
+- On an existing/non-empty database, import must require an explicit replace/merge policy and should not wipe current data unless a rescue backup exists.
 
 ### Completed Workout History Is Not Fully Lossless
 
@@ -412,6 +635,8 @@ The export does not include adaptive program tables:
 - `program_events`
 
 Without these, a restored install would lose the current program, planned sessions, skipped/completed session state, checkpoints, slot evolution, SFR state, and program event history.
+
+The program restore also needs exact preservation of raw policy/event JSON fields, integer timestamps, `planned_sessions.actual_workout_id` links to completed workouts, and exercise references inside planned exercises and slots.
 
 ### Experiment Assignments Are Missing
 
@@ -508,6 +733,8 @@ Include export metadata that helps imports fail safely:
 - section row counts
 - date range for completed workout history
 - optional checksum/hash per section
+- stable-key manifests for referenced system rows, including location modes, training split programs, and bundled exercises
+- import mode expectations, such as `full_replace_backup`, so partial exports cannot be mistaken for full restores
 
 ### 2. Make Export Full-Fidelity
 
@@ -523,6 +750,9 @@ Add missing columns to the export:
 - profile `dev_session_set_swipe_complete_enabled`
 - `experiment_assignments`
 - adaptive program tables
+- stable `location_mode_key` values wherever `location_mode_id` is exported
+- stable split-program keys/names wherever `split_program_id` is exported
+- raw program JSON/timestamp/link fields listed in the fifth-pass program findings
 
 For restore reliability, prefer exporting raw persisted values in addition to friendly display names.
 
@@ -535,15 +765,22 @@ Add a JSON document picker and import flow.
 Import should:
 
 - Validate top-level app name and supported `schema_version`.
-- Validate required sections before mutating the database.
+- Validate required sections and all cross-section references in a dry-run preflight before mutating the database.
 - Show a clear summary before import, such as workout count, date range, custom exercise count, template count, and active program presence.
+- Detect whether the current install already has personal data and require the chosen replace/merge policy before continuing.
+- Create or require a rescue export before destructive replacement of a non-empty install.
 - Run inside a single transaction.
+- Prefer applying the backup to an empty temporary database first for validation.
 - Restore custom exercises before any rows that reference their exercise IDs.
 - Resolve custom exercise ID/name conflicts before restoring dependent rows.
 - Validate/remap all bundled exercise references before inserting dependent rows.
+- Validate/remap all location-mode and split-program references by stable key before inserting dependent rows.
+- Insert custom exercise backup rows directly instead of routing them through custom exercise draft validation/generation code.
 - Restore parent rows before child rows.
 - Preserve IDs where history/templates/program rows reference them.
+- Regenerate `custom_exercises_snapshot.json` atomically after successful database restore.
 - Rebuild derived/default catalog data only after user data is restored.
+- Leave onboarding/current database state unchanged if JSON parsing, preflight, database restore, or snapshot rewrite fails.
 
 ### 4. Decide Conflict Policy
 
@@ -555,6 +792,8 @@ For an existing install, define one explicit policy:
 - Merge backup into current data.
 
 Replacement is simpler and safer for the first implementation. Merge requires duplicate detection for workouts, templates, custom exercises, preferences, and program state.
+
+For the first shipped import, prefer replacement only on an empty/fresh install and replacement on non-empty installs only after a verified rescue export. Defer merge until duplicate detection and ID-remap behavior are fully specified.
 
 ### 5. Add Round-Trip Tests
 
@@ -577,18 +816,105 @@ Minimum test fixture should include:
 - Custom exercise collision/remap fixture if a bundled exercise with the same normalized name exists.
 - Catalog compatibility/remap fixture where a referenced exercise ID must be validated against slug/name.
 - Insert-after-import checks for autoincrement tables to ensure new rows do not collide with restored IDs.
+- Dry-run failure fixtures for malformed JSON, unsupported schema versions, missing sections, duplicate IDs, unresolved exercise/location/split references, and oversized files.
+- Existing-data replacement fixture proving a failed rescue export or failed import leaves current 10-year-style history untouched.
+- First-launch import fixture proving restored profile skips onboarding and failed import leaves first-run state unchanged.
+- Program linkage fixture proving `planned_sessions.actual_workout_id` still points at the restored completed workout.
+- Atomic snapshot fixture proving `custom_exercises_snapshot.json` is absent/old on failed import and correct on success.
+- Android backup/restore smoke tests for auto-restore before manual import and restore-after-delete wording assumptions.
 
 The tests should fail whenever a new user-owned column is added but not covered by export/import.
 
+## Implementation Phases And TODO
+
+These phases are enough for the personal-data work:
+
+- [x] Phase 1: make the existing `Export My Data (JSON)` action produce a comprehensive full-backup JSON.
+- [ ] Phase 2: add JSON import/restore.
+- [ ] Phase 3: make delete-personal-data complete and precise.
+
+### Phase 1: Full JSON Export - Done In Current Workspace
+
+Implementation status:
+
+- Existing Profile `Export My Data (JSON)` button remains the entry point.
+- Export remains a single JSON document.
+- Backup schema is now versioned as `schema_version = 7`.
+- Top-level `backup_kind = full_personal_data_backup` distinguishes this from partial/debug exports.
+- Export includes a new `metadata` object with app version, database version, catalog metadata, stable system references, section counts, completed-workout date range, and referenced exercise manifest.
+- `personal_data` now includes `experiment_assignments` and `programs`.
+- `profile` now includes `user_id`, `active_location_mode_key`, `preferred_split_program_key`, and `dev_session_set_swipe_complete_enabled`.
+- `equipment_inventory`, completed workouts, active workout, abandoned workout, and programs now carry stable location/split labels where useful for future import remapping.
+- Completed workout export now preserves raw `ab_flags_snapshot_json` and `completion_receipt_snapshot_json` while keeping the parsed friendly `abFlags` and `completionReceipt` objects.
+- Completed set export now includes `performed_set_id` and `completed_at_utc`.
+- Template exercise export now includes `template_exercise_id`.
+- Feedback signal export now includes `signal_id`.
+- Active/abandoned workout export now includes metadata fields, pause fields, selected active exercise index, set primary keys, and set completion timestamps.
+- Adaptive program export includes `training_programs`, `planned_weeks`, `planned_sessions`, `planned_session_exercises`, `program_exercise_slots`, `program_checkpoints`, and `program_events` as nested program JSON.
+- Program export preserves raw program JSON fields and integer timestamps instead of converting them.
+- Custom exercise export now includes synonym IDs and custom `exercise_work_units` rows.
+
+Implementation notes:
+
+- This phase intentionally does not add import behavior.
+- This phase intentionally does not change delete-personal-data behavior.
+- The generated custom exercise snapshot file is still not exported as a separate file; Phase 2 should regenerate `custom_exercises_snapshot.json` from restored custom exercise rows.
+- The export is designed to be import-ready, but it is not a complete fresh-install recovery feature until Phase 2 exists and passes round-trip tests.
+- Current verification for Phase 1: `./gradlew testDebugUnitTest` and `git diff --check` passed.
+
+### Phase 2 TODO: JSON Import/Restore
+
+- [ ] Add first-launch import entry point before onboarding setup is required.
+- [ ] Add Profile import entry point for existing installs.
+- [ ] Add document picker for JSON backup files.
+- [ ] Parse and validate top-level `app`, `schema_version`, `backup_kind`, and required sections.
+- [ ] Add dry-run preflight that validates all cross-section references before mutation.
+- [ ] Enforce a practical file-size/read limit and clear error for oversized/malformed JSON.
+- [ ] Build an import summary: backup date, workout count/date range, custom exercise count, template count, active workout presence, and active program presence.
+- [ ] Detect whether the current install already has user data.
+- [ ] For non-empty installs, require explicit replacement confirmation and a verified rescue export before destructive replacement.
+- [ ] Restore into an empty/temp database first if practical, then apply/swap only after validation succeeds.
+- [ ] Restore custom exercise rows directly from backup JSON rather than via draft-generation code.
+- [ ] Resolve/remap custom exercise conflicts against newer bundled catalog rows.
+- [ ] Validate/remap bundled exercise references using exercise ID plus slug/name manifest.
+- [ ] Validate/remap `location_modes` by stable key.
+- [ ] Validate/remap `training_split_programs` by stable key/name.
+- [ ] Preserve primary keys for workouts, sets, templates, feedback signals, program rows, active/abandoned rows, and custom exercise rows.
+- [ ] Restore parent rows before child rows.
+- [ ] Preserve `planned_sessions.actual_workout_id` links to restored completed workouts.
+- [ ] Reset/verify SQLite autoincrement sequences after import so future inserts do not collide.
+- [ ] Regenerate `custom_exercises_snapshot.json` atomically after successful database restore.
+- [ ] Leave the existing database/onboarding state unchanged on parse, preflight, restore, or snapshot-write failure.
+- [ ] Add populated round-trip tests comparing exported/imported user-owned tables.
+- [ ] Add failure tests for malformed JSON, unsupported schema versions, duplicate IDs, unresolved references, failed snapshot write, and failed rescue export.
+
+### Phase 3 TODO: Delete Personal Data Correctness
+
+- [ ] Move delete into one coordinated repository/service-level wipe path.
+- [ ] Delete adaptive program tables in child-to-parent order.
+- [ ] Keep bundled catalog/system tables intact.
+- [ ] Delete custom exercise rows and their child rows.
+- [ ] Delete `custom_exercises_snapshot.json`.
+- [ ] Cancel active workout notification and rest timer state.
+- [ ] Clear in-memory UI references to active sessions, drafts, pending exports, and shares.
+- [ ] Reset user-owned `sqlite_sequence` entries.
+- [ ] If strong local wipe is required, checkpoint/truncate WAL and compact/vacuum the database after logical delete.
+- [ ] Handle compaction/file-delete failures without overclaiming deletion.
+- [ ] Keep UI copy precise: delete removes app data stored on this device, not external JSON exports, OS-managed backups, or data already sent to external API providers.
+- [ ] Add deletion fixture covering every user-owned table and file.
+- [ ] Add restore-after-delete/Android backup smoke tests or adjust copy to avoid untested claims.
+
 ## Practical Risk Assessment
 
-Current export is good enough for manual inspection and partial recovery of major workout logs.
+Pre-Phase-1 export was good enough for manual inspection and partial recovery of major workout logs.
 
-Current export is not good enough for:
+With Phase 1 done, the export format is intended to contain all known user-generated data in one JSON file, but it is not yet proven as a fresh-install recovery path because import does not exist.
+
+The app is still not good enough for:
 
 - One-click fresh-install restore.
-- Exact preservation of long-term history semantics.
-- Preserving adaptive program state.
-- Recreating an in-progress workout exactly.
+- Validated round-trip preservation of long-term history semantics.
+- Validated restoration of adaptive program state.
+- Validated recreation of an in-progress workout exactly.
 
 Until import/export is upgraded and tested, preserving Android app data through matching signing keys is still the safest migration strategy.

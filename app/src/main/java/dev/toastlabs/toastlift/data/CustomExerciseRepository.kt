@@ -308,7 +308,8 @@ class CustomExerciseRepository(
                             .put("equipment", exportEquipmentRows(db, exerciseId))
                             .put("movement_patterns", exportChildRows(db, "exercise_movement_patterns", "movement_pattern", exerciseId))
                             .put("planes_of_motion", exportChildRows(db, "exercise_planes_of_motion", "plane_of_motion", exerciseId))
-                            .put("synonyms", exportSynonyms(db, exerciseId)),
+                            .put("synonyms", exportSynonyms(db, exerciseId))
+                            .put("work_units", exportWorkUnits(db, exerciseId)),
                     )
                 }
             }
@@ -589,10 +590,10 @@ class CustomExerciseRepository(
     private fun exportSynonyms(db: SQLiteDatabase, exerciseId: Long): JSONArray =
         db.rawQuery(
             """
-            SELECT synonym_name, synonym_name_normalized, synonym_type, source, confidence_score, created_at_utc
+            SELECT synonym_id, synonym_name, synonym_name_normalized, synonym_type, source, confidence_score, created_at_utc
             FROM exercise_synonyms
             WHERE exercise_id = ?
-            ORDER BY synonym_name
+            ORDER BY synonym_id
             """.trimIndent(),
             arrayOf(exerciseId.toString()),
         ).use { cursor ->
@@ -600,12 +601,56 @@ class CustomExerciseRepository(
                 while (cursor.moveToNext()) {
                     put(
                         JSONObject()
-                            .put("synonym_name", cursor.getString(0))
-                            .put("synonym_name_normalized", cursor.getString(1))
-                            .put("synonym_type", cursor.getString(2))
-                            .put("source", cursor.getString(3))
-                            .put("confidence_score", if (cursor.isNull(4)) JSONObject.NULL else cursor.getDouble(4))
-                            .put("created_at_utc", cursor.getString(5)),
+                            .put("synonym_id", cursor.getLong(0))
+                            .put("synonym_name", cursor.getString(1))
+                            .put("synonym_name_normalized", cursor.getString(2))
+                            .put("synonym_type", cursor.getString(3))
+                            .put("source", cursor.getString(4))
+                            .put("confidence_score", if (cursor.isNull(5)) JSONObject.NULL else cursor.getDouble(5))
+                            .put("created_at_utc", cursor.getString(6)),
+                    )
+                }
+            }
+        }
+
+    private fun exportWorkUnits(db: SQLiteDatabase, exerciseId: Long): JSONArray =
+        db.rawQuery(
+            """
+            SELECT
+                sequence_no,
+                unit_key,
+                display_label,
+                value_type,
+                unit_label,
+                default_value,
+                min_value,
+                max_value,
+                step_value,
+                is_primary,
+                is_required,
+                tracks_effort
+            FROM exercise_work_units
+            WHERE exercise_id = ?
+            ORDER BY sequence_no
+            """.trimIndent(),
+            arrayOf(exerciseId.toString()),
+        ).use { cursor ->
+            JSONArray().apply {
+                while (cursor.moveToNext()) {
+                    put(
+                        JSONObject()
+                            .put("sequence_no", cursor.getInt(0))
+                            .put("unit_key", cursor.getString(1))
+                            .put("display_label", cursor.getString(2))
+                            .put("value_type", cursor.getString(3))
+                            .put("unit_label", cursor.getStringOrNull(4))
+                            .put("default_value", cursor.getStringOrNull(5))
+                            .put("min_value", if (cursor.isNull(6)) JSONObject.NULL else cursor.getDouble(6))
+                            .put("max_value", if (cursor.isNull(7)) JSONObject.NULL else cursor.getDouble(7))
+                            .put("step_value", if (cursor.isNull(8)) JSONObject.NULL else cursor.getDouble(8))
+                            .put("is_primary", cursor.getInt(9) == 1)
+                            .put("is_required", cursor.getInt(10) == 1)
+                            .put("tracks_effort", cursor.getInt(11) == 1),
                     )
                 }
             }
