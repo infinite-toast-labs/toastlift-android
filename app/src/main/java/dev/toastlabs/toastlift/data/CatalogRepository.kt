@@ -1437,7 +1437,7 @@ private fun muscleTargetTermsClause(
 
 private val freshnessMuscleSqlTerms = mapOf(
     "chest" to listOf("pec", "chest"),
-    "back" to listOf("back", "lat", "trap", "rhomboid", "rear delt", "posterior delt"),
+    "back" to listOf("back", "latissimus", "lats", "trap", "rhomboid", "rear delt", "posterior delt"),
     "shoulders" to listOf("shoulder", "delt"),
     "triceps" to listOf("tricep"),
     "biceps" to listOf("bicep", "brachialis", "brachioradialis"),

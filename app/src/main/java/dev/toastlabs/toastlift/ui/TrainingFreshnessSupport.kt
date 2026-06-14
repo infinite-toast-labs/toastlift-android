@@ -7,6 +7,7 @@ import dev.toastlabs.toastlift.data.UserProfile
 import dev.toastlabs.toastlift.data.WeeklyMuscleTargetWorkoutRow
 import dev.toastlabs.toastlift.data.normalizeTrainingFreshnessBucketExercises
 import dev.toastlabs.toastlift.data.normalizeTrainingFreshnessThresholdDays
+import dev.toastlabs.toastlift.data.resolveMuscleTargetContributions
 import java.time.Duration
 import java.time.Instant
 import java.time.ZoneId
@@ -409,8 +410,7 @@ internal fun resolveTrainingFreshnessContributions(
     if (detail == null) return emptyList()
     val contributions = linkedMapOf<String, TrainingFreshnessContribution>()
 
-    fun add(muscleName: String?, weight: Double) {
-        val slot = muscleName?.let(::mapTrainingFreshnessMuscle) ?: return
+    fun addSlot(slot: TrainingFreshnessSlot, weight: Double) {
         val current = contributions[slot.key]
         if (current == null || weight > current.weight) {
             contributions[slot.key] = TrainingFreshnessContribution(
@@ -420,6 +420,17 @@ internal fun resolveTrainingFreshnessContributions(
                 weight = weight,
                 exerciseName = detail.summary.name,
             )
+        }
+    }
+
+    fun add(muscleName: String?, weight: Double) {
+        val slot = muscleName?.let(::mapTrainingFreshnessMuscle) ?: return
+        addSlot(slot, weight)
+    }
+
+    resolveMuscleTargetContributions(detail).forEach { contribution ->
+        mapMuscleTargetToTrainingFreshnessSlot(contribution.subcategoryKey)?.let { slot ->
+            addSlot(slot, contribution.weight)
         }
     }
 
@@ -463,6 +474,25 @@ internal fun resolveTrainingFreshnessContributions(
             exerciseName = exercise.name,
         ),
     )
+}
+
+private fun mapMuscleTargetToTrainingFreshnessSlot(subcategoryKey: String): TrainingFreshnessSlot? {
+    val slotKey = when (subcategoryKey) {
+        "chest" -> "chest"
+        "shoulders", "front_delts", "side_delts" -> "shoulders"
+        "triceps" -> "triceps"
+        "back", "lats", "upper_back", "rear_delts", "traps" -> "back"
+        "biceps" -> "biceps"
+        "forearms" -> "forearms"
+        "quadriceps" -> "quadriceps"
+        "hamstrings" -> "hamstrings"
+        "glutes" -> "glutes"
+        "calves" -> "calves"
+        "adductors" -> "adductors"
+        "abductors" -> "abductors"
+        else -> return null
+    }
+    return slot(slotKey)
 }
 
 private fun fallbackTrainingFreshnessContributions(detail: ExerciseDetail): List<TrainingFreshnessSlot> {

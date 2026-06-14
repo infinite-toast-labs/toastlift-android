@@ -39,7 +39,15 @@ private val pushSubcategories = listOf(
         key = "shoulders",
         label = "Shoulders",
         bucketKey = MuscleTargetBucketKey.Push.storageKey,
-        sqlTerms = listOf("shoulder", "delt", "deltoid"),
+        sqlTerms = listOf(
+            "shoulder",
+            "front delt",
+            "anterior delt",
+            "side delt",
+            "lateral delt",
+            "middle delt",
+            "medial delt",
+        ),
         targetMultiplier = 0.4,
     ),
     MuscleTargetSubcategory(
@@ -53,7 +61,12 @@ private val pushSubcategories = listOf(
         key = "side_delts",
         label = "Side Delts",
         bucketKey = MuscleTargetBucketKey.Push.storageKey,
-        sqlTerms = listOf("side delt", "lateral delt", "middle delt"),
+        sqlTerms = listOf(
+            "side delt",
+            "lateral delt",
+            "middle delt",
+            "medial delt",
+        ),
         targetMultiplier = 0.3,
     ),
     MuscleTargetSubcategory(
@@ -70,7 +83,7 @@ private val pullSubcategories = listOf(
         key = "lats",
         label = "Lats",
         bucketKey = MuscleTargetBucketKey.Pull.storageKey,
-        sqlTerms = listOf("latissimus", "lat"),
+        sqlTerms = listOf("latissimus", "lats"),
         targetMultiplier = 0.6,
     ),
     MuscleTargetSubcategory(
@@ -84,7 +97,20 @@ private val pullSubcategories = listOf(
         key = "back",
         label = "Back",
         bucketKey = MuscleTargetBucketKey.Pull.storageKey,
-        sqlTerms = listOf("back"),
+        sqlTerms = listOf(
+            "back",
+            "latissimus",
+            "lats",
+            "rhomboid",
+            "upper back",
+            "middle trap",
+            "mid trap",
+            "lower trap",
+            "trap",
+            "trapezius",
+            "rear delt",
+            "posterior delt",
+        ),
         targetMultiplier = 0.35,
     ),
     MuscleTargetSubcategory(
@@ -206,7 +232,8 @@ fun normalizeMuscleTargetSubcategoryKey(value: String?): String? {
         normalized in targetSubcategories.map(MuscleTargetSubcategory::key) -> normalized
         normalized.contains("pec") || normalized.contains("chest") -> "chest"
         normalized.contains("front delt") || normalized.contains("anterior delt") -> "front_delts"
-        normalized.contains("side delt") || normalized.contains("lateral delt") || normalized.contains("middle delt") -> "side_delts"
+        normalized.contains("side delt") || normalized.contains("lateral delt") || normalized.contains("middle delt") ||
+            normalized.contains("medial delt") -> "side_delts"
         normalized.contains("rear delt") || normalized.contains("posterior delt") -> "rear_delts"
         normalized.contains("shoulder") || normalized.contains("delt") || normalized.contains("deltoid") -> "shoulders"
         normalized.contains("tricep") -> "triceps"
@@ -303,24 +330,36 @@ fun resolveMuscleTargetContributions(
     add(secondaryMuscle, 0.5)
     add(tertiaryMuscle, 0.5)
 
-    suppressOverlappingGenericContributions(contributions)
+    addRollupContributions(contributions)
 
     if (contributions.isNotEmpty()) return contributions.values.toList()
 
     return fallbackMuscleTargetContributions(movementPatterns.map(::normalizeMuscleTargetToken))
 }
 
-private fun suppressOverlappingGenericContributions(contributions: MutableMap<String, MuscleTargetContribution>) {
-    if ("shoulders" in contributions.keys && contributions.keys.any { it in specificShoulderSubcategoryKeys }) {
-        contributions.remove("shoulders")
-    }
-    if ("back" in contributions.keys && contributions.keys.any { it in specificBackSubcategoryKeys }) {
-        contributions.remove("back")
+private fun addRollupContributions(contributions: MutableMap<String, MuscleTargetContribution>) {
+    rollupChildKeys.forEach { (rollupKey, childKeys) ->
+        val rollupSubcategory = muscleTargetSubcategory(rollupKey) ?: return@forEach
+        val rollupWeight = childKeys
+            .mapNotNull { childKey -> contributions[childKey]?.weight }
+            .maxOrNull()
+            ?: return@forEach
+        val existing = contributions[rollupKey]
+        if (existing == null || rollupWeight > existing.weight) {
+            contributions[rollupKey] = MuscleTargetContribution(
+                bucketKey = rollupSubcategory.bucketKey,
+                subcategoryKey = rollupSubcategory.key,
+                subcategoryLabel = rollupSubcategory.label,
+                weight = rollupWeight,
+            )
+        }
     }
 }
 
-private val specificShoulderSubcategoryKeys = setOf("front_delts", "side_delts", "rear_delts")
-private val specificBackSubcategoryKeys = setOf("lats", "upper_back", "rear_delts", "traps")
+private val rollupChildKeys = linkedMapOf(
+    "shoulders" to setOf("front_delts", "side_delts"),
+    "back" to setOf("lats", "upper_back", "rear_delts", "traps"),
+)
 
 fun muscleTargetBucketSubcategoryKeys(bucketKeys: Set<String>, subcategoryKeys: Set<String>): Set<String> {
     val selectedSubcategories = subcategoryKeys.mapNotNull(::normalizeMuscleTargetSubcategoryKey).toSet()

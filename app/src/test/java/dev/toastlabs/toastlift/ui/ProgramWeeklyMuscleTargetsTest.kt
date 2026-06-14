@@ -41,7 +41,7 @@ class ProgramWeeklyMuscleTargetsTest {
         )
 
         assertEquals("15 Mar - 21 Mar", weeklyMuscleTargetRangeLabel(summary.range))
-        assertEquals(28.5, summary.completedSets, 0.001)
+        assertEquals(33.5, summary.completedSets, 0.001)
         assertEquals(117.0, summary.targetSets, 0.001)
         assertEquals(2, summary.history.size)
         assertEquals(summary.overallCompletionRatio, summary.history.last().completionRatio, 0.001)
@@ -52,7 +52,7 @@ class ProgramWeeklyMuscleTargetsTest {
         assertEquals(35.4, push.targetSets, 0.001)
 
         val pull = summary.groupSummaries.first { it.key == "pull" }
-        assertEquals(7.5, pull.completedSets, 0.001)
+        assertEquals(12.5, pull.completedSets, 0.001)
         assertEquals(33.6, pull.targetSets, 0.001)
 
         val legs = summary.groupSummaries.first { it.key == "legs" }

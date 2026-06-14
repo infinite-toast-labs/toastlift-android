@@ -1,6 +1,7 @@
 package dev.toastlabs.toastlift.data
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -42,6 +43,21 @@ class LibraryMuscleTargetFilterTest {
         assertTrue(clause.contains("%chest%"))
         assertTrue(clause.contains("%tricep%"))
         assertTrue(clause.contains("%hamstring%"))
+    }
+
+    @Test
+    fun libraryMuscleTargetFilterClause_expandsBackWithoutBroadLatSubstring() {
+        val clause = requireNotNull(
+            libraryMuscleTargetFilterClause(
+                bucketKeys = emptySet(),
+                subcategoryKeys = setOf("back"),
+            ),
+        )
+
+        assertTrue(clause.contains("%latissimus%"))
+        assertTrue(clause.contains("%lats%"))
+        assertTrue(clause.contains("%rhomboid%"))
+        assertFalse(clause.contains("%lat%"))
     }
 
     @Test

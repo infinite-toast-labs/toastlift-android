@@ -2046,12 +2046,13 @@ private fun muscleFamilyKey(value: String?): String? {
     val normalized = normalizeMuscleToken(value)
     if (normalized.isBlank()) return null
     return when {
-        normalized.contains("lat") -> "lats"
-        normalized.contains("rhomboid") -> "rhomboids"
         normalized.contains("rear delt") || normalized.contains("posterior delt") -> "rear_delts"
         normalized.contains("front delt") || normalized.contains("anterior delt") -> "front_delts"
-        normalized.contains("side delt") || normalized.contains("lateral delt") -> "side_delts"
+        normalized.contains("side delt") || normalized.contains("lateral delt") || normalized.contains("middle delt") ||
+            normalized.contains("medial delt") -> "side_delts"
         normalized.contains("delt") || normalized.contains("shoulder") -> "shoulders"
+        normalized.contains("latissimus") || normalized.contains("lats") -> "lats"
+        normalized.contains("rhomboid") -> "rhomboids"
         normalized.contains("trap") -> "traps"
         normalized.contains("bicep") || normalized.contains("brachialis") || normalized.contains("brachioradialis") -> "biceps"
         normalized.contains("tricep") -> "triceps"
