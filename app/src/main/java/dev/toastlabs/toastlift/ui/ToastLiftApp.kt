@@ -46,6 +46,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -190,6 +191,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
@@ -285,6 +287,7 @@ import dev.toastlabs.toastlift.data.muscleTargetBuckets
 import dev.toastlabs.toastlift.data.muscleTargetSubcategoriesForBucket
 import dev.toastlabs.toastlift.data.normalizeExerciseVideoLinkLabel
 import dev.toastlabs.toastlift.data.normalizeExerciseVideoLinkUrl
+import dev.toastlabs.toastlift.data.resolveMuscleTargetContributions
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
@@ -10671,6 +10674,7 @@ private fun ActiveSessionScreen(
     if (selectedExercise != null) {
         SessionExerciseDetailScreen(
             exercise = selectedExercise,
+            exerciseDetail = exerciseDetailsById[selectedExercise.exerciseId],
             performanceStats = state.activeExercisePerformanceStatsById[selectedExercise.exerciseId],
             muscleTargetSummary = muscleTargetSummary,
             weeklyMuscleTargets = activeSessionWeeklyMuscleTargets,
@@ -12117,7 +12121,7 @@ private fun ActiveWorkoutDetailsSheet(
                 }
             }
 
-            ActiveWorkoutMuscleTargetCoverageCard(
+            ActiveWorkoutMuscleTargetOverviewCard(
                 summary = muscleTargetSummary,
                 action = muscleTargetAction,
                 weeklyMuscleTargets = weeklyMuscleTargets,
@@ -12145,32 +12149,58 @@ private fun ActiveWorkoutDetailsSheet(
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun ActiveWorkoutMuscleTargetCoverageCard(
+private fun ActiveWorkoutMuscleTargetLiveCard(
     summary: ActiveWorkoutMuscleTargetCoverageSummary,
-    action: ActiveWorkoutMuscleTargetAction?,
-    onAction: (ActiveWorkoutMuscleTargetAction) -> Unit,
-    weeklyMuscleTargets: WeeklyMuscleTargetSummary? = null,
+    weeklyMuscleTargets: WeeklyMuscleTargetSummary?,
+    spotlightExercise: SessionExercise,
+    spotlightExerciseDetail: ExerciseDetail?,
 ) {
-    var expandedBucketKey by rememberSaveable { mutableStateOf<String?>(null) }
     val weeklyGroupsByKey = remember(weeklyMuscleTargets) {
         weeklyMuscleTargets?.groupSummaries?.associateBy { it.key }.orEmpty()
     }
     val orderedBucketRows = remember(summary.bucketRows, weeklyGroupsByKey) {
         sortedActiveWorkoutMuscleTargetBucketRows(summary.bucketRows, weeklyGroupsByKey)
     }
-    FeatureCard(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.82f)) {
-        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    val spotlightRows = remember(spotlightExercise, spotlightExerciseDetail) {
+        activeWorkoutMuscleTargetSpotlightRows(
+            exercise = spotlightExercise,
+            detail = spotlightExerciseDetail,
+        )
+    }
+    val spotlightBucketKeys = remember(spotlightRows) {
+        spotlightRows.mapTo(linkedSetOf()) { it.bucketKey }
+    }
+    val headline = when {
+        spotlightRows.isNotEmpty() -> spotlightRows.take(3).joinToString(" + ") { it.label }
+        else -> summary.balanceLabel
+    }
+    val subhead = when {
+        spotlightRows.any { it.completedWeightedSets > 0.0 } ->
+            "+${decimalString(spotlightRows.sumOf { it.completedWeightedSets })} weighted sets from logged work"
+        spotlightRows.any { it.plannedWeightedSets > 0.0 } ->
+            "${decimalString(spotlightRows.sumOf { it.plannedWeightedSets })} weighted sets planned here"
+        else -> summary.cueLabel ?: summary.lens.label
+    }
+    val headerAccent = spotlightBucketKeys.firstOrNull()?.let { bucketKey -> weeklyMuscleAccent(bucketKey) } ?: goldAccent
+    FeatureCard(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f)) {
+        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text("Muscle Targets", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                LeadingBadge(
+                    label = "MT",
+                    accent = headerAccent,
+                )
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Text("Target Impact", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                     Text(
                         weeklyMuscleTargets?.let { "This Week • ${weeklyMuscleTargetRangeLabel(it.range)}" } ?: summary.lens.label,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
                 MiniTag(
@@ -12178,49 +12208,436 @@ private fun ActiveWorkoutMuscleTargetCoverageCard(
                         ?: "${summary.coveredBucketCount}/${summary.plannedBucketCount}",
                 )
             }
-            Text(
-                summary.balanceLabel,
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.SemiBold,
+
+            ActiveWorkoutMuscleTargetImpactHero(
+                headline = headline,
+                subhead = subhead,
+                spotlightRows = spotlightRows,
             )
-            summary.cueLabel?.let { cue ->
+
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                orderedBucketRows.forEach { row ->
+                    ActiveWorkoutMuscleTargetBucketTile(
+                        row = row,
+                        weeklyGroup = weeklyGroupsByKey[row.key],
+                        highlighted = row.key in spotlightBucketKeys,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
+
+            if (summary.cueLabel != null && spotlightRows.isEmpty()) {
                 Text(
-                    cue,
+                    summary.cueLabel,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+
+        }
+    }
+}
+
+@Composable
+private fun ActiveWorkoutMuscleTargetOverviewCard(
+    summary: ActiveWorkoutMuscleTargetCoverageSummary,
+    action: ActiveWorkoutMuscleTargetAction?,
+    onAction: (ActiveWorkoutMuscleTargetAction) -> Unit,
+    weeklyMuscleTargets: WeeklyMuscleTargetSummary?,
+) {
+    val weeklyGroupsByKey = remember(weeklyMuscleTargets) {
+        weeklyMuscleTargets?.groupSummaries?.associateBy { it.key }.orEmpty()
+    }
+    val orderedBucketRows = remember(summary.bucketRows, weeklyGroupsByKey) {
+        sortedActiveWorkoutMuscleTargetBucketRows(summary.bucketRows, weeklyGroupsByKey)
+    }
+    FeatureCard(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f)) {
+        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                LeadingBadge(label = "MT", accent = goldAccent)
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Text("Target Overview", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text(
+                        weeklyMuscleTargets?.let { "This Week • ${weeklyMuscleTargetRangeLabel(it.range)}" } ?: summary.lens.label,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                MiniTag(
+                    weeklyMuscleTargets?.let { percentString(it.overallCompletionRatio.coerceIn(0.0, 1.0)) }
+                        ?: "${summary.coveredBucketCount}/${summary.plannedBucketCount}",
+                )
+            }
+
+            ActiveWorkoutMuscleTargetOverviewHero(summary)
+
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 orderedBucketRows.forEach { row ->
-                    ActiveWorkoutMuscleTargetBucketProgressRow(
+                    ActiveWorkoutMuscleTargetOverviewBucketSection(
                         row = row,
                         weeklyGroup = weeklyGroupsByKey[row.key],
-                        expanded = expandedBucketKey == row.key,
-                        onToggle = {
-                            expandedBucketKey = if (expandedBucketKey == row.key) null else row.key
-                        },
                     )
                 }
             }
+
             action?.let { targetAction ->
-                Button(
-                    onClick = { onAction(targetAction) },
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = weeklyMuscleAccent(targetAction.bucketKey).start,
-                        contentColor = weeklyMuscleAccent(targetAction.bucketKey).textOnAccent,
+                ActiveWorkoutMuscleTargetActionCallout(
+                    action = targetAction,
+                    onAction = onAction,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ActiveWorkoutMuscleTargetOverviewHero(
+    summary: ActiveWorkoutMuscleTargetCoverageSummary,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(
+            summary.balanceLabel,
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Bold,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+        summary.cueLabel?.let { cue ->
+            Text(
+                cue,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            MiniTag("${summary.coveredBucketCount}/${summary.plannedBucketCount} covered")
+            MiniTag(summary.lens.label)
+        }
+    }
+}
+
+@Composable
+private fun ActiveWorkoutMuscleTargetOverviewBucketSection(
+    row: ActiveWorkoutMuscleTargetBucketRow,
+    weeklyGroup: WeeklyMuscleTargetGroupSummary?,
+) {
+    val weeklyMusclesByKey = remember(weeklyGroup) {
+        weeklyGroup?.muscleSummaries?.associateBy { it.key }.orEmpty()
+    }
+    val sortedSubcategories = remember(row.subcategories, weeklyMusclesByKey) {
+        sortedActiveWorkoutMuscleTargetSubcategoryRows(row.subcategories, weeklyMusclesByKey)
+    }
+    val weeklyProgress = activeWorkoutMuscleTargetWeeklyProgress(
+        weeklyCompletedSets = weeklyGroup?.completedSets,
+        weeklyTargetSets = weeklyGroup?.targetSets,
+        activeCompletedWeightedSets = row.completedWeightedSets,
+    )
+    val progress = activeWorkoutMuscleTargetProgressFraction(
+        rowProgressFraction = row.progressFraction,
+        weeklyProgress = weeklyProgress,
+    )
+    val animatedProgress by animateFloatAsState(
+        targetValue = progress,
+        label = "activeWorkoutMuscleTargetOverviewBucket",
+    )
+    val accent = weeklyMuscleAccent(row.key)
+    val shape = RoundedCornerShape(8.dp)
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.38f))
+            .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.16f), shape)
+            .padding(10.dp),
+        verticalArrangement = Arrangement.spacedBy(9.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(10.dp)
+                    .clip(CircleShape)
+                    .background(accent.start),
+            )
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    row.label.removeSuffix(" Muscles"),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    activeWorkoutMuscleTargetProgressLabel(
+                        state = row.state,
+                        completedWeightedSets = row.completedWeightedSets,
+                        plannedWeightedSets = row.plannedWeightedSets,
+                        weeklyProgress = weeklyProgress,
                     ),
-                ) {
-                    Icon(
-                        imageVector = when (targetAction.type) {
-                            ActiveWorkoutMuscleTargetActionType.OpenExercise -> Icons.Rounded.FitnessCenter
-                            ActiveWorkoutMuscleTargetActionType.OpenFilteredPicker -> Icons.Rounded.Search
-                        },
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp),
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(targetAction.ctaLabel, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+        ActiveWorkoutMuscleTargetOverviewProgressBar(
+            progress = animatedProgress,
+            accent = accent,
+            height = 6.dp,
+        )
+        Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+            sortedSubcategories.forEach { subcategory ->
+                ActiveWorkoutMuscleTargetOverviewSubcategoryRow(
+                    row = subcategory,
+                    weeklyMuscle = weeklyMusclesByKey[subcategory.key],
+                    accent = accent,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ActiveWorkoutMuscleTargetOverviewSubcategoryRow(
+    row: ActiveWorkoutMuscleTargetSubcategoryRow,
+    weeklyMuscle: WeeklyMuscleTargetMuscleSummary?,
+    accent: GlowAccent,
+) {
+    val weeklyProgress = activeWorkoutMuscleTargetWeeklyProgress(
+        weeklyCompletedSets = weeklyMuscle?.completedSets,
+        weeklyTargetSets = weeklyMuscle?.targetSets,
+        activeCompletedWeightedSets = row.completedWeightedSets,
+    )
+    val progress = activeWorkoutMuscleTargetProgressFraction(
+        rowProgressFraction = row.progressFraction,
+        weeklyProgress = weeklyProgress,
+    )
+    val animatedProgress by animateFloatAsState(
+        targetValue = progress,
+        label = "activeWorkoutMuscleTargetOverviewSubcategory",
+    )
+    val expectedInCurrentWorkout = row.plannedWeightedSets > 0.0
+    val shape = RoundedCornerShape(6.dp)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(IntrinsicSize.Min)
+            .clip(shape)
+            .background(
+                if (expectedInCurrentWorkout) {
+                    accent.start.copy(alpha = if (LocalToastLiftIsDarkTheme.current) 0.16f else 0.08f)
+                } else {
+                    Color.Transparent
+                },
+            ),
+    ) {
+        Box(
+            modifier = Modifier
+                .width(4.dp)
+                .fillMaxHeight()
+                .background(if (expectedInCurrentWorkout) accent.start else Color.Transparent),
+        )
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .padding(start = 8.dp, top = 3.dp, bottom = 3.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    row.label,
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    activeWorkoutMuscleTargetProgressLabel(
+                        state = row.state,
+                        completedWeightedSets = row.completedWeightedSets,
+                        plannedWeightedSets = row.plannedWeightedSets,
+                        weeklyProgress = weeklyProgress,
+                    ),
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    softWrap = false,
+                )
+            }
+            ActiveWorkoutMuscleTargetOverviewProgressBar(
+                progress = animatedProgress,
+                accent = accent,
+                height = 4.dp,
+            )
+        }
+    }
+}
+
+@Composable
+private fun ActiveWorkoutMuscleTargetOverviewProgressBar(
+    progress: Float,
+    accent: GlowAccent,
+    height: Dp,
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(height)
+            .clip(RoundedCornerShape(999.dp))
+            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.72f)),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxHeight()
+                .fillMaxWidth(progress.coerceIn(0f, 1f))
+                .background(accent.start),
+        )
+    }
+}
+
+private fun activeWorkoutMuscleTargetProgressFraction(
+    rowProgressFraction: Float,
+    weeklyProgress: ActiveWorkoutMuscleTargetWeeklyProgress?,
+): Float {
+    return weeklyProgress?.progressFraction ?: rowProgressFraction.coerceIn(0f, 1f)
+}
+
+private fun activeWorkoutMuscleTargetProgressLabel(
+    state: ActiveWorkoutMuscleTargetState,
+    completedWeightedSets: Double,
+    plannedWeightedSets: Double,
+    weeklyProgress: ActiveWorkoutMuscleTargetWeeklyProgress?,
+): String {
+    weeklyProgress?.let { return it.label }
+    return when (state) {
+        ActiveWorkoutMuscleTargetState.NotPlanned -> "--"
+        ActiveWorkoutMuscleTargetState.Planned,
+        ActiveWorkoutMuscleTargetState.InProgress,
+        ActiveWorkoutMuscleTargetState.Covered,
+        ActiveWorkoutMuscleTargetState.OverCovered,
+        -> "${decimalString(completedWeightedSets)} / ${decimalString(plannedWeightedSets)}"
+    }
+}
+
+internal data class ActiveWorkoutMuscleTargetSpotlightRow(
+    val key: String,
+    val label: String,
+    val bucketKey: String,
+    val plannedWeightedSets: Double,
+    val completedWeightedSets: Double,
+    val progressFraction: Float,
+)
+
+internal fun activeWorkoutMuscleTargetSpotlightRows(
+    exercise: SessionExercise?,
+    detail: ExerciseDetail?,
+): List<ActiveWorkoutMuscleTargetSpotlightRow> {
+    if (exercise == null) return emptyList()
+    val plannedSetCount = exercise.sets.size
+    if (plannedSetCount <= 0) return emptyList()
+    val completedSetCount = exercise.sets.count(SessionSet::completed)
+    return resolveMuscleTargetContributions(exercise = exercise, detail = detail)
+        .filter { contribution -> contribution.weight > 0.0 }
+        .sortedWith(
+            compareBy<dev.toastlabs.toastlift.data.MuscleTargetContribution> { contribution ->
+                activeWorkoutMuscleTargetSpotlightPriority(contribution.subcategoryKey)
+            }.thenByDescending { contribution -> contribution.weight }
+                .thenBy { contribution -> contribution.subcategoryLabel },
+        )
+        .map { contribution ->
+            val planned = plannedSetCount * contribution.weight
+            val completed = completedSetCount * contribution.weight
+            ActiveWorkoutMuscleTargetSpotlightRow(
+                key = contribution.subcategoryKey,
+                label = contribution.subcategoryLabel,
+                bucketKey = contribution.bucketKey,
+                plannedWeightedSets = planned,
+                completedWeightedSets = completed,
+                progressFraction = if (planned > 0.0) (completed / planned).coerceIn(0.0, 1.0).toFloat() else 0f,
+            )
+        }
+}
+
+private fun activeWorkoutMuscleTargetSpotlightPriority(key: String): Int {
+    return when (key) {
+        "chest" -> 0
+        "back" -> 1
+        "shoulders" -> 2
+        "quadriceps" -> 3
+        "hamstrings" -> 4
+        "glutes" -> 5
+        "triceps" -> 6
+        "biceps" -> 7
+        "lats" -> 8
+        "upper_back" -> 9
+        "front_delts" -> 10
+        "side_delts" -> 11
+        "rear_delts" -> 12
+        else -> 20
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ActiveWorkoutMuscleTargetImpactHero(
+    headline: String,
+    subhead: String,
+    spotlightRows: List<ActiveWorkoutMuscleTargetSpotlightRow>,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text(
+                headline,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                subhead,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        if (spotlightRows.isNotEmpty()) {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                spotlightRows.take(5).forEach { row ->
+                    ActiveWorkoutMuscleTargetImpactChip(row)
                 }
             }
         }
@@ -12228,167 +12645,195 @@ private fun ActiveWorkoutMuscleTargetCoverageCard(
 }
 
 @Composable
-private fun ActiveWorkoutMuscleTargetBucketProgressRow(
+private fun ActiveWorkoutMuscleTargetImpactChip(row: ActiveWorkoutMuscleTargetSpotlightRow) {
+    val accent = weeklyMuscleAccent(row.bucketKey)
+    val progress by animateFloatAsState(
+        targetValue = row.progressFraction.coerceIn(0f, 1f),
+        label = "activeWorkoutMuscleTargetImpactChip",
+    )
+    Column(
+        modifier = Modifier
+            .width(132.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(accent.glow.copy(alpha = if (LocalToastLiftIsDarkTheme.current) 0.62f else 0.42f))
+            .border(1.dp, accent.start.copy(alpha = 0.26f), RoundedCornerShape(8.dp))
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier
+                    .size(8.dp)
+                    .clip(CircleShape)
+                    .background(accent.start),
+            )
+            Text(
+                row.label,
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(4.dp)
+                .clip(RoundedCornerShape(999.dp))
+                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.7f)),
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .fillMaxWidth(progress)
+                    .background(accent.start),
+            )
+        }
+        Text(
+            "${decimalString(row.completedWeightedSets)} / ${decimalString(row.plannedWeightedSets)}",
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+        )
+    }
+}
+
+@Composable
+private fun ActiveWorkoutMuscleTargetBucketTile(
     row: ActiveWorkoutMuscleTargetBucketRow,
     weeklyGroup: WeeklyMuscleTargetGroupSummary?,
-    expanded: Boolean,
-    onToggle: () -> Unit,
+    highlighted: Boolean,
+    modifier: Modifier = Modifier,
 ) {
     val weeklyProgress = activeWorkoutMuscleTargetWeeklyProgress(
         weeklyCompletedSets = weeklyGroup?.completedSets,
         weeklyTargetSets = weeklyGroup?.targetSets,
         activeCompletedWeightedSets = row.completedWeightedSets,
     )
+    val targetProgress = if (weeklyProgress != null && row.state != ActiveWorkoutMuscleTargetState.NotPlanned) {
+        weeklyProgress.progressFraction
+    } else {
+        row.progressFraction.coerceIn(0f, 1f)
+    }
     val progress by animateFloatAsState(
-        targetValue = if (weeklyProgress != null && row.state != ActiveWorkoutMuscleTargetState.NotPlanned) {
-            weeklyProgress.progressFraction
-        } else {
-            row.progressFraction.coerceIn(0f, 1f)
-        },
-        label = "activeWorkoutMuscleTargetBucketProgress",
+        targetValue = targetProgress,
+        label = "activeWorkoutMuscleTargetBucketTile",
     )
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        ActiveWorkoutMuscleTargetBar(
-            label = row.label,
-            trailingText = activeWorkoutMuscleTargetTrailingText(row, weeklyProgress),
-            progress = progress,
-            accent = weeklyMuscleAccent(row.key),
-            state = row.state,
-            modifier = Modifier.clickable(onClick = onToggle),
-        )
-        if (expanded) {
-            Column(
-                modifier = Modifier.padding(start = 10.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                val weeklyMusclesByKey = weeklyGroup?.muscleSummaries?.associateBy { it.key }.orEmpty()
-                sortedActiveWorkoutMuscleTargetSubcategoryRows(row.subcategories, weeklyMusclesByKey).forEach { subcategory ->
-                    val subcategoryWeeklyProgress = activeWorkoutMuscleTargetWeeklyProgress(
-                        weeklyCompletedSets = weeklyMusclesByKey[subcategory.key]?.completedSets,
-                        weeklyTargetSets = weeklyMusclesByKey[subcategory.key]?.targetSets,
-                        activeCompletedWeightedSets = subcategory.completedWeightedSets,
-                    )
-                    val subProgress by animateFloatAsState(
-                        targetValue = if (subcategoryWeeklyProgress != null && subcategory.state != ActiveWorkoutMuscleTargetState.NotPlanned) {
-                            subcategoryWeeklyProgress.progressFraction
-                        } else {
-                            subcategory.progressFraction.coerceIn(0f, 1f)
-                        },
-                        label = "activeWorkoutMuscleTargetSubcategoryProgress",
-                    )
-                    ActiveWorkoutMuscleTargetBar(
-                        label = subcategory.label,
-                        trailingText = activeWorkoutMuscleTargetSubcategoryTrailingText(
-                            subcategory,
-                            subcategoryWeeklyProgress,
-                        ),
-                        progress = subProgress,
-                        accent = weeklyMuscleAccent(row.key),
-                        state = subcategory.state,
-                    )
-                }
-            }
-        }
+    val accent = weeklyMuscleAccent(row.key)
+    val shape = RoundedCornerShape(8.dp)
+    val title = row.label.removeSuffix(" Muscles")
+    val valueLabel = weeklyProgress?.label ?: when (row.state) {
+        ActiveWorkoutMuscleTargetState.NotPlanned -> "--"
+        ActiveWorkoutMuscleTargetState.Planned,
+        ActiveWorkoutMuscleTargetState.InProgress,
+        ActiveWorkoutMuscleTargetState.Covered,
+        ActiveWorkoutMuscleTargetState.OverCovered,
+        -> "${decimalString(row.completedWeightedSets)} / ${decimalString(row.plannedWeightedSets)}"
     }
-}
-
-@Composable
-private fun ActiveWorkoutMuscleTargetBar(
-    label: String,
-    trailingText: String,
-    progress: Float,
-    accent: GlowAccent,
-    state: ActiveWorkoutMuscleTargetState,
-    modifier: Modifier = Modifier,
-) {
-    val shape = RoundedCornerShape(5.dp)
-    val isEmpty = state == ActiveWorkoutMuscleTargetState.NotPlanned
-    val trackColor = if (isEmpty) {
+    val containerColor = if (highlighted) {
+        accent.glow.copy(alpha = if (LocalToastLiftIsDarkTheme.current) 0.7f else 0.42f)
+    } else {
         MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.46f)
-    } else {
-        accent.glow.copy(alpha = if (LocalToastLiftIsDarkTheme.current) 0.38f else 0.28f)
     }
-    val borderColor = if (isEmpty) {
-        MaterialTheme.colorScheme.outline.copy(alpha = 0.24f)
-    } else {
-        accent.start.copy(alpha = 0.28f)
-    }
-    val textColor = if (isEmpty) {
-        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.78f)
-    } else {
-        MaterialTheme.colorScheme.onSurface
-    }
-    Box(
+    Column(
         modifier = modifier
-            .fillMaxWidth()
-            .height(30.dp)
+            .height(82.dp)
             .clip(shape)
-            .background(trackColor)
-            .border(1.dp, borderColor, shape),
+            .background(containerColor)
+            .border(
+                width = 1.dp,
+                color = if (highlighted) accent.start.copy(alpha = 0.36f) else MaterialTheme.colorScheme.outline.copy(alpha = 0.16f),
+                shape = shape,
+            )
+            .padding(9.dp),
+        verticalArrangement = Arrangement.SpaceBetween,
     ) {
-        if (progress > 0f) {
+        Text(
+            title,
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(5.dp)
+                .clip(RoundedCornerShape(999.dp))
+                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.72f)),
+        ) {
             Box(
                 modifier = Modifier
                     .fillMaxHeight()
                     .fillMaxWidth(progress)
-                    .background(accent.start.copy(alpha = if (LocalToastLiftIsDarkTheme.current) 0.72f else 0.56f)),
+                    .background(accent.start),
             )
         }
-        Row(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 10.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
+        Text(
+            valueLabel,
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+@Composable
+private fun ActiveWorkoutMuscleTargetActionCallout(
+    action: ActiveWorkoutMuscleTargetAction,
+    onAction: (ActiveWorkoutMuscleTargetAction) -> Unit,
+) {
+    val accent = weeklyMuscleAccent(action.bucketKey)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .background(accent.glow.copy(alpha = if (LocalToastLiftIsDarkTheme.current) 0.66f else 0.42f))
+            .border(1.dp, accent.start.copy(alpha = 0.24f), RoundedCornerShape(8.dp))
+            .padding(10.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = when (action.type) {
+                ActiveWorkoutMuscleTargetActionType.OpenExercise -> Icons.Rounded.FitnessCenter
+                ActiveWorkoutMuscleTargetActionType.OpenFilteredPicker -> Icons.Rounded.Search
+            },
+            contentDescription = null,
+            tint = accent.start,
+            modifier = Modifier.size(22.dp),
+        )
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(
-                label,
-                modifier = Modifier.weight(1f),
+                action.title,
                 style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.SemiBold,
-                color = textColor,
+                fontWeight = FontWeight.Bold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                trailingText,
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.Bold,
-                color = textColor,
-                maxLines = 1,
-                softWrap = false,
+                action.body,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
             )
         }
-    }
-}
-
-private fun activeWorkoutMuscleTargetSubcategoryTrailingText(
-    row: ActiveWorkoutMuscleTargetSubcategoryRow,
-    weeklyProgress: ActiveWorkoutMuscleTargetWeeklyProgress? = null,
-): String {
-    weeklyProgress?.let { return it.label }
-    return when (row.state) {
-        ActiveWorkoutMuscleTargetState.NotPlanned -> "--"
-        ActiveWorkoutMuscleTargetState.Planned,
-        ActiveWorkoutMuscleTargetState.InProgress,
-        ActiveWorkoutMuscleTargetState.Covered,
-        ActiveWorkoutMuscleTargetState.OverCovered,
-        -> "${decimalString(row.completedWeightedSets)} / ${decimalString(row.plannedWeightedSets)}"
-    }
-}
-
-private fun activeWorkoutMuscleTargetTrailingText(
-    row: ActiveWorkoutMuscleTargetBucketRow,
-    weeklyProgress: ActiveWorkoutMuscleTargetWeeklyProgress? = null,
-): String {
-    weeklyProgress?.let { return it.label }
-    return when (row.state) {
-        ActiveWorkoutMuscleTargetState.NotPlanned -> "--"
-        ActiveWorkoutMuscleTargetState.Planned,
-        ActiveWorkoutMuscleTargetState.InProgress,
-        ActiveWorkoutMuscleTargetState.Covered,
-        ActiveWorkoutMuscleTargetState.OverCovered,
-        -> "${decimalString(row.completedWeightedSets)} / ${decimalString(row.plannedWeightedSets)}"
+        Button(
+            onClick = { onAction(action) },
+            modifier = Modifier.width(126.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = accent.start,
+                contentColor = accent.textOnAccent,
+            ),
+            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+        ) {
+            Text(action.ctaLabel, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
     }
 }
 
@@ -13228,6 +13673,7 @@ private fun ExerciseEffortPromptCard(
 @Composable
 private fun SessionExerciseDetailScreen(
     exercise: SessionExercise,
+    exerciseDetail: ExerciseDetail?,
     performanceStats: ExercisePerformanceStats?,
     muscleTargetSummary: ActiveWorkoutMuscleTargetCoverageSummary,
     weeklyMuscleTargets: WeeklyMuscleTargetSummary?,
@@ -13407,11 +13853,11 @@ private fun SessionExerciseDetailScreen(
                     }
                 }
                 item {
-                    ActiveWorkoutMuscleTargetCoverageCard(
-                        summary = muscleTargetSummary,
-                        action = null,
-                        onAction = {},
-                        weeklyMuscleTargets = weeklyMuscleTargets,
+            ActiveWorkoutMuscleTargetLiveCard(
+                summary = muscleTargetSummary,
+                weeklyMuscleTargets = weeklyMuscleTargets,
+                spotlightExercise = exercise,
+                spotlightExerciseDetail = exerciseDetail,
                     )
                 }
                 itemsIndexed(

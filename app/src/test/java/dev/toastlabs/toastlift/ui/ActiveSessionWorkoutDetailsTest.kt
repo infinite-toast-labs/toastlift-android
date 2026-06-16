@@ -284,6 +284,59 @@ class ActiveSessionWorkoutDetailsTest {
     }
 
     @Test
+    fun activeWorkoutMuscleTargetSpotlightRows_showCurrentExerciseTargetImpact() {
+        val exercise = exercise(
+            "Machine Shoulder Press",
+            target = "Shoulders",
+            sets = listOf(
+                SessionSet(setNumber = 1, targetReps = "8", completed = true),
+                SessionSet(setNumber = 2, targetReps = "8"),
+                SessionSet(setNumber = 3, targetReps = "8"),
+            ),
+        )
+        val rows = activeWorkoutMuscleTargetSpotlightRows(
+            exercise = exercise,
+            detail = detail(
+                "Machine Shoulder Press",
+                target = "Shoulders",
+                prime = "Anterior Deltoids",
+                secondary = "Triceps Brachii",
+            ),
+        )
+
+        assertEquals(listOf("shoulders", "triceps", "front_delts"), rows.map { it.key })
+        assertEquals(1.0, rows.first { it.key == "shoulders" }.completedWeightedSets, 0.001)
+        assertEquals(3.0, rows.first { it.key == "shoulders" }.plannedWeightedSets, 0.001)
+        assertEquals(0.5, rows.first { it.key == "triceps" }.completedWeightedSets, 0.001)
+    }
+
+    @Test
+    fun activeWorkoutMuscleTargetSpotlightRows_rollBackChildrenIntoBack() {
+        val exercise = exercise(
+            "Cable Row",
+            target = "Back",
+            sets = listOf(
+                SessionSet(setNumber = 1, targetReps = "10", completed = true),
+                SessionSet(setNumber = 2, targetReps = "10", completed = true),
+            ),
+        )
+        val rows = activeWorkoutMuscleTargetSpotlightRows(
+            exercise = exercise,
+            detail = detail(
+                "Cable Row",
+                target = "Back",
+                prime = "Latissimus Dorsi",
+                secondary = "Rhomboids",
+            ),
+        )
+
+        assertEquals(listOf("back", "lats", "upper_back"), rows.map { it.key })
+        assertEquals(2.0, rows.first { it.key == "back" }.completedWeightedSets, 0.001)
+        assertEquals(2.0, rows.first { it.key == "lats" }.completedWeightedSets, 0.001)
+        assertEquals(1.0, rows.first { it.key == "upper_back" }.completedWeightedSets, 0.001)
+    }
+
+    @Test
     fun weeklyMuscleTargetRemainingLabel_matchesWeeklyTargetScreenCopy() {
         assertEquals("10 to go", weeklyMuscleTargetRemainingLabel(completedSets = 0.0, targetSets = 10.0))
         assertEquals("2.5 to go", weeklyMuscleTargetRemainingLabel(completedSets = 7.5, targetSets = 10.0))
