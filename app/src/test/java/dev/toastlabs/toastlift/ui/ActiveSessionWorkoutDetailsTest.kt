@@ -9,6 +9,7 @@ import dev.toastlabs.toastlift.data.elapsedDurationSeconds
 import dev.toastlabs.toastlift.data.pause
 import dev.toastlabs.toastlift.data.resume
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -334,6 +335,59 @@ class ActiveSessionWorkoutDetailsTest {
         assertEquals(2.0, rows.first { it.key == "back" }.completedWeightedSets, 0.001)
         assertEquals(2.0, rows.first { it.key == "lats" }.completedWeightedSets, 0.001)
         assertEquals(1.0, rows.first { it.key == "upper_back" }.completedWeightedSets, 0.001)
+    }
+
+    @Test
+    fun activeWorkoutMuscleTargetSpotlightRows_doesNotShowUpperBodyFalsePositivesForLowerBodyAnatomy() {
+        val abductorRows = activeWorkoutMuscleTargetSpotlightRows(
+            exercise = exercise(
+                "Hip Abductor Machine",
+                target = "Abductors",
+                sets = listOf(
+                    SessionSet(setNumber = 1, targetReps = "10", completed = true),
+                    SessionSet(setNumber = 2, targetReps = "10"),
+                    SessionSet(setNumber = 3, targetReps = "10"),
+                ),
+            ),
+            detail = detail(
+                "Hip Abductor Machine",
+                target = "Abductors",
+                prime = "Gluteus Medius",
+                secondary = "Gluteus Minimus",
+                tertiary = "Tensor Fasciae Latae",
+                movementPatterns = listOf("Hip Abduction"),
+            ),
+        ).map { it.key }.toSet()
+
+        assertTrue("Hip Abductor Machine should target abductors", "abductors" in abductorRows)
+        assertTrue("Hip Abductor Machine should target glutes", "glutes" in abductorRows)
+        assertFalse("Hip Abductor Machine should not target lats", "lats" in abductorRows)
+        assertFalse("Hip Abductor Machine should not roll false lats into back", "back" in abductorRows)
+
+        val adductorRows = activeWorkoutMuscleTargetSpotlightRows(
+            exercise = exercise(
+                "Thigh Adductor",
+                target = "Adductors",
+                sets = listOf(
+                    SessionSet(setNumber = 1, targetReps = "10", completed = true),
+                    SessionSet(setNumber = 2, targetReps = "10", completed = true),
+                    SessionSet(setNumber = 3, targetReps = "10"),
+                ),
+            ),
+            detail = detail(
+                "Thigh Adductor",
+                target = "Adductors",
+                prime = "Adductor Magnus",
+                secondary = "Gluteus Maximus",
+                tertiary = "Biceps Femoris",
+                movementPatterns = listOf("Hip Adduction"),
+            ),
+        ).map { it.key }.toSet()
+
+        assertTrue("Thigh Adductor should target adductors", "adductors" in adductorRows)
+        assertTrue("Thigh Adductor should target glutes", "glutes" in adductorRows)
+        assertTrue("Thigh Adductor should map Biceps Femoris to hamstrings", "hamstrings" in adductorRows)
+        assertFalse("Thigh Adductor should not target arm biceps", "biceps" in adductorRows)
     }
 
     @Test
@@ -724,6 +778,8 @@ class ActiveSessionWorkoutDetailsTest {
         target: String,
         prime: String? = null,
         secondary: String? = null,
+        tertiary: String? = null,
+        movementPatterns: List<String> = emptyList(),
     ): ExerciseDetail {
         return ExerciseDetail(
             summary = ExerciseSummary(
@@ -740,11 +796,11 @@ class ActiveSessionWorkoutDetailsTest {
             notes = null,
             primeMover = prime,
             secondaryMuscle = secondary,
-            tertiaryMuscle = null,
+            tertiaryMuscle = tertiary,
             posture = "Standing",
             laterality = "Bilateral",
             classification = "Compound",
-            movementPatterns = emptyList(),
+            movementPatterns = movementPatterns,
             planesOfMotion = emptyList(),
             demoUrl = null,
             explanationUrl = null,

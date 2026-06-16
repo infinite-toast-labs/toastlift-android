@@ -190,6 +190,68 @@ private val legSubcategories = listOf(
 
 private val targetSubcategories = pushSubcategories + pullSubcategories + legSubcategories
 
+private val knownCatalogMuscleTargetSubcategoryKeys: Map<String, String?> = mapOf(
+    "abdominals" to null,
+    "abductors" to "abductors",
+    "adductor magnus" to "adductors",
+    "adductors" to "adductors",
+    "anconeus" to "triceps",
+    "anterior deltoids" to "front_delts",
+    "back" to "back",
+    "biceps" to "biceps",
+    "biceps brachii" to "biceps",
+    "biceps femoris" to "hamstrings",
+    "brachialis" to "biceps",
+    "brachioradialis" to "forearms",
+    "calves" to "calves",
+    "cardio" to null,
+    "chest" to "chest",
+    "erector spinae" to null,
+    "extensor digitorum longus" to null,
+    "extensor hallucis longus" to null,
+    "flexor carpi radialis" to "forearms",
+    "forearms" to "forearms",
+    "gastrocnemius" to "calves",
+    "glutes" to "glutes",
+    "gluteus maximus" to "glutes",
+    "gluteus medius" to "glutes",
+    "gluteus minimus" to "glutes",
+    "hamstrings" to "hamstrings",
+    "hip flexors" to null,
+    "iliopsoas" to null,
+    "infraspinatus" to null,
+    "lateral deltoids" to "side_delts",
+    "latissimus dorsi" to "lats",
+    "levator scapulae" to "traps",
+    "medial deltoids" to "side_delts",
+    "obliques" to null,
+    "pectoralis major" to "chest",
+    "posterior deltoids" to "rear_delts",
+    "quadriceps" to "quadriceps",
+    "quadriceps femoris" to "quadriceps",
+    "rectus abdominis" to null,
+    "rectus femoris" to "quadriceps",
+    "rhomboids" to "upper_back",
+    "serratus anterior" to null,
+    "shins" to null,
+    "shoulders" to "shoulders",
+    "soleus" to "calves",
+    "subscapularis" to null,
+    "supraspinatus" to null,
+    "tensor fasciae latae" to "abductors",
+    "teres major" to "lats",
+    "teres minor" to null,
+    "tibialis anterior" to null,
+    "tibialis posterior" to null,
+    "transverse abdominis" to null,
+    "trapezius" to "traps",
+    "triceps" to "triceps",
+    "triceps brachii" to "triceps",
+    "upper trapezius" to "traps",
+    "vastus mediais" to "quadriceps",
+    "vastus medialis" to "quadriceps",
+)
+
 private val targetBuckets = MuscleTargetBucketKey.entries.map { bucket ->
     MuscleTargetBucket(
         key = bucket.storageKey,
@@ -228,6 +290,9 @@ fun normalizeMuscleTargetBucketKey(value: String?): String? {
 fun normalizeMuscleTargetSubcategoryKey(value: String?): String? {
     val normalized = normalizeMuscleTargetToken(value)
     if (normalized.isBlank()) return null
+    if (knownCatalogMuscleTargetSubcategoryKeys.containsKey(normalized)) {
+        return knownCatalogMuscleTargetSubcategoryKeys.getValue(normalized)
+    }
     return when {
         normalized in targetSubcategories.map(MuscleTargetSubcategory::key) -> normalized
         normalized.contains("pec") || normalized.contains("chest") -> "chest"
@@ -237,16 +302,18 @@ fun normalizeMuscleTargetSubcategoryKey(value: String?): String? {
         normalized.contains("rear delt") || normalized.contains("posterior delt") -> "rear_delts"
         normalized.contains("shoulder") || normalized.contains("delt") || normalized.contains("deltoid") -> "shoulders"
         normalized.contains("tricep") -> "triceps"
-        normalized.contains("lat") -> "lats"
+        normalized.containsMuscleTargetTerm("lat") || normalized.containsMuscleTargetTerm("latissimus") ||
+            normalized.containsMuscleTargetTerm("lats") -> "lats"
         normalized.contains("rhomboid") || normalized.contains("upper back") || normalized.contains("middle trap") ||
             normalized.contains("mid trap") || normalized.contains("lower trap") -> "upper_back"
         normalized.contains("trap") -> "traps"
         normalized.contains("back") -> "back"
-        normalized.contains("bicep") || normalized.contains("brachialis") || normalized.contains("brachioradialis") -> "biceps"
-        normalized.contains("forearm") || normalized.contains("grip") -> "forearms"
+        normalized.contains("forearm") || normalized.contains("grip") || normalized.contains("brachioradialis") ||
+            normalized.contains("flexor carpi") -> "forearms"
         normalized.contains("quad") || normalized.contains("vastus") || normalized.contains("rectus femoris") -> "quadriceps"
         normalized.contains("hamstring") || normalized.contains("biceps femoris") || normalized.contains("semitendinosus") ||
             normalized.contains("semimembranosus") -> "hamstrings"
+        normalized.contains("bicep") || normalized.contains("brachialis") -> "biceps"
         normalized.contains("glute") -> "glutes"
         normalized.contains("calf") || normalized.contains("gastrocnemius") || normalized.contains("soleus") -> "calves"
         normalized.contains("adductor") -> "adductors"
@@ -369,6 +436,8 @@ fun muscleTargetBucketSubcategoryKeys(bucketKeys: Set<String>, subcategoryKeys: 
     return (selectedSubcategories + selectedBucketSubcategories).toSet()
 }
 
+internal fun knownCatalogMuscleTargetMappings(): Map<String, String?> = knownCatalogMuscleTargetSubcategoryKeys
+
 private fun fallbackMuscleTargetContributions(patterns: List<String>): List<MuscleTargetContribution> {
     fun contribution(key: String, weight: Double): MuscleTargetContribution {
         val subcategory = requireNotNull(muscleTargetSubcategory(key))
@@ -427,6 +496,11 @@ private fun normalizeMuscleTargetToken(value: String?): String {
         .replace("_", " ")
         .replace("-", " ")
         .replace(Regex("\\s+"), " ")
+}
+
+private fun String.containsMuscleTargetTerm(term: String): Boolean {
+    val normalizedTerm = normalizeMuscleTargetToken(term)
+    return Regex("(^|\\s)${Regex.escape(normalizedTerm)}($|\\s)").containsMatchIn(this)
 }
 
 private fun String.toReadableMuscleTargetLabel(): String {

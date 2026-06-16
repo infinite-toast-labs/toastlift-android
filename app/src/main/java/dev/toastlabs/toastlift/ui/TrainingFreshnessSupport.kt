@@ -7,6 +7,7 @@ import dev.toastlabs.toastlift.data.UserProfile
 import dev.toastlabs.toastlift.data.WeeklyMuscleTargetWorkoutRow
 import dev.toastlabs.toastlift.data.normalizeTrainingFreshnessBucketExercises
 import dev.toastlabs.toastlift.data.normalizeTrainingFreshnessThresholdDays
+import dev.toastlabs.toastlift.data.normalizeMuscleTargetSubcategoryKey
 import dev.toastlabs.toastlift.data.resolveMuscleTargetContributions
 import java.time.Duration
 import java.time.Instant
@@ -529,17 +530,25 @@ private fun fallbackTrainingFreshnessContributions(detail: ExerciseDetail): List
 
 private fun mapTrainingFreshnessMuscle(muscleName: String): TrainingFreshnessSlot? {
     val normalized = normalizeMuscleName(muscleName)
+    if (knownCatalogTrainingFreshnessSlotKeys.containsKey(normalized)) {
+        return knownCatalogTrainingFreshnessSlotKeys.getValue(normalized)?.let(::slot)
+    }
+    normalizeMuscleTargetSubcategoryKey(muscleName)
+        ?.let(::mapMuscleTargetToTrainingFreshnessSlot)
+        ?.let { return it }
     return when {
         normalized.contains("pec") || normalized.contains("chest") -> slot("chest")
         normalized.contains("rear delt") || normalized.contains("posterior delt") -> slot("back")
         normalized.contains("shoulder") || normalized.contains("delt") -> slot("shoulders")
         normalized.contains("tricep") -> slot("triceps")
-        normalized.contains("bicep") || normalized.contains("brachialis") || normalized.contains("brachioradialis") -> slot("biceps")
-        normalized.contains("forearm") -> slot("forearms")
-        normalized.contains("back") || normalized.contains("lat") || normalized.contains("trap") || normalized.contains("rhomboid") -> slot("back")
+        normalized.contains("forearm") || normalized.contains("brachioradialis") ||
+            normalized.contains("flexor carpi") -> slot("forearms")
+        normalized.contains("back") || normalized.containsMuscleNameTerm("lat") || normalized.containsMuscleNameTerm("latissimus") ||
+            normalized.containsMuscleNameTerm("lats") || normalized.contains("trap") || normalized.contains("rhomboid") -> slot("back")
         normalized.contains("quad") || normalized.contains("vastus") || normalized.contains("rectus femoris") -> slot("quadriceps")
         normalized.contains("hamstring") || normalized.contains("biceps femoris") ||
             normalized.contains("semitendinosus") || normalized.contains("semimembranosus") -> slot("hamstrings")
+        normalized.contains("bicep") || normalized.contains("brachialis") -> slot("biceps")
         normalized.contains("glute") -> slot("glutes")
         normalized.contains("calf") || normalized.contains("gastrocnemius") || normalized.contains("soleus") -> slot("calves")
         normalized.contains("adductor") -> slot("adductors")
@@ -551,6 +560,19 @@ private fun mapTrainingFreshnessMuscle(muscleName: String): TrainingFreshnessSlo
 }
 
 private fun slot(key: String): TrainingFreshnessSlot? = trackedMuscles.firstOrNull { it.key == key }
+
+private val knownCatalogTrainingFreshnessSlotKeys: Map<String, String?> = mapOf(
+    "abdominals" to "core",
+    "erector spinae" to "erector_spinae",
+    "hip flexors" to null,
+    "iliopsoas" to null,
+    "obliques" to "core",
+    "rectus abdominis" to "core",
+    "shins" to null,
+    "tibialis anterior" to null,
+    "tibialis posterior" to null,
+    "transverse abdominis" to "core",
+)
 
 private fun latestQualifyingEvent(
     slotKey: String,
@@ -626,6 +648,11 @@ private fun normalizeMuscleName(value: String?): String {
         .lowercase()
         .replace("-", " ")
         .replace(Regex("\\s+"), " ")
+}
+
+private fun String.containsMuscleNameTerm(term: String): Boolean {
+    val normalizedTerm = normalizeMuscleName(term)
+    return Regex("(^|\\s)${Regex.escape(normalizedTerm)}($|\\s)").containsMatchIn(this)
 }
 
 private fun TrainingFreshnessFamily.bucketKey(): String = when (this) {

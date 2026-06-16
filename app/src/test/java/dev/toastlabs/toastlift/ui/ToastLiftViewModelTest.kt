@@ -510,6 +510,23 @@ class ToastLiftViewModelTest {
     }
 
     @Test
+    fun smartPickExerciseScore_mapsBrachioradialisFallbackToForearms() {
+        val exercise = sessionExercise(
+            id = 101L,
+            name = "Loaded Brachioradialis Hold",
+            completedSets = listOf(false),
+            targetMuscleGroup = "Grip",
+        )
+        val detail = exerciseDetail(exercise = exercise, primeMover = "Loaded Brachioradialis")
+
+        val forearmScore = smartPickExerciseScore(exercise, detail, normalizedTargetMuscle = "forearms")
+        val bicepsScore = smartPickExerciseScore(exercise, detail, normalizedTargetMuscle = "biceps")
+
+        assertTrue(forearmScore > 0.0)
+        assertEquals(0.0, bicepsScore, 0.001)
+    }
+
+    @Test
     fun pickNextSessionExerciseIndex_respectsBodyRegionFilter() {
         val session = ActiveSession(
             title = "Mixed Day",

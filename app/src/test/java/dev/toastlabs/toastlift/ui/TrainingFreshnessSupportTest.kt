@@ -14,6 +14,15 @@ import java.time.ZoneOffset
 class TrainingFreshnessSupportTest {
 
     @Test
+    fun mapTrainingFreshnessMuscleSlot_avoidsUpperBodyFalsePositivesForLowerBodyAnatomy() {
+        assertEquals("abductors", requireNotNull(mapTrainingFreshnessMuscleSlot("Tensor Fasciae Latae")).key)
+        assertEquals("hamstrings", requireNotNull(mapTrainingFreshnessMuscleSlot("Biceps Femoris")).key)
+        assertEquals("back", requireNotNull(mapTrainingFreshnessMuscleSlot("Latissimus Dorsi")).key)
+        assertEquals("biceps", requireNotNull(mapTrainingFreshnessMuscleSlot("Biceps Brachii")).key)
+        assertEquals("forearms", requireNotNull(mapTrainingFreshnessMuscleSlot("Loaded Brachioradialis")).key)
+    }
+
+    @Test
     fun buildTrainingFreshnessSummary_marksBucketFreshBeforeDueSoonWindow() {
         val summary = buildTrainingFreshnessSummary(
             profile = profile(minBucketExercises = 1),

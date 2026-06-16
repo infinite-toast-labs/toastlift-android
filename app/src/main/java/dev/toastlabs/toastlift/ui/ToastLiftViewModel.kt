@@ -2042,31 +2042,39 @@ private fun normalizeMuscleToken(value: String?): String {
         .replace(Regex("\\s+"), " ")
 }
 
+private fun String.containsMuscleTokenTerm(term: String): Boolean {
+    val normalizedTerm = normalizeMuscleToken(term)
+    return Regex("(^|\\s)${Regex.escape(normalizedTerm)}($|\\s)").containsMatchIn(this)
+}
+
 private fun muscleFamilyKey(value: String?): String? {
     val normalized = normalizeMuscleToken(value)
     if (normalized.isBlank()) return null
+    normalizeMuscleTargetSubcategoryKey(value)?.let { return it }
     return when {
         normalized.contains("rear delt") || normalized.contains("posterior delt") -> "rear_delts"
         normalized.contains("front delt") || normalized.contains("anterior delt") -> "front_delts"
         normalized.contains("side delt") || normalized.contains("lateral delt") || normalized.contains("middle delt") ||
             normalized.contains("medial delt") -> "side_delts"
         normalized.contains("delt") || normalized.contains("shoulder") -> "shoulders"
-        normalized.contains("latissimus") || normalized.contains("lats") -> "lats"
+        normalized.containsMuscleTokenTerm("lat") || normalized.containsMuscleTokenTerm("latissimus") ||
+            normalized.containsMuscleTokenTerm("lats") -> "lats"
         normalized.contains("rhomboid") -> "rhomboids"
         normalized.contains("trap") -> "traps"
-        normalized.contains("bicep") || normalized.contains("brachialis") || normalized.contains("brachioradialis") -> "biceps"
         normalized.contains("tricep") -> "triceps"
         normalized.contains("pec") || normalized.contains("chest") -> "chest"
         normalized.contains("glute") -> "glutes"
         normalized.contains("hamstring") || normalized.contains("biceps femoris") || normalized.contains("semitendinosus") ||
             normalized.contains("semimembranosus") -> "hamstrings"
+        normalized.contains("forearm") || normalized.contains("brachioradialis") ||
+            normalized.contains("flexor carpi") -> "forearms"
+        normalized.contains("bicep") || normalized.contains("brachialis") -> "biceps"
         normalized.contains("quad") || normalized.contains("vastus") || normalized.contains("rectus femoris") -> "quadriceps"
         normalized.contains("calf") || normalized.contains("gastrocnemius") || normalized.contains("soleus") -> "calves"
         normalized.contains("adductor") -> "adductors"
         normalized.contains("abductor") -> "abductors"
         normalized.contains("abdom") || normalized.contains("oblique") || normalized.contains("transverse abdominis") -> "core"
         normalized.contains("erector") || normalized.contains("lower back") -> "erector_spinae"
-        normalized.contains("forearm") -> "forearms"
         else -> null
     }
 }
