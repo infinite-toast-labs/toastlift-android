@@ -80,6 +80,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.AccountTree
 import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.CenterFocusStrong
+import androidx.compose.material.icons.rounded.CenterFocusWeak
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Delete
@@ -10573,6 +10575,7 @@ private fun ActiveSessionScreen(
     var showDiscardDialog by remember { mutableStateOf(false) }
     var showFinishConfirmDialog by remember { mutableStateOf(false) }
     var showWorkoutDetailsSheet by remember { mutableStateOf(false) }
+    var focusMode by remember { mutableStateOf(true) }
     var showExerciseFilterSheet by rememberSaveable(session.startedAtUtc) { mutableStateOf(false) }
     var pendingExerciseDeletionIndex by remember { mutableStateOf<Int?>(null) }
     var selectedEquipmentFilter by rememberSaveable(session.startedAtUtc) { mutableStateOf<String?>(null) }
@@ -10826,9 +10829,11 @@ private fun ActiveSessionScreen(
                     .padding(top = ACTIVE_SESSION_HEADER_TOP_PADDING),
                 elapsed = elapsed,
                 isPaused = session.isPaused,
+                focusMode = focusMode,
                 progressMetrics = progressMetrics,
                 completionFraction = completionFraction,
                 onTogglePause = onTogglePauseSession,
+                onToggleFocus = { focusMode = !focusMode },
                 onExitWorkout = { showDiscardDialog = true },
                 onOpenWorkoutDetails = { showWorkoutDetailsSheet = true },
                 equipmentFilterLabel = selectedEquipmentFilter,
@@ -10871,38 +10876,40 @@ private fun ActiveSessionScreen(
                         )
                     }
                 }
-                muscleTargetAction?.let { action ->
-                    item {
-                        ActiveWorkoutMuscleTargetActionStrip(
-                            action = action,
-                            onAction = {
-                                when (action.type) {
-                                    ActiveWorkoutMuscleTargetActionType.OpenExercise -> {
-                                        action.exerciseIndex?.let(onOpenExercise)
+                if (!focusMode) {
+                    muscleTargetAction?.let { action ->
+                        item {
+                            ActiveWorkoutMuscleTargetActionStrip(
+                                action = action,
+                                onAction = {
+                                    when (action.type) {
+                                        ActiveWorkoutMuscleTargetActionType.OpenExercise -> {
+                                            action.exerciseIndex?.let(onOpenExercise)
+                                        }
+                                        ActiveWorkoutMuscleTargetActionType.OpenFilteredPicker -> {
+                                            onOpenMuscleTargetPicker(action.bucketKey, action.subcategoryKey)
+                                        }
                                     }
-                                    ActiveWorkoutMuscleTargetActionType.OpenFilteredPicker -> {
-                                        onOpenMuscleTargetPicker(action.bucketKey, action.subcategoryKey)
-                                    }
-                                }
-                            },
-                        )
+                                },
+                            )
+                        }
                     }
-                }
-                freshnessAction?.let { action ->
-                    item {
-                        ActiveWorkoutFreshnessActionStrip(
-                            action = action,
-                            onAction = {
-                                when (action.type) {
-                                    ActiveWorkoutFreshnessActionType.OpenExercise -> {
-                                        action.exerciseIndex?.let(onOpenExercise)
+                    freshnessAction?.let { action ->
+                        item {
+                            ActiveWorkoutFreshnessActionStrip(
+                                action = action,
+                                onAction = {
+                                    when (action.type) {
+                                        ActiveWorkoutFreshnessActionType.OpenExercise -> {
+                                            action.exerciseIndex?.let(onOpenExercise)
+                                        }
+                                        ActiveWorkoutFreshnessActionType.OpenFilteredPicker -> {
+                                            onOpenFreshnessTargetPicker(action.muscleKey, action.muscleLabel)
+                                        }
                                     }
-                                    ActiveWorkoutFreshnessActionType.OpenFilteredPicker -> {
-                                        onOpenFreshnessTargetPicker(action.muscleKey, action.muscleLabel)
-                                    }
-                                }
-                            },
-                        )
+                                },
+                            )
+                        }
                     }
                 }
                 if (orderedExercises.isEmpty() && (activeEquipmentFilter != null || activeBodyRegionFilterLabel != null || activeMuscleFilterLabel != null || activeMuscleTargetFilterLabel != null)) {
@@ -10935,7 +10942,7 @@ private fun ActiveSessionScreen(
                 item {
                     AddExerciseCallToAction(onAddExercise = onOpenAddExercise)
                 }
-                if (shouldShowPickNextExercise) {
+                if (!focusMode && shouldShowPickNextExercise) {
                     item {
                         PickNextExerciseCallToAction(
                             untouchedExerciseCount = untouchedExerciseCount,
@@ -11753,9 +11760,11 @@ private fun SessionMomentumHeader(
     modifier: Modifier = Modifier,
     elapsed: String,
     isPaused: Boolean,
+    focusMode: Boolean,
     progressMetrics: ActiveWorkoutProgressMetrics,
     completionFraction: Float,
     onTogglePause: () -> Unit,
+    onToggleFocus: () -> Unit,
     onExitWorkout: () -> Unit,
     onOpenWorkoutDetails: () -> Unit,
     equipmentFilterLabel: String?,
@@ -11806,6 +11815,14 @@ private fun SessionMomentumHeader(
                         } else {
                             MaterialTheme.colorScheme.primary
                         },
+                    )
+                }
+                IconButton(onClick = onToggleFocus) {
+                    Icon(
+                        imageVector = if (focusMode) Icons.Rounded.CenterFocusWeak else Icons.Rounded.CenterFocusStrong,
+                        contentDescription = if (focusMode) "Exit focus mode" else "Enter focus mode",
+                        tint = if (focusMode) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
                 IconButton(onClick = onExitWorkout) {
@@ -13707,6 +13724,7 @@ private fun SessionExerciseDetailScreen(
     var committedSetNumbers by remember(exercise.exerciseId) { mutableStateOf(currentSetNumbers) }
     var showMenu by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
+    var hideTargetImpact by remember { mutableStateOf(true) }
     LaunchedEffect(exercise.exerciseId, currentSetNumberSnapshot) {
         val sameSetIds = committedSetNumbers.keys == currentSetNumbers.keys
         val numbersChanged = committedSetNumbers != currentSetNumbers
@@ -13782,6 +13800,14 @@ private fun SessionExerciseDetailScreen(
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
+                    IconButton(onClick = { hideTargetImpact = !hideTargetImpact }) {
+                        Icon(
+                            imageVector = if (hideTargetImpact) Icons.Rounded.CenterFocusWeak else Icons.Rounded.CenterFocusStrong,
+                            contentDescription = if (hideTargetImpact) "Show Target Impact" else "Hide Target Impact",
+                            tint = if (hideTargetImpact) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                     OutlinedButton(onClick = onShowExerciseDetail) {
                         Icon(
                             imageVector = Icons.Rounded.Info,
@@ -13852,13 +13878,15 @@ private fun SessionExerciseDetailScreen(
                         )
                     }
                 }
-                item {
-            ActiveWorkoutMuscleTargetLiveCard(
-                summary = muscleTargetSummary,
-                weeklyMuscleTargets = weeklyMuscleTargets,
-                spotlightExercise = exercise,
-                spotlightExerciseDetail = exerciseDetail,
-                    )
+                if (!hideTargetImpact) {
+                    item {
+                        ActiveWorkoutMuscleTargetLiveCard(
+                            summary = muscleTargetSummary,
+                            weeklyMuscleTargets = weeklyMuscleTargets,
+                            spotlightExercise = exercise,
+                            spotlightExerciseDetail = exerciseDetail,
+                        )
+                    }
                 }
                 itemsIndexed(
                     items = exercise.sets,
