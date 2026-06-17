@@ -1073,6 +1073,7 @@ fun ToastLiftApp(
                                         state = state,
                                         onGenerate = viewModel::generateWorkout,
                                         onOpenGenerate = { viewModel.selectTab(MainTab.Generate) },
+                                        onStartFreshnessReEntry = viewModel::startFreshnessReEntryWorkout,
                                         onStartTemplate = viewModel::startTemplate,
                                         onEditTemplate = viewModel::editTemplate,
                                         onRenameTemplate = viewModel::renameTemplate,
@@ -1461,6 +1462,7 @@ private fun TodayScreen(
     state: AppUiState,
     onGenerate: () -> Unit,
     onOpenGenerate: () -> Unit,
+    onStartFreshnessReEntry: () -> Unit,
     onStartTemplate: (Long) -> Unit,
     onEditTemplate: (Long) -> Unit,
     onRenameTemplate: (Long, String) -> Unit,
@@ -1650,6 +1652,14 @@ private fun TodayScreen(
                 onResumeProgram = onResumeProgram,
                 onEndProgram = { pendingProgramAction = TodayProgramActionConfirmation.EndProgram },
             )
+            state.freshnessReEntry?.let { reEntry ->
+                FreshnessReEntryCard(
+                    state = reEntry,
+                    onStart = onStartFreshnessReEntry,
+                    onEditFirst = onOpenGenerate,
+                    onOpenFreshness = { showTrainingFreshnessDashboard = true },
+                )
+            }
             state.trainingFreshness?.let { freshness ->
                 TrainingFreshnessCard(
                     summary = freshness,
@@ -1728,16 +1738,26 @@ private fun TodayScreen(
             )
         } else {
             // ── Standard Today UI ──
-        RichHeroCard(
-            eyebrow = "My Plan",
-            title = profile?.goal ?: "Build your next workout",
-            subtitle = profile?.let { "${it.durationMinutes} min • ${it.weeklyFrequency} days/week • ${it.experience}" }
-                    ?: "Adaptive sessions tuned to your recent work.",
-            ) {
-                Text("Quick start a generated session or jump into the builder.")
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Button(onClick = onGenerate) { Text("Generate") }
-                    OutlinedButton(onClick = onOpenGenerate) { Text("Builder") }
+            val reEntry = state.freshnessReEntry
+            if (reEntry != null) {
+                FreshnessReEntryCard(
+                    state = reEntry,
+                    onStart = onStartFreshnessReEntry,
+                    onEditFirst = onOpenGenerate,
+                    onOpenFreshness = { showTrainingFreshnessDashboard = true },
+                )
+            } else {
+                RichHeroCard(
+                    eyebrow = "My Plan",
+                    title = profile?.goal ?: "Build your next workout",
+                    subtitle = profile?.let { "${it.durationMinutes} min • ${it.weeklyFrequency} days/week • ${it.experience}" }
+                        ?: "Adaptive sessions tuned to your recent work.",
+                ) {
+                    Text("Quick start a generated session or jump into the builder.")
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Button(onClick = onGenerate) { Text("Generate") }
+                        OutlinedButton(onClick = onOpenGenerate) { Text("Builder") }
+                    }
                 }
             }
             state.trainingFreshness?.let { freshness ->
@@ -3119,6 +3139,143 @@ private fun TodayCompletionMeterCard(model: TodayCompletionFeedbackModel) {
                 fontWeight = FontWeight.Bold,
                 color = accent.start,
             )
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun FreshnessReEntryCard(
+    state: FreshnessReEntryState,
+    onStart: () -> Unit,
+    onEditFirst: () -> Unit,
+    onOpenFreshness: () -> Unit,
+) {
+    val accent = when (state.mode) {
+        FreshnessReEntryMode.ReEntry -> emberAccent
+        FreshnessReEntryMode.MaintenanceSave -> goldAccent
+    }
+    val label = when (state.mode) {
+        FreshnessReEntryMode.ReEntry -> "Re-entry mode"
+        FreshnessReEntryMode.MaintenanceSave -> "Momentum save"
+    }
+    FeatureCard(
+        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.98f),
+        border = BorderStroke(1.dp, accent.start.copy(alpha = 0.32f)),
+        accentKey = "freshness reentry ${state.mode.name}",
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(
+                            accent.glow.copy(alpha = 0.74f),
+                            Color.Transparent,
+                        ),
+                    ),
+                ),
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .semantics(mergeDescendants = true) {
+                        contentDescription = "$label. ${state.headline} ${state.supportingText}. ${state.ctaLabel}"
+                    }
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.Top,
+                ) {
+                    Surface(
+                        shape = RoundedCornerShape(9.dp),
+                        color = accent.start.copy(alpha = if (LocalToastLiftIsDarkTheme.current) 0.18f else 0.12f),
+                    ) {
+                        Box(
+                            modifier = Modifier.size(44.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                imageVector = if (state.mode == FreshnessReEntryMode.ReEntry) {
+                                    Icons.Rounded.PlayArrow
+                                } else {
+                                    Icons.Rounded.Schedule
+                                },
+                                contentDescription = null,
+                                tint = accent.start,
+                                modifier = Modifier.size(24.dp),
+                            )
+                        }
+                    }
+                    Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            MiniTag(
+                                text = label,
+                                accent = accent.start.copy(alpha = 0.16f),
+                            )
+                            MiniTag(
+                                text = state.locationLabel,
+                                accent = accent.start.copy(alpha = 0.16f),
+                            )
+                            MiniTag(
+                                text = "${state.suggestedDurationMinutes} min",
+                                accent = accent.start.copy(alpha = 0.16f),
+                            )
+                        }
+                        Text(
+                            state.headline,
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Black,
+                        )
+                        Text(
+                            state.supportingText,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                if (state.targetLabels.isNotEmpty()) {
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        state.targetLabels.forEach { target ->
+                            MiniTag(
+                                text = "$target ready",
+                                accent = surgeAccent.start.copy(alpha = 0.14f),
+                            )
+                        }
+                    }
+                }
+                Button(
+                    onClick = onStart,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = accent.start,
+                        contentColor = accent.textOnAccent,
+                    ),
+                ) {
+                    Icon(imageVector = Icons.Rounded.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(state.ctaLabel, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    TextButton(onClick = onOpenFreshness) {
+                        Icon(imageVector = Icons.Rounded.QueryStats, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Freshness")
+                    }
+                    TextButton(onClick = onEditFirst) {
+                        Icon(imageVector = Icons.Rounded.AutoAwesome, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Edit first")
+                    }
+                }
+            }
         }
     }
 }

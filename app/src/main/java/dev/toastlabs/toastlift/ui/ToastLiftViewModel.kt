@@ -423,6 +423,7 @@ internal data class AppUiState(
     val programProgress: ProgramProgressSummary? = null,
     val weeklyMuscleTargets: WeeklyMuscleTargetSummary? = null,
     val trainingFreshness: TrainingFreshnessSummary? = null,
+    val freshnessReEntry: FreshnessReEntryState? = null,
     val trainingFreshnessFilter: TrainingFreshnessFilter = TrainingFreshnessFilter.All,
     val trainingFreshnessSort: TrainingFreshnessSort = TrainingFreshnessSort.MostUrgent,
     val nextPlannedSession: PlannedSession? = null,
@@ -2278,6 +2279,15 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
                     zoneId = zoneId,
                 )
             }
+            val freshnessReEntry = buildFreshnessReEntryState(
+                profile = profile,
+                history = history,
+                trainingFreshness = trainingFreshness,
+                locationLabel = profile
+                    ?.activeLocationModeId
+                    ?.let { locationModeId -> locationModes.firstOrNull { it.id == locationModeId }?.displayName }
+                    .orEmpty(),
+            )
             val tokenBalanceTrend = buildTokenBalanceTrend(profile)
             val restoredActiveSession = uiState.activeSession?.let {
                 null
@@ -2333,6 +2343,7 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
                 tokenBalanceTrend = tokenBalanceTrend,
                 weeklyMuscleTargets = weeklyMuscleTargets,
                 trainingFreshness = trainingFreshness,
+                freshnessReEntry = freshnessReEntry,
                 abandonedWorkout = abandonedWorkout,
                 todayCompletionFeedbackVariant = todayCompletionFeedbackVariant,
                 todayWorkoutCompletion = todayWorkoutCompletion,
@@ -3773,6 +3784,68 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
+    fun startFreshnessReEntryWorkout() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val profile = container.userRepository.loadProfile()
+            if (profile == null) {
+                uiState = uiState.copy(message = "Finish onboarding before starting re-entry.")
+                return@launch
+            }
+            val trainingFreshness = uiState.trainingFreshness
+            if (trainingFreshness == null) {
+                uiState = uiState.copy(message = "Log a workout before re-entry mode can build from freshness.")
+                return@launch
+            }
+            val splitPrograms = uiState.splitPrograms.ifEmpty { container.userRepository.loadSplitPrograms() }
+            val splitProgram = splitPrograms.firstOrNull { it.id == profile.splitProgramId }
+                ?: splitPrograms.firstOrNull()
+                ?: run {
+                    uiState = uiState.copy(message = "No split programs are available for generation.")
+                    return@launch
+                }
+            val locationModes = uiState.locationModes.ifEmpty { container.userRepository.loadLocationModes() }
+            val reEntry = buildFreshnessReEntryState(
+                profile = profile,
+                history = container.workoutRepository.loadHistory(),
+                trainingFreshness = trainingFreshness,
+                locationLabel = locationModes.firstOrNull { it.id == profile.activeLocationModeId }?.displayName.orEmpty(),
+            ) ?: run {
+                uiState = uiState.copy(message = "Re-entry mode is not needed right now.")
+                return@launch
+            }
+            val generated = container.generatorRepository.generateWorkout(
+                profile = profile.copy(durationMinutes = reEntry.suggestedDurationMinutes),
+                splitProgram = splitProgram,
+                locationModes = locationModes,
+                previousExerciseIds = emptySet(),
+                variationSeed = System.currentTimeMillis(),
+                requestedFocus = reEntry.focusKey,
+            )
+            val workout = shapeFreshnessReEntryWorkout(generated, reEntry)
+            if (workout.exercises.isEmpty()) {
+                uiState = uiState.copy(message = "No ${reEntry.locationLabel.lowercase()} exercises matched re-entry mode.")
+                return@launch
+            }
+            val session = buildActiveSession(workout)
+            container.workoutRepository.clearAbandonedWorkout()
+            container.workoutRepository.saveActiveSession(session, null)
+            syncActiveWorkoutNotification(session)
+            val activeSessionExerciseDetailsById = loadActiveSessionExerciseDetails(session)
+            uiState = uiState.copy(
+                activeSession = session,
+                activeSessionExerciseDetailsById = activeSessionExerciseDetailsById,
+                activeSessionExerciseIndex = null,
+                activeSessionAddExerciseVisible = false,
+                skippedExerciseFeedbackPrompt = null,
+                customExerciseDraft = null,
+                generatedWorkout = null,
+                projectedMuscleInsights = emptyList(),
+                projectedMovementInsights = emptyList(),
+                message = null,
+            )
+        }
+    }
+
     fun startManualWorkout() {
         if (uiState.manualWorkoutItems.isEmpty()) {
             uiState = uiState.copy(message = "Add exercises to the builder first.")
@@ -5174,6 +5247,7 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
             )
         } else {
             buildNonProgramReceiptMeaningSnapshot(
+                session = session,
                 profile = profile,
                 beforeHistory = beforeHistory,
                 afterHistory = afterHistory,
@@ -5270,6 +5344,7 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     private fun buildNonProgramReceiptMeaningSnapshot(
+        session: ActiveSession,
         profile: UserProfile?,
         beforeHistory: List<HistorySummary>,
         afterHistory: List<HistorySummary>,
@@ -5284,6 +5359,14 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
         val beforePromise = buildWeeklyPromiseSnapshot(beforeHistory, weeklyTarget)
         val afterPromise = buildWeeklyPromiseSnapshot(afterHistory, weeklyTarget)
         val rows = mutableListOf<CompletionReceiptMeaningRowSnapshot>()
+        if (session.origin == FRESHNESS_REENTRY_ORIGIN) {
+            rows += CompletionReceiptMeaningRowSnapshot(
+                kind = CompletionReceiptMeaningKind.STREAK,
+                label = "Return streak",
+                value = currentReturnStreak(afterHistory).coerceAtLeast(1).toString(),
+                supportingText = "Consecutive re-entry sessions",
+            )
+        }
         rows += CompletionReceiptMeaningRowSnapshot(
             kind = CompletionReceiptMeaningKind.WEEKLY_PROMISE,
             label = "Weekly promise",
@@ -5311,7 +5394,10 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
             label = "Lifetime workouts",
             value = "${beforeHistory.size} -> ${afterHistory.size}",
         )
-        val summaryLine = comparison?.headline ?: when {
+        val summaryLine = when {
+            session.origin == FRESHNESS_REENTRY_ORIGIN ->
+                "You restarted. This was real training, not catch-up work."
+            comparison != null -> comparison.headline
             accounting?.tokenDelta != null && accounting.tokenDelta > 0 ->
                 "This banked ${signedIntLabel(accounting.tokenDelta)} TL and counted toward your weekly training target."
             else -> "This counted toward your weekly training target."
@@ -5328,6 +5414,8 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
         nextPlannedSession: PlannedSession?,
     ): CompletionReceiptBridgeSnapshot? {
         val suggestedNextLabel = when {
+            session.origin == FRESHNESS_REENTRY_ORIGIN ->
+                "Next: one ordinary session in the next 1-2 days"
             activeProgram != null && nextPlannedSession != null ->
                 "Next: Week ${nextPlannedSession.weekNumber} Day ${nextPlannedSession.dayIndex + 1} • ${programFocusLabel(nextPlannedSession.focusKey)}"
             session.origin.contains("template", ignoreCase = true) ->
@@ -5336,7 +5424,11 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
                 "Next: rotate to a different focus in the next 2-3 days"
             else -> "Next: keep the next workout small and easy to start"
         }
-        val fallbackLabel = "If that slips: 20-min minimum dose"
+        val fallbackLabel = if (session.origin == FRESHNESS_REENTRY_ORIGIN) {
+            "If that slips: repeat a 10-min maintenance session"
+        } else {
+            "If that slips: 20-min minimum dose"
+        }
         return CompletionReceiptBridgeSnapshot(
             suggestedNextLabel = suggestedNextLabel,
             fallbackLabel = fallbackLabel,
@@ -5433,6 +5525,7 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
 
     private fun receiptOriginLabel(origin: String): String {
         return when {
+            origin == FRESHNESS_REENTRY_ORIGIN -> "Re-entry"
             origin.contains("program", ignoreCase = true) -> "Program day"
             origin.contains("template", ignoreCase = true) -> "Template"
             origin.contains("history_reuse", ignoreCase = true) -> "History replay"
