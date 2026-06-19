@@ -12642,7 +12642,7 @@ private fun ActiveWorkoutMuscleTargetOverviewSubcategoryRow(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    row.label,
+                    if (expectedInCurrentWorkout) "⭐ ${row.label}" else row.label,
                     modifier = Modifier.weight(1f),
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.SemiBold,
