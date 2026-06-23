@@ -22,7 +22,8 @@ class UserRepository(private val database: ToastLiftDatabase) {
                    dev_pick_next_exercise_enabled, dev_fruit_exercise_icons_enabled,
                    dev_exercise_detail_personal_note_visible, dev_exercise_detail_learned_preference_visible,
                    dev_rest_timer_sound_disabled, training_freshness_threshold_days,
-                   training_freshness_min_bucket_exercises, dev_session_set_swipe_complete_enabled
+                   training_freshness_min_bucket_exercises, dev_session_set_swipe_complete_enabled,
+                   dev_in_session_bounties_enabled
             FROM user_profile
             WHERE user_id = 1
             """.trimIndent(),
@@ -53,6 +54,7 @@ class UserRepository(private val database: ToastLiftDatabase) {
                 trainingFreshnessThresholdDays = normalizeTrainingFreshnessThresholdDays(cursor.getInt(18)),
                 trainingFreshnessMinimumBucketExercises = normalizeTrainingFreshnessBucketExercises(cursor.getInt(19)),
                 devSessionSetSwipeCompleteEnabled = cursor.getInt(20) == 1,
+                devInSessionBountiesEnabled = cursor.getInt(21) == 1,
             )
         }
     }
@@ -272,6 +274,14 @@ class UserRepository(private val database: ToastLiftDatabase) {
         )
     }
 
+    fun saveDevInSessionBountiesEnabled(enabled: Boolean) {
+        val db = database.open()
+        db.execSQL(
+            "UPDATE user_profile SET dev_in_session_bounties_enabled = ?, updated_at_utc = ? WHERE user_id = 1",
+            arrayOf(if (enabled) 1 else 0, Instant.now().toString()),
+        )
+    }
+
     fun loadNextFocus(): String? {
         val db = database.open()
         return db.rawQuery(
@@ -297,6 +307,7 @@ class UserRepository(private val database: ToastLiftDatabase) {
             .putNullable("profile", exportProfile(db))
             .put("equipment_inventory", exportEquipmentInventory(db))
             .put("experiment_assignments", exportExperimentAssignments(db))
+            .put("earned_bounty_cards", exportEarnedBountyCards(db))
             .put("exercise_preferences", exportExercisePreferences(db))
             .put("exercise_generated_descriptions", exportExerciseGeneratedDescriptions(db))
             .put("exercise_user_video_links", exportExerciseUserVideoLinks(db))
@@ -330,6 +341,8 @@ class UserRepository(private val database: ToastLiftDatabase) {
         db.beginTransaction()
         try {
             db.execSQL("DELETE FROM performed_workouts")
+            db.execSQL("DELETE FROM earned_bounty_cards")
+            db.execSQL("DELETE FROM active_workout_bounties")
             db.execSQL("DELETE FROM workout_templates")
             db.execSQL("DELETE FROM workout_feedback_signals")
             db.execSQL("DELETE FROM exercise_preferences")
@@ -374,6 +387,7 @@ class UserRepository(private val database: ToastLiftDatabase) {
                 p.training_freshness_threshold_days,
                 p.training_freshness_min_bucket_exercises,
                 p.dev_session_set_swipe_complete_enabled,
+                p.dev_in_session_bounties_enabled,
                 p.next_focus,
                 p.created_at_utc,
                 p.updated_at_utc
@@ -412,9 +426,10 @@ class UserRepository(private val database: ToastLiftDatabase) {
                 .put("training_freshness_threshold_days", normalizeTrainingFreshnessThresholdDays(cursor.getInt(22)))
                 .put("training_freshness_min_bucket_exercises", normalizeTrainingFreshnessBucketExercises(cursor.getInt(23)))
                 .put("dev_session_set_swipe_complete_enabled", cursor.getInt(24) == 1)
-                .put("next_focus", cursor.getString(25))
-                .put("created_at_utc", cursor.getString(26))
-                .put("updated_at_utc", cursor.getString(27))
+                .put("dev_in_session_bounties_enabled", cursor.getInt(25) == 1)
+                .put("next_focus", cursor.getString(26))
+                .put("created_at_utc", cursor.getString(27))
+                .put("updated_at_utc", cursor.getString(28))
         }
     }
 
@@ -459,6 +474,43 @@ class UserRepository(private val database: ToastLiftDatabase) {
                             .put("experiment_key", cursor.getString(0))
                             .put("variant_key", cursor.getString(1))
                             .put("assigned_at_utc", cursor.getString(2)),
+                    )
+                }
+            }
+        }
+    }
+
+    private fun exportEarnedBountyCards(db: SQLiteDatabase): JSONArray {
+        return db.rawQuery(
+            """
+            SELECT card_id, bounty_id, bounty_type, title, family, rarity, resolution_scope,
+                   earned_at_utc, session_started_at_utc, workout_id, exercise_id, exercise_name,
+                   proof_line, flavor_text, art_seed, source_set_number
+            FROM earned_bounty_cards
+            ORDER BY earned_at_utc DESC, card_id DESC
+            """.trimIndent(),
+            null,
+        ).use { cursor ->
+            JSONArray().apply {
+                while (cursor.moveToNext()) {
+                    put(
+                        JSONObject()
+                            .put("card_id", cursor.getLong(0))
+                            .put("bounty_id", cursor.getString(1))
+                            .put("bounty_type", cursor.getString(2))
+                            .put("title", cursor.getString(3))
+                            .put("family", cursor.getString(4))
+                            .put("rarity", cursor.getString(5))
+                            .put("resolution_scope", cursor.getString(6))
+                            .put("earned_at_utc", cursor.getString(7))
+                            .put("session_started_at_utc", cursor.getString(8))
+                            .putNullable("workout_id", if (cursor.isNull(9)) null else cursor.getLong(9))
+                            .put("exercise_id", cursor.getLong(10))
+                            .put("exercise_name", cursor.getString(11))
+                            .put("proof_line", cursor.getString(12))
+                            .put("flavor_text", cursor.getString(13))
+                            .put("art_seed", cursor.getString(14))
+                            .putNullable("source_set_number", if (cursor.isNull(15)) null else cursor.getInt(15))
                     )
                 }
             }

@@ -11,6 +11,8 @@ import dev.toastlabs.toastlift.data.ActiveSession
 import dev.toastlabs.toastlift.data.AbandonedWorkoutSummary
 import dev.toastlabs.toastlift.data.AdherenceCurrencyTrend
 import dev.toastlabs.toastlift.data.AppContainer
+import dev.toastlabs.toastlift.data.ActiveWorkoutBounty
+import dev.toastlabs.toastlift.data.EarnedBountyCard
 import dev.toastlabs.toastlift.data.CheckpointAction
 import dev.toastlabs.toastlift.data.CheckpointResult
 import dev.toastlabs.toastlift.data.CompletionReceiptAccountingSnapshot
@@ -121,6 +123,7 @@ import dev.toastlabs.toastlift.data.buildTodayCompletionFeedbackAbFlags
 import dev.toastlabs.toastlift.data.buildAdherenceCurrencySnapshot
 import dev.toastlabs.toastlift.data.buildGlobalAdherenceCurrencyTrend
 import dev.toastlabs.toastlift.data.defaultWorkUnitValues
+import dev.toastlabs.toastlift.data.evaluateBountyAfterSetCompletion
 import dev.toastlabs.toastlift.data.appendDistinctTemplateExercise
 import dev.toastlabs.toastlift.data.resolveMuscleTargetContributions
 import dev.toastlabs.toastlift.data.toPendingWorkoutShare
@@ -393,6 +396,10 @@ internal data class AppUiState(
     val abandonedWorkout: AbandonedWorkoutSummary? = null,
     val selectedHistoryDetail: HistoryDetail? = null,
     val completionReceipt: CompletionReceiptUiState? = null,
+    val activeBounty: ActiveWorkoutBounty? = null,
+    val revealedBountyCard: EarnedBountyCard? = null,
+    val bountyEligibleMissCount: Int = 0,
+    val bountyCards: List<EarnedBountyCard> = emptyList(),
     val activeSession: ActiveSession? = null,
     val activeSessionExerciseDetailsById: Map<Long, ExerciseDetail> = emptyMap(),
     val activeSessionExerciseIndex: Int? = null,
@@ -2296,6 +2303,21 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
             }
             val effectiveActiveSession = uiState.activeSession ?: restoredActiveSession?.session
             val effectiveActiveSessionExerciseIndex = uiState.activeSessionExerciseIndex ?: restoredActiveSession?.selectedExerciseIndex
+            val bountyFeatureEnabled = profile?.devInSessionBountiesEnabled == true
+            if (!bountyFeatureEnabled) {
+                container.workoutRepository.saveActiveBounty(null)
+            }
+            val activeBounty = if (bountyFeatureEnabled) {
+                container.workoutRepository.loadActiveBounty()
+                    ?.takeIf { bounty -> bounty.sessionStartedAtUtc == effectiveActiveSession?.startedAtUtc }
+            } else {
+                null
+            }
+            val bountyCards = if (bountyFeatureEnabled) {
+                container.workoutRepository.loadEarnedBountyCards()
+            } else {
+                emptyList()
+            }
             val activeSessionExerciseDetailsById = loadActiveSessionExerciseDetails(effectiveActiveSession)
             val activeExercisePerformanceStatsById = effectiveActiveSession
                 ?.exercises
@@ -2349,6 +2371,9 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
                 todayWorkoutCompletion = todayWorkoutCompletion,
                 todayReceiptRecap = todayReceiptRecap,
                 activeSession = effectiveActiveSession,
+                activeBounty = activeBounty,
+                bountyCards = bountyCards,
+                revealedBountyCard = uiState.revealedBountyCard.takeIf { bountyFeatureEnabled },
                 activeSessionExerciseDetailsById = activeSessionExerciseDetailsById,
                 activeSessionExerciseIndex = effectiveActiveSessionExerciseIndex,
                 activeExercisePerformanceStatsById = activeExercisePerformanceStatsById,
@@ -2530,6 +2555,30 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
         )
         viewModelScope.launch(Dispatchers.IO) {
             container.userRepository.saveDevSessionSetSwipeCompleteEnabled(enabled)
+        }
+    }
+
+    fun setDevInSessionBountiesEnabled(enabled: Boolean) {
+        val profile = uiState.profile ?: return
+        uiState = uiState.copy(
+            profile = profile.copy(devInSessionBountiesEnabled = enabled),
+            activeBounty = if (enabled) uiState.activeBounty else null,
+            revealedBountyCard = if (enabled) uiState.revealedBountyCard else null,
+            bountyCards = if (enabled) uiState.bountyCards else emptyList(),
+            bountyEligibleMissCount = if (enabled) uiState.bountyEligibleMissCount else 0,
+            message = if (enabled) {
+                "In-session bounty cards enabled."
+            } else {
+                "In-session bounty cards disabled."
+            },
+        )
+        viewModelScope.launch(Dispatchers.IO) {
+            container.userRepository.saveDevInSessionBountiesEnabled(enabled)
+            if (!enabled) {
+                container.workoutRepository.saveActiveBounty(null)
+            } else {
+                refreshAll()
+            }
         }
     }
 
@@ -4371,6 +4420,7 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
         val exercise = updatedExercises[exerciseIndex]
         val updatedSets = exercise.sets.toMutableList()
         val targetSet = updatedSets[setIndex]
+        val completedSetId = targetSet.id
         val willCompleteSet = !targetSet.completed
         updatedSets[setIndex] = targetSet.copy(
             completed = willCompleteSet,
@@ -4395,7 +4445,67 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
         uiState = uiState.copy(activeSession = updatedSession)
         persistActiveSessionState(session = updatedSession)
         if (willCompleteSet) {
+            handleBountyAfterSetCompletion(
+                afterSession = updatedSession,
+                exerciseIndex = exerciseIndex,
+                completedSetId = completedSetId,
+            )
             startRestTimerForExercise(exercise)
+        }
+    }
+
+    private fun handleBountyAfterSetCompletion(
+        afterSession: ActiveSession,
+        exerciseIndex: Int,
+        completedSetId: Long,
+    ) {
+        if (uiState.profile?.devInSessionBountiesEnabled != true) return
+        val earnedCardsThisSession = uiState.bountyCards.count { it.sessionStartedAtUtc == afterSession.startedAtUtc }
+        val result = evaluateBountyAfterSetCompletion(
+            afterSession = afterSession,
+            exerciseIndex = exerciseIndex,
+            completedSetId = completedSetId,
+            activeBounty = uiState.activeBounty,
+            eligibleMissCount = uiState.bountyEligibleMissCount,
+            earnedCardsThisSessionCount = earnedCardsThisSession,
+        )
+        val provisionalCard = result.earnedCard
+        uiState = uiState.copy(
+            activeBounty = result.activeBounty,
+            revealedBountyCard = provisionalCard ?: uiState.revealedBountyCard,
+            bountyEligibleMissCount = result.eligibleMissCount,
+            bountyCards = provisionalCard?.let { card ->
+                listOf(card) + uiState.bountyCards
+            } ?: uiState.bountyCards,
+            message = when {
+                provisionalCard != null -> null
+                result.activeBounty != null && result.activeBounty != uiState.activeBounty -> "Bounty revealed: ${result.activeBounty.title}."
+                else -> uiState.message
+            },
+        )
+        viewModelScope.launch(Dispatchers.IO) {
+            container.workoutRepository.saveActiveBounty(result.activeBounty)
+            provisionalCard?.let { card ->
+                val savedCard = container.workoutRepository.saveEarnedBountyCard(card)
+                uiState = uiState.copy(
+                    revealedBountyCard = uiState.revealedBountyCard?.let { visible ->
+                        if (visible.bountyId == card.bountyId && visible.cardId == 0L) savedCard else visible
+                    },
+                    bountyCards = listOf(savedCard) + uiState.bountyCards.filterNot { existing ->
+                        existing.cardId == 0L && existing.bountyId == card.bountyId
+                    },
+                )
+            }
+        }
+    }
+
+    fun dismissBountyCardReveal() {
+        uiState = uiState.copy(revealedBountyCard = null)
+    }
+
+    private fun persistClearedActiveBounty() {
+        viewModelScope.launch(Dispatchers.IO) {
+            container.workoutRepository.saveActiveBounty(null)
         }
     }
 
@@ -4435,6 +4545,9 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
         val session = uiState.activeSession ?: return
         val updatedExercises = session.exercises.toMutableList()
         val exercise = updatedExercises[exerciseIndex]
+        val removedSet = exercise.sets.getOrNull(setIndex) ?: return
+        val shouldClearActiveBounty = uiState.activeBounty?.targetSetId == removedSet.id
+        val activeBountyAfterDeletion = if (shouldClearActiveBounty) null else uiState.activeBounty
         val updatedSets = exercise.sets
             .filterIndexed { index, _ -> index != setIndex }
             .mapIndexed { index, set -> set.copy(setNumber = index + 1) }
@@ -4448,8 +4561,14 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
             updatedExercise = updatedExercises[exerciseIndex],
         )
         val updatedSession = session.copy(exercises = updatedExercises)
-        uiState = uiState.copy(activeSession = updatedSession)
+        uiState = uiState.copy(
+            activeSession = updatedSession,
+            activeBounty = activeBountyAfterDeletion,
+        )
         persistActiveSessionState(session = updatedSession)
+        if (shouldClearActiveBounty) {
+            persistClearedActiveBounty()
+        }
     }
 
     fun removeSessionExercise(
@@ -4463,6 +4582,8 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
     ) {
         val session = uiState.activeSession ?: return
         val removedExercise = session.exercises.getOrNull(exerciseIndex) ?: return
+        val shouldClearActiveBounty = uiState.activeBounty?.exerciseId == removedExercise.exerciseId
+        val activeBountyAfterRemoval = if (shouldClearActiveBounty) null else uiState.activeBounty
         val updatedExercises = session.exercises.filterIndexed { index, _ -> index != exerciseIndex }
         val updatedSession = session.copy(exercises = updatedExercises)
         if (pickNextAfterRemoval) {
@@ -4503,6 +4624,7 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
                 uiState = uiState.copy(
                     activeSession = updatedSession,
                     activeSessionExerciseIndex = pickedExerciseIndex,
+                    activeBounty = activeBountyAfterRemoval,
                     message = when {
                         pickedExercise != null -> "${removedExercise.name} deleted. Next up: ${pickedExercise.name}."
                         updatedExercises.isEmpty() -> "${removedExercise.name} deleted. Add another exercise or abandon the workout."
@@ -4510,6 +4632,9 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
                     },
                 )
                 persistActiveSessionState(session = updatedSession, selectedExerciseIndex = pickedExerciseIndex)
+                if (shouldClearActiveBounty) {
+                    container.workoutRepository.saveActiveBounty(null)
+                }
                 if (session.origin == "generated") {
                     container.workoutRepository.recordActiveSessionFeedbackSignal(
                         session = session,
@@ -4529,6 +4654,7 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
         uiState = uiState.copy(
             activeSession = updatedSession,
             activeSessionExerciseIndex = updatedSelection,
+            activeBounty = activeBountyAfterRemoval,
             message = if (updatedExercises.isEmpty()) {
                 "${removedExercise.name} deleted. Add another exercise or abandon the workout."
             } else {
@@ -4536,6 +4662,9 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
             },
         )
         persistActiveSessionState(session = updatedSession, selectedExerciseIndex = updatedSelection)
+        if (shouldClearActiveBounty) {
+            persistClearedActiveBounty()
+        }
         if (session.origin == "generated") {
             viewModelScope.launch(Dispatchers.IO) {
                 container.workoutRepository.recordActiveSessionFeedbackSignal(
@@ -4552,11 +4681,19 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
         val session = uiState.activeSession ?: return
         val exercise = session.exercises.getOrNull(exerciseIndex) ?: return
         val completedBefore = exercise.sets.count(SessionSet::completed)
+        val completedSetId = exercise.sets.firstOrNull { !it.completed }?.id
         val updatedSession = logNextSessionSetInActiveSession(session, exerciseIndex)
         uiState = uiState.copy(activeSession = updatedSession)
         persistActiveSessionState(session = updatedSession)
         val completedAfter = updatedSession.exercises.getOrNull(exerciseIndex)?.sets?.count(SessionSet::completed) ?: completedBefore
         if (completedAfter > completedBefore) {
+            completedSetId?.let { setId ->
+                handleBountyAfterSetCompletion(
+                    afterSession = updatedSession,
+                    exerciseIndex = exerciseIndex,
+                    completedSetId = setId,
+                )
+            }
             startRestTimerForExercise(exercise)
         }
     }
@@ -4565,11 +4702,26 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
         val session = uiState.activeSession ?: return
         val exercise = session.exercises.getOrNull(exerciseIndex) ?: return
         val completedBefore = exercise.sets.count(SessionSet::completed)
+        val incompleteSetIdsBefore = exercise.sets
+            .filterNot(SessionSet::completed)
+            .map(SessionSet::id)
+            .toSet()
+        val completedBountySetId = uiState.activeBounty
+            ?.takeIf { bounty -> bounty.exerciseId == exercise.exerciseId }
+            ?.targetSetId
+            ?.takeIf(incompleteSetIdsBefore::contains)
         val updatedSession = logAllSessionSetsInActiveSession(session, exerciseIndex)
         uiState = uiState.copy(activeSession = updatedSession)
         persistActiveSessionState(session = updatedSession)
         val completedAfter = updatedSession.exercises.getOrNull(exerciseIndex)?.sets?.count(SessionSet::completed) ?: completedBefore
         if (completedAfter > completedBefore) {
+            completedBountySetId?.let { setId ->
+                handleBountyAfterSetCompletion(
+                    afterSession = updatedSession,
+                    exerciseIndex = exerciseIndex,
+                    completedSetId = setId,
+                )
+            }
             startRestTimerForExercise(exercise)
         }
     }
@@ -4932,6 +5084,9 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
                     legacyTodayVariant = uiState.todayCompletionFeedbackVariant,
                 ),
             )
+            if (workoutId != null) {
+                container.workoutRepository.linkEarnedBountyCardsToWorkout(session.startedAtUtc, workoutId)
+            }
             container.workoutRepository.clearActiveSession()
             syncActiveWorkoutNotification(null)
             if (session.focusKey != null && splitName != null) {
@@ -4962,6 +5117,11 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
             val afterStrengthScore = container.workoutRepository.loadStrengthScoreSummary()
             val afterHistory = container.workoutRepository.loadHistory(afterStrengthScore)
             val afterHistoryWorkoutMetrics = container.workoutRepository.loadHistoryWorkoutMetrics()
+            val afterBountyCards = if (profile?.devInSessionBountiesEnabled == true) {
+                container.workoutRepository.loadEarnedBountyCards()
+            } else {
+                emptyList()
+            }
             val todayReceiptRecap = buildTodayReceiptRecapState(afterHistory)
             val afterWeeklyTargets = profile?.let { loadWeeklyMuscleTargetSummary(it) }
             val afterProgramSessions = activeProgram?.let { container.programRepository.loadSessionsForProgram(it.id) }.orEmpty()
@@ -5050,6 +5210,9 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
                 history = afterHistory,
                 historyWorkoutMetrics = afterHistoryWorkoutMetrics,
                 historyStrengthScore = afterStrengthScore,
+                activeBounty = null,
+                bountyCards = afterBountyCards,
+                bountyEligibleMissCount = 0,
                 todayReceiptRecap = todayReceiptRecap,
                 completionReceipt = receiptSnapshot?.let { CompletionReceiptUiState(snapshot = it) },
                 message = "${session.title} logged.",

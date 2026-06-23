@@ -1,5 +1,6 @@
 package dev.toastlabs.toastlift.data
 
+import android.database.Cursor
 import org.json.JSONArray
 import org.json.JSONObject
 import java.time.Duration
@@ -762,7 +763,187 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
     }
 
     fun clearActiveSession() {
-        database.open().execSQL("DELETE FROM active_workouts")
+        val db = database.open()
+        db.execSQL("DELETE FROM active_workout_bounties")
+        db.execSQL("DELETE FROM active_workouts")
+    }
+
+    fun loadActiveBounty(): ActiveWorkoutBounty? {
+        return database.open().rawQuery(
+            """
+            SELECT bounty_id, bounty_type, title, family, rarity, resolution_scope,
+                   session_started_at_utc, exercise_id, exercise_name, target_set_id,
+                   target_set_number, created_at_utc, guidance, proof_prompt, flavor_text,
+                   source_completed_at_utc, lower_rest_seconds, upper_rest_seconds, art_seed
+            FROM active_workout_bounties
+            WHERE active_bounty_id = 1
+            """.trimIndent(),
+            null,
+        ).use { cursor ->
+            if (!cursor.moveToFirst()) {
+                null
+            } else {
+                ActiveWorkoutBounty(
+                    bountyId = cursor.getString(0),
+                    type = BountyType.fromStorageKey(cursor.getString(1)),
+                    title = cursor.getString(2),
+                    family = BountyCardFamily.fromStorageKey(cursor.getString(3)),
+                    rarity = BountyCardRarity.fromStorageKey(cursor.getString(4)),
+                    resolutionScope = BountyResolutionScope.fromStorageKey(cursor.getString(5)),
+                    sessionStartedAtUtc = cursor.getString(6),
+                    exerciseId = cursor.getLong(7),
+                    exerciseName = cursor.getString(8),
+                    targetSetId = if (cursor.isNull(9)) null else cursor.getLong(9),
+                    targetSetNumber = if (cursor.isNull(10)) null else cursor.getInt(10),
+                    createdAtUtc = cursor.getString(11),
+                    guidance = cursor.getString(12),
+                    proofPrompt = cursor.getString(13),
+                    flavorText = cursor.getString(14),
+                    sourceCompletedAtUtc = cursor.getStringOrNull(15),
+                    lowerRestSeconds = if (cursor.isNull(16)) null else cursor.getInt(16),
+                    upperRestSeconds = if (cursor.isNull(17)) null else cursor.getInt(17),
+                    artSeed = cursor.getString(18),
+                )
+            }
+        }
+    }
+
+    fun saveActiveBounty(bounty: ActiveWorkoutBounty?) {
+        val db = database.open()
+        if (bounty == null) {
+            db.execSQL("DELETE FROM active_workout_bounties")
+            return
+        }
+        db.execSQL(
+            """
+            INSERT OR REPLACE INTO active_workout_bounties (
+                active_bounty_id, bounty_id, bounty_type, title, family, rarity, resolution_scope,
+                session_started_at_utc, exercise_id, exercise_name, target_set_id, target_set_number,
+                created_at_utc, guidance, proof_prompt, flavor_text, source_completed_at_utc,
+                lower_rest_seconds, upper_rest_seconds, art_seed
+            ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """.trimIndent(),
+            arrayOf(
+                bounty.bountyId,
+                bounty.type.storageKey,
+                bounty.title,
+                bounty.family.storageKey,
+                bounty.rarity.storageKey,
+                bounty.resolutionScope.storageKey,
+                bounty.sessionStartedAtUtc,
+                bounty.exerciseId,
+                bounty.exerciseName,
+                bounty.targetSetId,
+                bounty.targetSetNumber,
+                bounty.createdAtUtc,
+                bounty.guidance,
+                bounty.proofPrompt,
+                bounty.flavorText,
+                bounty.sourceCompletedAtUtc,
+                bounty.lowerRestSeconds,
+                bounty.upperRestSeconds,
+                bounty.artSeed,
+            ),
+        )
+    }
+
+    fun saveEarnedBountyCard(card: EarnedBountyCard): EarnedBountyCard {
+        val db = database.open()
+        db.execSQL(
+            """
+            INSERT INTO earned_bounty_cards (
+                bounty_id, bounty_type, title, family, rarity, resolution_scope,
+                earned_at_utc, session_started_at_utc, workout_id, exercise_id, exercise_name,
+                proof_line, flavor_text, art_seed, source_set_number
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """.trimIndent(),
+            arrayOf(
+                card.bountyId,
+                card.bountyType.storageKey,
+                card.title,
+                card.family.storageKey,
+                card.rarity.storageKey,
+                card.resolutionScope.storageKey,
+                card.earnedAtUtc,
+                card.sessionStartedAtUtc,
+                card.workoutId,
+                card.exerciseId,
+                card.exerciseName,
+                card.proofLine,
+                card.flavorText,
+                card.artSeed,
+                card.sourceSetNumber,
+            ),
+        )
+        val cardId = db.rawQuery("SELECT last_insert_rowid()", null).use { cursor ->
+            cursor.moveToFirst()
+            cursor.getLong(0)
+        }
+        return card.copy(cardId = cardId)
+    }
+
+    fun linkEarnedBountyCardsToWorkout(sessionStartedAtUtc: String, workoutId: Long) {
+        database.open().execSQL(
+            """
+            UPDATE earned_bounty_cards
+            SET workout_id = ?
+            WHERE session_started_at_utc = ? AND workout_id IS NULL
+            """.trimIndent(),
+            arrayOf(workoutId, sessionStartedAtUtc),
+        )
+    }
+
+    fun loadEarnedBountyCards(): List<EarnedBountyCard> {
+        return database.open().rawQuery(
+            """
+            SELECT card_id, bounty_id, bounty_type, title, family, rarity, resolution_scope,
+                   earned_at_utc, session_started_at_utc, workout_id, exercise_id, exercise_name,
+                   proof_line, flavor_text, art_seed, source_set_number
+            FROM earned_bounty_cards
+            ORDER BY earned_at_utc DESC, card_id DESC
+            """.trimIndent(),
+            null,
+        ).use(::readEarnedBountyCards)
+    }
+
+    fun countEarnedBountyCardsForSession(sessionStartedAtUtc: String): Int {
+        return database.open().rawQuery(
+            """
+            SELECT COUNT(*)
+            FROM earned_bounty_cards
+            WHERE session_started_at_utc = ?
+            """.trimIndent(),
+            arrayOf(sessionStartedAtUtc),
+        ).use { cursor ->
+            if (!cursor.moveToFirst()) 0 else cursor.getInt(0)
+        }
+    }
+
+    private fun readEarnedBountyCards(cursor: Cursor): List<EarnedBountyCard> {
+        return buildList {
+            while (cursor.moveToNext()) {
+                add(
+                    EarnedBountyCard(
+                        cardId = cursor.getLong(0),
+                        bountyId = cursor.getString(1),
+                        bountyType = BountyType.fromStorageKey(cursor.getString(2)),
+                        title = cursor.getString(3),
+                        family = BountyCardFamily.fromStorageKey(cursor.getString(4)),
+                        rarity = BountyCardRarity.fromStorageKey(cursor.getString(5)),
+                        resolutionScope = BountyResolutionScope.fromStorageKey(cursor.getString(6)),
+                        earnedAtUtc = cursor.getString(7),
+                        sessionStartedAtUtc = cursor.getString(8),
+                        workoutId = if (cursor.isNull(9)) null else cursor.getLong(9),
+                        exerciseId = cursor.getLong(10),
+                        exerciseName = cursor.getString(11),
+                        proofLine = cursor.getString(12),
+                        flavorText = cursor.getString(13),
+                        artSeed = cursor.getString(14),
+                        sourceSetNumber = if (cursor.isNull(15)) null else cursor.getInt(15),
+                    ),
+                )
+            }
+        }
     }
 
     fun saveAbandonedWorkout(session: ActiveSession) {

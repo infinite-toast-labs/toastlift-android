@@ -10,7 +10,7 @@ import java.util.Locale
 class ToastLiftDatabase(private val context: Context) {
     private val databaseName = "toastlift.db"
     private val assetName = "functional_fitness_workout_generator.sqlite"
-    private val appVersion = 20
+    private val appVersion = 21
 
     @Volatile
     private var database: SQLiteDatabase? = null
@@ -257,6 +257,7 @@ class ToastLiftDatabase(private val context: Context) {
                 training_freshness_threshold_days INTEGER NOT NULL DEFAULT 3,
                 training_freshness_min_bucket_exercises INTEGER NOT NULL DEFAULT 2,
                 dev_session_set_swipe_complete_enabled INTEGER NOT NULL DEFAULT 1,
+                dev_in_session_bounties_enabled INTEGER NOT NULL DEFAULT 0,
                 next_focus TEXT NOT NULL DEFAULT 'full_body',
                 created_at_utc TEXT NOT NULL,
                 updated_at_utc TEXT NOT NULL
@@ -349,6 +350,12 @@ class ToastLiftDatabase(private val context: Context) {
             table = "user_profile",
             column = "dev_session_set_swipe_complete_enabled",
             definition = "INTEGER NOT NULL DEFAULT 1",
+        )
+        ensureColumn(
+            db = db,
+            table = "user_profile",
+            column = "dev_in_session_bounties_enabled",
+            definition = "INTEGER NOT NULL DEFAULT 0",
         )
         db.execSQL(
             """
@@ -851,6 +858,61 @@ class ToastLiftDatabase(private val context: Context) {
             table = "active_sets",
             column = "work_unit_values_json",
             definition = "TEXT",
+        )
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS active_workout_bounties (
+                active_bounty_id INTEGER PRIMARY KEY CHECK (active_bounty_id = 1),
+                bounty_type TEXT NOT NULL,
+                title TEXT NOT NULL,
+                family TEXT NOT NULL,
+                rarity TEXT NOT NULL,
+                resolution_scope TEXT NOT NULL,
+                session_started_at_utc TEXT NOT NULL,
+                exercise_id INTEGER NOT NULL,
+                exercise_name TEXT NOT NULL,
+                target_set_id INTEGER,
+                target_set_number INTEGER,
+                created_at_utc TEXT NOT NULL,
+                guidance TEXT NOT NULL,
+                proof_prompt TEXT NOT NULL,
+                flavor_text TEXT NOT NULL,
+                source_completed_at_utc TEXT,
+                lower_rest_seconds INTEGER,
+                upper_rest_seconds INTEGER,
+                art_seed TEXT NOT NULL,
+                bounty_id TEXT NOT NULL
+            )
+            """.trimIndent(),
+        )
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS earned_bounty_cards (
+                card_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                bounty_id TEXT NOT NULL,
+                bounty_type TEXT NOT NULL,
+                title TEXT NOT NULL,
+                family TEXT NOT NULL,
+                rarity TEXT NOT NULL,
+                resolution_scope TEXT NOT NULL,
+                earned_at_utc TEXT NOT NULL,
+                session_started_at_utc TEXT NOT NULL,
+                workout_id INTEGER,
+                exercise_id INTEGER NOT NULL,
+                exercise_name TEXT NOT NULL,
+                proof_line TEXT NOT NULL,
+                flavor_text TEXT NOT NULL,
+                art_seed TEXT NOT NULL,
+                source_set_number INTEGER,
+                FOREIGN KEY (workout_id) REFERENCES performed_workouts (performed_workout_id) ON DELETE SET NULL
+            )
+            """.trimIndent(),
+        )
+        db.execSQL(
+            "CREATE INDEX IF NOT EXISTS idx_earned_bounty_cards_session ON earned_bounty_cards (session_started_at_utc, earned_at_utc DESC)",
+        )
+        db.execSQL(
+            "CREATE INDEX IF NOT EXISTS idx_earned_bounty_cards_workout ON earned_bounty_cards (workout_id, earned_at_utc DESC)",
         )
         db.execSQL(
             "CREATE INDEX IF NOT EXISTS idx_exercise_synonyms_norm ON exercise_synonyms (synonym_name_normalized)",

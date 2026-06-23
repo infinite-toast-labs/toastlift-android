@@ -193,17 +193,27 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.DialogWindowProvider
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.core.view.WindowCompat
 import kotlin.math.roundToInt
 import dev.toastlabs.toastlift.data.ActiveSession
+import dev.toastlabs.toastlift.data.ActiveWorkoutBounty
 import dev.toastlabs.toastlift.data.AbandonedWorkoutSummary
+import dev.toastlabs.toastlift.data.BountyCardFamily
+import dev.toastlabs.toastlift.data.BountyType
+import dev.toastlabs.toastlift.data.BountyCardRarity
+import dev.toastlabs.toastlift.data.BountyResolutionScope
 import dev.toastlabs.toastlift.data.CustomExerciseDraft
 import dev.toastlabs.toastlift.data.DailyCoachMessage
+import dev.toastlabs.toastlift.data.EarnedBountyCard
+import dev.toastlabs.toastlift.data.formatBountySeconds
 import dev.toastlabs.toastlift.data.ExerciseDetail
 import dev.toastlabs.toastlift.data.ExerciseHistoryDetail
 import dev.toastlabs.toastlift.data.ExercisePerformanceStats
@@ -1217,6 +1227,7 @@ fun ToastLiftApp(
                                         navigationState = historyNavigationState,
                                         profile = state.profile,
                                         history = state.history,
+                                        bountyCards = state.bountyCards,
                                         historyWorkoutMetrics = state.historyWorkoutMetrics,
                                         tokenBalanceTrend = state.tokenBalanceTrend,
                                         weeklyMuscleTargets = state.weeklyMuscleTargets,
@@ -1363,6 +1374,12 @@ fun ToastLiftApp(
                     onDismiss = viewModel::dismissProgramWrapUp,
                 )
             }
+            state.revealedBountyCard?.let { card ->
+                BountyCardRevealOverlay(
+                    card = card,
+                    onDismiss = viewModel::dismissBountyCardReveal,
+                )
+            }
             state.completionReceipt?.let { receipt ->
                 CompletionReceiptScreen(
                     receipt = receipt,
@@ -1418,6 +1435,284 @@ private fun LoadingScreen() {
             CircularProgressIndicator()
         }
     }
+}
+
+@Composable
+private fun ActiveBountyCardStrip(bounty: ActiveWorkoutBounty) {
+    val accent = bountyRarityAccent(bounty.rarity)
+    val isDark = LocalToastLiftIsDarkTheme.current
+    val base = MaterialTheme.colorScheme.surface
+    // Opaque tinted container: composite the accent over a solid surface so the
+    // workout list never bleeds through the card. The accent shows up only in the
+    // border/icon/text, not as a translucent body.
+    val containerColor = accent.color.copy(alpha = if (isDark) 0.18f else 0.12f).compositeOver(base)
+    val iconTileColor = accent.color.copy(alpha = if (isDark) 0.22f else 0.16f).compositeOver(base)
+    var expanded by remember(bounty.bountyId) { mutableStateOf(false) }
+    FeatureCard(
+        containerColor = containerColor,
+        border = BorderStroke(1.dp, accent.color.copy(alpha = if (isDark) 0.55f else 0.42f)),
+        showTopAccent = false,
+        modifier = Modifier.clickable { expanded = !expanded },
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(iconTileColor)
+                        .border(1.dp, accent.color.copy(alpha = 0.55f), RoundedCornerShape(8.dp)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = bountyFamilyIcon(bounty.family),
+                        contentDescription = null,
+                        tint = accent.color,
+                        modifier = Modifier.size(26.dp),
+                    )
+                }
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        MiniTag(bounty.rarity.label, accent = accent.color.copy(alpha = if (isDark) 0.22f else 0.16f))
+                        if (bounty.targetSetNumber != null) {
+                            MiniTag("Set ${bounty.targetSetNumber}", accent = MaterialTheme.colorScheme.surfaceVariant)
+                        }
+                    }
+                    Text(
+                        bounty.title,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Black,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        bounty.guidance,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Text(
+                        bounty.proofPrompt,
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        color = accent.color,
+                    )
+                }
+            }
+            if (expanded) {
+                Text(
+                    bounty.flavorText,
+                    style = MaterialTheme.typography.bodySmall,
+                    fontStyle = FontStyle.Italic,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    "Tap to collapse",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                Text(
+                    "Tap for details",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun BountyCardRevealOverlay(
+    card: EarnedBountyCard,
+    onDismiss: () -> Unit,
+) {
+    BackHandler(onBack = onDismiss)
+    val haptics = LocalHapticFeedback.current
+    val scale = remember { Animatable(0.6f) }
+    LaunchedEffect(card.cardId, card.bountyId) {
+        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+        scale.animateTo(
+            targetValue = 1f,
+            animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow),
+        )
+    }
+    // Hosted in a Dialog so the scrim is the same theme-aware Material3 dim used by
+    // the app's AlertDialog / ModalBottomSheet — no pure-black overlay in light mode.
+    // The card itself stays fully opaque (see BountyCollectibleCard).
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false,
+            dismissOnBackPress = true,
+            dismissOnClickOutside = false,
+        ),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .semantics {
+                    role = Role.Button
+                    contentDescription = "Bounty card earned. ${card.title}. ${card.proofLine}. Tap back to workout."
+                },
+            contentAlignment = Alignment.Center,
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .statusBarsPadding()
+                    .padding(horizontal = 20.dp, vertical = 18.dp)
+                    .verticalScroll(rememberScrollState()),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(18.dp, Alignment.CenterVertically),
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    MiniTag("Bounty Cashed", accent = bountyRarityAccent(card.rarity).color)
+                    Text(
+                        "Card Earned",
+                        style = MaterialTheme.typography.headlineMedium,
+                        fontWeight = FontWeight.Black,
+                        color = Color.White,
+                    )
+                }
+                BountyCollectibleCard(
+                    card = card,
+                    modifier = Modifier
+                        .fillMaxWidth(0.92f)
+                        .height(460.dp)
+                        .graphicsLayer {
+                            scaleX = scale.value
+                            scaleY = scale.value
+                        },
+                )
+                Button(
+                    onClick = onDismiss,
+                    modifier = Modifier.fillMaxWidth(0.82f),
+                ) {
+                    Text("Back to workout")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun BountyCollectibleCard(
+    card: EarnedBountyCard,
+    modifier: Modifier = Modifier,
+    compact: Boolean = false,
+) {
+    val accent = bountyRarityAccent(card.rarity)
+    val isDark = LocalToastLiftIsDarkTheme.current
+    val surface = MaterialTheme.colorScheme.surface
+    val surfaceVariant = MaterialTheme.colorScheme.surfaceVariant
+    val shape = RoundedCornerShape(if (compact) 8.dp else 14.dp)
+    Box(
+        modifier = modifier
+            .clip(shape)
+            .background(
+                Brush.verticalGradient(
+                    listOf(
+                        // Fully opaque: composite accent over a solid surface so the
+                        // black scrim never shows through the card body.
+                        accent.color.copy(alpha = if (isDark) 0.42f else 0.28f).compositeOver(surface),
+                        surface,
+                        surfaceVariant,
+                    ),
+                ),
+            )
+            .border(if (compact) 1.dp else 2.dp, accent.color, shape)
+            .padding(if (compact) 10.dp else 14.dp),
+    ) {
+        Column(
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.spacedBy(if (compact) 8.dp else 12.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    card.title,
+                    modifier = Modifier.weight(1f),
+                    style = if (compact) MaterialTheme.typography.titleMedium else MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Black,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                MiniTag(card.rarity.label, accent = accent.color)
+            }
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .clip(RoundedCornerShape(if (compact) 6.dp else 10.dp))
+                    .background(
+                        Brush.radialGradient(
+                            colors = listOf(
+                                accent.color.copy(alpha = 0.34f).compositeOver(surface),
+                                accent.color.copy(alpha = 0.16f).compositeOver(surface),
+                                surface,
+                            ),
+                        ),
+                    )
+                    .border(1.dp, accent.color.copy(alpha = 0.40f).compositeOver(surface), RoundedCornerShape(if (compact) 6.dp else 10.dp)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = bountyFamilyIcon(card.family),
+                    contentDescription = null,
+                    tint = accent.color,
+                    modifier = Modifier.size(if (compact) 52.dp else 112.dp),
+                )
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                MiniTag(card.family.label, accent = MaterialTheme.colorScheme.surfaceVariant)
+                MiniTag(card.resolutionScope.label, accent = MaterialTheme.colorScheme.surfaceVariant)
+            }
+            Text(
+                card.proofLine,
+                style = if (compact) MaterialTheme.typography.bodySmall else MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            if (!compact) {
+                Text(
+                    card.flavorText,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun bountyRarityAccent(rarity: BountyCardRarity): GlowAccent = when (rarity) {
+    // Ascending warmth/vibrancy; red is reserved for the rarest tier so it reads
+    // as "legendary" rather than a mid-workout danger signal.
+    BountyCardRarity.CHALK -> amethystAccent
+    BountyCardRarity.STEEL -> surgeAccent
+    BountyCardRarity.EMBER -> orangeAccent
+    BountyCardRarity.GOLD -> goldAccent
+    BountyCardRarity.PRISM -> emberAccent
+}
+
+private fun bountyFamilyIcon(family: BountyCardFamily): ImageVector = when (family) {
+    BountyCardFamily.CLOSEOUT -> Icons.Rounded.WorkspacePremium
+    BountyCardFamily.REST_WINDOW -> Icons.Rounded.Schedule
+    BountyCardFamily.CONTINUITY -> Icons.Rounded.Shield
+    BountyCardFamily.CONSISTENCY -> Icons.Rounded.CenterFocusStrong
+    BountyCardFamily.HONESTY -> Icons.Rounded.Info
 }
 
 @Composable
@@ -5061,6 +5356,21 @@ private enum class HistoryMovementFilter(val label: String) {
     Laterality("Laterality"),
 }
 
+private enum class HistoryBountyCardSort(val label: String) {
+    Newest("Newest"),
+    Rarity("Rarity"),
+    Exercise("Exercise"),
+    Type("Type"),
+}
+
+private enum class HistoryBountyCardGroup(val label: String) {
+    None("None"),
+    Rarity("Rarity"),
+    Family("Family"),
+    Exercise("Exercise"),
+    Workout("Workout"),
+}
+
 private fun historyMuscleFilterFor(muscle: String): HistoryMuscleFilter? = when (muscle) {
     "Chest", "Back", "Shoulders", "Trapezius", "Biceps", "Triceps", "Forearms" -> HistoryMuscleFilter.Upper
     "Quadriceps", "Glutes", "Hamstrings", "Calves", "Adductors", "Abductors" -> HistoryMuscleFilter.Lower
@@ -5078,6 +5388,7 @@ private fun rememberHistoryNavigationState(): HistoryNavigationState {
     val streakScrollState = rememberScrollState()
     val calendarScrollState = rememberScrollState()
     val tokenBalanceScrollState = rememberScrollState()
+    val bountyCardsListState = rememberLazyListState()
 
     return remember {
         HistoryNavigationState(
@@ -5089,6 +5400,7 @@ private fun rememberHistoryNavigationState(): HistoryNavigationState {
             streakScrollState = streakScrollState,
             calendarScrollState = calendarScrollState,
             tokenBalanceScrollState = tokenBalanceScrollState,
+            bountyCardsListState = bountyCardsListState,
         )
     }
 }
@@ -5102,6 +5414,7 @@ private class HistoryNavigationState(
     val streakScrollState: ScrollState,
     val calendarScrollState: ScrollState,
     val tokenBalanceScrollState: ScrollState,
+    val bountyCardsListState: LazyListState,
 ) {
     var destination by mutableStateOf("dashboard")
     var selectedMuscleFilter by mutableStateOf(HistoryMuscleFilter.All)
@@ -5113,6 +5426,11 @@ private class HistoryNavigationState(
     var selectedMonthDateKey by mutableStateOf<String?>(null)
     var statsFilterName by mutableStateOf(HistoryStatsFilter.AllTime.name)
     var tokenBalanceWindow by mutableStateOf(TokenBalanceWindow.Last7Days)
+    var bountyCardSortName by mutableStateOf(HistoryBountyCardSort.Newest.name)
+    var bountyCardGroupName by mutableStateOf(HistoryBountyCardGroup.Rarity.name)
+    var bountyCardRarityName by mutableStateOf("All")
+    var bountyCardFamilyName by mutableStateOf("All")
+    var bountyCardScopeName by mutableStateOf("All")
     val weeklyMuscleTargetExpandedGroups: SnapshotStateMap<String, Boolean> = mutableStateMapOf()
 }
 
@@ -5121,6 +5439,7 @@ private fun HistoryScreen(
     navigationState: HistoryNavigationState,
     profile: UserProfile?,
     history: List<HistorySummary>,
+    bountyCards: List<EarnedBountyCard>,
     historyWorkoutMetrics: List<HistoryWorkoutMetric>,
     tokenBalanceTrend: AdherenceCurrencyTrend?,
     weeklyMuscleTargets: WeeklyMuscleTargetSummary?,
@@ -5160,6 +5479,12 @@ private fun HistoryScreen(
                 HistoryMovementFilter.Planes -> insight.kind == "plane"
                 HistoryMovementFilter.Laterality -> insight.kind == "laterality"
             }
+        }
+    }
+    val bountyCardsEnabled = profile?.devInSessionBountiesEnabled == true
+    LaunchedEffect(bountyCardsEnabled, navigationState.destination) {
+        if (!bountyCardsEnabled && navigationState.destination == "bounty-cards") {
+            navigationState.destination = "dashboard"
         }
     }
     BackHandler(enabled = navigationState.destination != "dashboard") {
@@ -5231,6 +5556,15 @@ private fun HistoryScreen(
         )
         return
     }
+    if (navigationState.destination == "bounty-cards" && bountyCardsEnabled) {
+        HistoryBountyCardsScreen(
+            cards = bountyCards,
+            navigationState = navigationState,
+            onBack = { navigationState.destination = "dashboard" },
+            onOpenWorkout = onOpenWorkout,
+        )
+        return
+    }
 
     LazyColumn(
         state = navigationState.dashboardListState,
@@ -5247,6 +5581,12 @@ private fun HistoryScreen(
                 onOpenMilestones = { navigationState.destination = "milestones" },
                 onOpenStreak = { navigationState.destination = "streak" },
                 onOpenCalendar = { navigationState.destination = "calendar" },
+                bountyCardCount = bountyCards.size,
+                onOpenBountyCards = if (bountyCardsEnabled) {
+                    { navigationState.destination = "bounty-cards" }
+                } else {
+                    null
+                },
             )
         }
         item {
@@ -5405,6 +5745,247 @@ private fun HistoryScreen(
                 onDeleteWorkout(entry.id)
             },
         )
+    }
+}
+
+@Composable
+private fun HistoryBountyCardsScreen(
+    cards: List<EarnedBountyCard>,
+    navigationState: HistoryNavigationState,
+    onBack: () -> Unit,
+    onOpenWorkout: (Long) -> Unit,
+) {
+    var selectedCard by remember { mutableStateOf<EarnedBountyCard?>(null) }
+    val selectedSort = HistoryBountyCardSort.entries.firstOrNull { it.name == navigationState.bountyCardSortName }
+        ?: HistoryBountyCardSort.Newest
+    val selectedGroup = HistoryBountyCardGroup.entries.firstOrNull { it.name == navigationState.bountyCardGroupName }
+        ?: HistoryBountyCardGroup.Rarity
+    val filteredCards = remember(
+        cards,
+        selectedSort,
+        selectedGroup,
+        navigationState.bountyCardRarityName,
+        navigationState.bountyCardFamilyName,
+        navigationState.bountyCardScopeName,
+    ) {
+        sortBountyCards(
+            cards = cards.filter { card ->
+                (navigationState.bountyCardRarityName == "All" || card.rarity.label == navigationState.bountyCardRarityName) &&
+                    (navigationState.bountyCardFamilyName == "All" || card.family.label == navigationState.bountyCardFamilyName) &&
+                    (navigationState.bountyCardScopeName == "All" || card.resolutionScope.label == navigationState.bountyCardScopeName)
+            },
+            sort = selectedSort,
+        )
+    }
+
+    selectedCard?.let { card ->
+        HistoryBountyCardDetailScreen(
+            card = card,
+            onBack = { selectedCard = null },
+            onOpenWorkout = card.workoutId?.let { workoutId ->
+                {
+                    selectedCard = null
+                    onOpenWorkout(workoutId)
+                }
+            },
+        )
+        return
+    }
+
+    LazyColumn(
+        state = navigationState.bountyCardsListState,
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        item {
+            HistoryDetailHeader(title = "Cards", onBack = onBack)
+        }
+        item {
+            CompactSectionCard(
+                title = "Bounty Binder",
+                subtitle = if (cards.isEmpty()) {
+                    "Earned bounty cards will collect here after in-session challenges."
+                } else {
+                    "${cards.size} earned card${if (cards.size == 1) "" else "s"} saved from workouts."
+                },
+            ) {
+                Text("Sort", fontWeight = FontWeight.SemiBold)
+                ChoiceChipRow(
+                    values = HistoryBountyCardSort.entries.map(HistoryBountyCardSort::label),
+                    selected = selectedSort.label,
+                    onSelect = { label ->
+                        navigationState.bountyCardSortName = HistoryBountyCardSort.entries.first { it.label == label }.name
+                    },
+                )
+                Text("Group", fontWeight = FontWeight.SemiBold)
+                ChoiceChipRow(
+                    values = HistoryBountyCardGroup.entries.map(HistoryBountyCardGroup::label),
+                    selected = selectedGroup.label,
+                    onSelect = { label ->
+                        navigationState.bountyCardGroupName = HistoryBountyCardGroup.entries.first { it.label == label }.name
+                    },
+                )
+                Text("Filters", fontWeight = FontWeight.SemiBold)
+                ChoiceChipRow(
+                    values = listOf("All") + BountyCardRarity.entries.map(BountyCardRarity::label),
+                    selected = navigationState.bountyCardRarityName,
+                    onSelect = { navigationState.bountyCardRarityName = it },
+                )
+                ChoiceChipRow(
+                    values = listOf("All") + BountyCardFamily.entries.map(BountyCardFamily::label),
+                    selected = navigationState.bountyCardFamilyName,
+                    onSelect = { navigationState.bountyCardFamilyName = it },
+                )
+                ChoiceChipRow(
+                    values = listOf("All") + BountyResolutionScope.entries.map(BountyResolutionScope::label),
+                    selected = navigationState.bountyCardScopeName,
+                    onSelect = { navigationState.bountyCardScopeName = it },
+                )
+            }
+        }
+
+        if (filteredCards.isEmpty()) {
+            item {
+                CompactSectionCard(title = "No matching cards", subtitle = "Adjust filters or earn new bounty cards during active workouts.") {
+                    Text(
+                        "Cards are earned only from successful in-session bounties. Turning the dev flag off hides this binder without deleting saved cards.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        } else {
+            val groupedCards = groupBountyCards(filteredCards, selectedGroup)
+            groupedCards.forEach { (groupLabel, groupCards) ->
+                item(key = "bounty-group-$groupLabel") {
+                    HistoryDateSeparator(groupLabel)
+                }
+                items(
+                    items = groupCards.chunked(2),
+                    key = { row -> row.joinToString("-") { it.cardId.toString() } },
+                ) { rowCards ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
+                        rowCards.forEach { card ->
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(236.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable { selectedCard = card },
+                            ) {
+                                BountyCollectibleCard(
+                                    card = card,
+                                    compact = true,
+                                    modifier = Modifier.fillMaxSize(),
+                                )
+                            }
+                        }
+                        if (rowCards.size == 1) {
+                            Spacer(modifier = Modifier.weight(1f))
+                        }
+                    }
+                }
+            }
+        }
+        item { Spacer(modifier = Modifier.height(80.dp)) }
+    }
+}
+
+@Composable
+private fun HistoryBountyCardDetailScreen(
+    card: EarnedBountyCard,
+    onBack: () -> Unit,
+    onOpenWorkout: (() -> Unit)?,
+) {
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        item {
+            HistoryDetailHeader(title = card.title, onBack = onBack)
+        }
+        item {
+            BountyCollectibleCard(
+                card = card,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(500.dp),
+            )
+        }
+        item {
+            CompactSectionCard(title = "Card proof", subtitle = card.exerciseName) {
+                BountyCardFactRow(title = "Proof", subtitle = card.proofLine)
+                BountyCardFactRow(title = "Rarity", subtitle = card.rarity.label)
+                BountyCardFactRow(title = "Family", subtitle = card.family.label)
+                BountyCardFactRow(title = "Earned", subtitle = formatBountyCardEarnedAt(card.earnedAtUtc))
+                onOpenWorkout?.let { openWorkout ->
+                    Button(onClick = openWorkout, modifier = Modifier.fillMaxWidth()) {
+                        Text("Open source workout")
+                    }
+                }
+            }
+        }
+        item { Spacer(modifier = Modifier.height(80.dp)) }
+    }
+}
+
+@Composable
+private fun BountyCardFactRow(title: String, subtitle: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        LeadingBadge(label = title.take(2).uppercase(), accent = accentForKey(title))
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(title, fontWeight = FontWeight.Medium)
+            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+private fun sortBountyCards(
+    cards: List<EarnedBountyCard>,
+    sort: HistoryBountyCardSort,
+): List<EarnedBountyCard> {
+    val rarityRank = BountyCardRarity.entries.mapIndexed { index, rarity -> rarity to index }.toMap()
+    return when (sort) {
+        HistoryBountyCardSort.Newest -> cards.sortedWith(compareByDescending<EarnedBountyCard> { it.earnedAtUtc }.thenByDescending { it.cardId })
+        HistoryBountyCardSort.Rarity -> cards.sortedWith(
+            compareByDescending<EarnedBountyCard> { rarityRank[it.rarity] ?: 0 }
+                .thenByDescending { it.earnedAtUtc },
+        )
+        HistoryBountyCardSort.Exercise -> cards.sortedWith(compareBy<EarnedBountyCard> { it.exerciseName.lowercase() }.thenByDescending { it.earnedAtUtc })
+        HistoryBountyCardSort.Type -> cards.sortedWith(compareBy<EarnedBountyCard> { it.bountyType.title }.thenByDescending { it.earnedAtUtc })
+    }
+}
+
+private fun groupBountyCards(
+    cards: List<EarnedBountyCard>,
+    group: HistoryBountyCardGroup,
+): List<Pair<String, List<EarnedBountyCard>>> {
+    if (group == HistoryBountyCardGroup.None) return listOf("All Cards" to cards)
+    return cards.groupBy { card ->
+        when (group) {
+            HistoryBountyCardGroup.None -> "All Cards"
+            HistoryBountyCardGroup.Rarity -> card.rarity.label
+            HistoryBountyCardGroup.Family -> card.family.label
+            HistoryBountyCardGroup.Exercise -> card.exerciseName
+            HistoryBountyCardGroup.Workout -> card.workoutId?.let { "Workout #$it" } ?: "Unlinked Session"
+        }
+    }.toList()
+}
+
+private fun formatBountyCardEarnedAt(earnedAtUtc: String): String {
+    return runCatching {
+        Instant.parse(earnedAtUtc)
+            .atZone(ZoneId.systemDefault())
+            .format(DateTimeFormatter.ofPattern("MMM d, yyyy h:mm a", Locale.US))
+    }.getOrElse {
+        earnedAtUtc.replace("T", " ").removeSuffix("Z")
     }
 }
 
@@ -5604,6 +6185,8 @@ private fun HistoryOverviewHeader(
     onOpenMilestones: () -> Unit,
     onOpenStreak: () -> Unit,
     onOpenCalendar: () -> Unit,
+    bountyCardCount: Int,
+    onOpenBountyCards: (() -> Unit)?,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         FeatureCard(containerColor = MaterialTheme.colorScheme.surface) {
@@ -5616,6 +6199,14 @@ private fun HistoryOverviewHeader(
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
                     HistoryStatTile("Weekly Goal", "${data.currentWeekCount}/${data.weeklyGoal}", modifier = Modifier.weight(1f))
                     HistoryStatTile("Current Streak", "${data.currentStreakWeeks} week${if (data.currentStreakWeeks == 1) "" else "s"}", onClick = onOpenStreak, modifier = Modifier.weight(1f))
+                }
+                onOpenBountyCards?.let { openCards ->
+                    HistoryStatTile(
+                        title = "Cards",
+                        value = bountyCardCount.toString(),
+                        onClick = openCards,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
                 }
                 HistoryStatTile("Stats", "All / 7 / 30", onClick = onOpenStats, modifier = Modifier.fillMaxWidth())
             }
@@ -8216,6 +8807,7 @@ private fun ProfileScreen(state: AppUiState, viewModel: ToastLiftViewModel) {
         onSetDevExerciseDetailLearnedPreferenceVisible = viewModel::setDevExerciseDetailLearnedPreferenceVisible,
         onSetDevRestTimerSoundDisabled = viewModel::setDevRestTimerSoundDisabled,
         onSetDevSessionSetSwipeCompleteEnabled = viewModel::setDevSessionSetSwipeCompleteEnabled,
+        onSetDevInSessionBountiesEnabled = viewModel::setDevInSessionBountiesEnabled,
         onSetTrainingFreshnessThresholdDays = viewModel::setTrainingFreshnessThresholdDays,
         onSetTrainingFreshnessMinimumBucketExercises = viewModel::setTrainingFreshnessMinimumBucketExercises,
         onOpenRestTimerSoundSettings = { openRestTimerSoundSettings(context) },
@@ -8265,6 +8857,7 @@ private fun ProfileEditor(
     onSetDevExerciseDetailLearnedPreferenceVisible: ((Boolean) -> Unit)? = null,
     onSetDevRestTimerSoundDisabled: ((Boolean) -> Unit)? = null,
     onSetDevSessionSetSwipeCompleteEnabled: ((Boolean) -> Unit)? = null,
+    onSetDevInSessionBountiesEnabled: ((Boolean) -> Unit)? = null,
     onSetTrainingFreshnessThresholdDays: ((Int) -> Unit)? = null,
     onSetTrainingFreshnessMinimumBucketExercises: ((Int) -> Unit)? = null,
     onOpenRestTimerSoundSettings: (() -> Unit)? = null,
@@ -8495,6 +9088,7 @@ private fun ProfileEditor(
                     onSetDevExerciseDetailLearnedPreferenceVisible != null ||
                     onSetDevRestTimerSoundDisabled != null ||
                     onSetDevSessionSetSwipeCompleteEnabled != null ||
+                    onSetDevInSessionBountiesEnabled != null ||
                     onSetTrainingFreshnessThresholdDays != null ||
                     onSetTrainingFreshnessMinimumBucketExercises != null ||
                     onOpenRestTimerSoundSettings != null
@@ -8565,6 +9159,14 @@ private fun ProfileEditor(
                         label = "Swipe right to complete sets",
                         supportingText = "Lets active workout set rows complete or undo a set when swiped right. Turn this off if it feels too easy to trigger.",
                         checked = profile.devSessionSetSwipeCompleteEnabled,
+                        onCheckedChange = onToggle,
+                    )
+                }
+                onSetDevInSessionBountiesEnabled?.let { onToggle ->
+                    SettingsSwitchRow(
+                        label = "Enable in-session bounty cards",
+                        supportingText = "Shows optional set-to-set bounty challenges and collectible card reveals during workouts. Turning this off removes live bounty cards, reveal overlays, and the History card binder without deleting earned cards.",
+                        checked = profile.devInSessionBountiesEnabled,
                         onCheckedChange = onToggle,
                     )
                 }
@@ -10838,6 +11440,7 @@ private fun ActiveSessionScreen(
             performanceStats = state.activeExercisePerformanceStatsById[selectedExercise.exerciseId],
             muscleTargetSummary = muscleTargetSummary,
             weeklyMuscleTargets = activeSessionWeeklyMuscleTargets,
+            activeBounty = state.activeBounty?.takeIf { it.exerciseId == selectedExercise.exerciseId },
             exerciseIndex = requireNotNull(selectedExerciseIndex),
             onBack = onCloseExercise,
             onShowExerciseDetail = { onShowExerciseDetail(selectedExercise.exerciseId) },
@@ -11008,6 +11611,11 @@ private fun ActiveSessionScreen(
                 val activeBodyRegionFilterLabel = selectedBodyRegionFilterLabel
                 val activeMuscleFilterLabel = selectedMuscleFilterLabel
                 val activeMuscleTargetFilterLabel = selectedMuscleTargetLabel
+                state.activeBounty?.let { bounty ->
+                    item {
+                        ActiveBountyCardStrip(bounty = bounty)
+                    }
+                }
                 if (activeEquipmentFilter != null || activeBodyRegionFilterLabel != null || activeMuscleFilterLabel != null || activeMuscleTargetFilterLabel != null) {
                     item {
                         ActiveSessionFilterBanner(
@@ -13851,6 +14459,7 @@ private fun SessionExerciseDetailScreen(
     performanceStats: ExercisePerformanceStats?,
     muscleTargetSummary: ActiveWorkoutMuscleTargetCoverageSummary,
     weeklyMuscleTargets: WeeklyMuscleTargetSummary?,
+    activeBounty: ActiveWorkoutBounty?,
     exerciseIndex: Int,
     onBack: () -> Unit,
     onShowExerciseDetail: () -> Unit,
@@ -14026,10 +14635,19 @@ private fun SessionExerciseDetailScreen(
                     .padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
+                val restSniperBounty = activeBounty?.takeIf {
+                    it.type == BountyType.REST_SNIPER && restTimer != null
+                }
+                if (activeBounty != null && restSniperBounty == null) {
+                    item {
+                        ActiveBountyCardStrip(bounty = activeBounty)
+                    }
+                }
                 restTimer?.let { activeRestTimer ->
                     item {
                         RestTimerCard(
                             timer = activeRestTimer,
+                            bounty = restSniperBounty,
                             onCancel = onCancelRestTimer,
                             onDone = onDismissRestTimer,
                         )
@@ -14179,6 +14797,7 @@ private fun RestTimerCard(
     timer: RestTimerUiState,
     onCancel: () -> Unit,
     onDone: () -> Unit,
+    bounty: ActiveWorkoutBounty? = null,
 ) {
     val nowMillis by produceState(System.currentTimeMillis(), timer.startedAtEpochMillis, timer.status) {
         while (true) {
@@ -14203,7 +14822,23 @@ private fun RestTimerCard(
         RestTimerStatus.Running -> "Prescribed rest for ${timer.exerciseName}"
         RestTimerStatus.Finished -> "Ready for the next set"
     }
-    FeatureCard(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.72f)) {
+    val bountyAccent = bounty?.let { bountyRarityAccent(it.rarity) }
+    val bountyWindow = bounty?.let {
+        val lower = it.lowerRestSeconds ?: return@let null
+        val upper = it.upperRestSeconds ?: return@let null
+        val startFraction = (lower.toFloat() / timer.durationSeconds).coerceIn(0f, 1f)
+        val endFraction = (upper.toFloat() / timer.durationSeconds).coerceIn(0f, 1f)
+        if (endFraction <= startFraction) null else Triple(startFraction, endFraction, formatBountySeconds(lower) to formatBountySeconds(upper))
+    }
+    // Opaque container so the workout list never bleeds through. When a bounty is
+    // merged in, tint toward the bounty accent; otherwise use primaryContainer.
+    val containerColor = if (bountyAccent != null) {
+        bountyAccent.color.copy(alpha = if (LocalToastLiftIsDarkTheme.current) 0.18f else 0.12f)
+            .compositeOver(MaterialTheme.colorScheme.primaryContainer)
+    } else {
+        MaterialTheme.colorScheme.primaryContainer
+    }
+    FeatureCard(containerColor = containerColor) {
         Column(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -14228,6 +14863,36 @@ private fun RestTimerCard(
                     color = MaterialTheme.colorScheme.onPrimaryContainer,
                 )
             }
+            if (bounty != null && bountyWindow != null) {
+                val (_, _, windowLabels) = bountyWindow
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        imageVector = bountyFamilyIcon(bounty.family),
+                        contentDescription = null,
+                        tint = bountyAccent!!.color,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Text(
+                        bounty.title,
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Text(
+                        "Bounty window ${windowLabels.first}–${windowLabels.second}",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = bountyAccent.color,
+                    )
+                }
+            }
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -14235,6 +14900,27 @@ private fun RestTimerCard(
                     .clip(RoundedCornerShape(999.dp))
                     .background(MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.16f)),
             ) {
+                if (bountyWindow != null && bountyAccent != null) {
+                    val (startFraction, endFraction, _) = bountyWindow
+                    val bandWidth = (endFraction - startFraction).coerceAtLeast(0f)
+                    val remainingFraction = (1f - endFraction).coerceAtLeast(0f)
+                    if (bandWidth > 0f && (startFraction + bandWidth + remainingFraction) > 0f) {
+                        Row(modifier = Modifier.matchParentSize()) {
+                            if (startFraction > 0f) {
+                                Spacer(Modifier.fillMaxHeight().weight(startFraction))
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxHeight()
+                                    .weight(bandWidth)
+                                    .background(bountyAccent.color.copy(alpha = 0.55f)),
+                            )
+                            if (remainingFraction > 0f) {
+                                Spacer(Modifier.fillMaxHeight().weight(remainingFraction))
+                            }
+                        }
+                    }
+                }
                 Box(
                     modifier = Modifier
                         .fillMaxHeight()

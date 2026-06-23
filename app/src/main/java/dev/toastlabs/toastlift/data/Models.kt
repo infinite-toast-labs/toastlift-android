@@ -331,6 +331,7 @@ data class UserProfile(
     val trainingFreshnessThresholdDays: Int = DEFAULT_TRAINING_FRESHNESS_THRESHOLD_DAYS,
     val trainingFreshnessMinimumBucketExercises: Int = DEFAULT_TRAINING_FRESHNESS_BUCKET_EXERCISES,
     val devSessionSetSwipeCompleteEnabled: Boolean = true,
+    val devInSessionBountiesEnabled: Boolean = false,
 )
 
 data class WorkoutExercise(
