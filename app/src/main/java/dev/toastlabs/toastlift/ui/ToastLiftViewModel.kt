@@ -157,6 +157,7 @@ enum class CustomExerciseDestination {
     ManualBuilder,
     GeneratedWorkout,
     TodayTemplate,
+    Library,
 }
 
 enum class ActiveSessionAddExerciseMode {
@@ -4784,6 +4785,13 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
         )
     }
 
+    fun openCustomExerciseForLibrary() {
+        openCustomExerciseFlow(
+            destination = CustomExerciseDestination.Library,
+            seedName = uiState.libraryQuery,
+        )
+    }
+
     fun openActiveSessionAddExercise() {
         uiState = uiState.copy(
             activeSessionAddExerciseVisible = true,
@@ -5035,12 +5043,17 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
 
     fun saveCustomExercise() {
         val current = uiState.customExerciseDraft ?: return
+        val destination = uiState.customExerciseDestination
         uiState = uiState.copy(customExerciseDraft = current.copy(isSaving = true, errorMessage = null))
         viewModelScope.launch(Dispatchers.IO) {
             runCatching {
                 container.customExerciseRepository.saveCustomExercise(current)
             }.onSuccess { saved ->
-                queueExerciseForPickerSelection(saved)
+                if (destination == CustomExerciseDestination.Library) {
+                    finishLibraryCustomExerciseSave(saved)
+                } else {
+                    queueExerciseForPickerSelection(saved)
+                }
             }.onFailure { error ->
                 uiState = uiState.copy(
                     customExerciseDraft = current.copy(
@@ -5050,6 +5063,18 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
                 )
             }
         }
+    }
+
+    private fun finishLibraryCustomExerciseSave(saved: ExerciseSummary) {
+        uiState = uiState.copy(
+            customExerciseDraft = null,
+            customExerciseDestination = null,
+            librarySearchVisible = false,
+            libraryQuery = "",
+            libraryFilters = LibraryFilters(),
+            message = "${saved.name} added to your library.",
+        )
+        refreshLibrary()
     }
 
     fun completeSession() {
@@ -7008,6 +7033,14 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     fun useExistingExerciseFromCustomFlow(exercise: ExerciseSummary) {
+        if (uiState.customExerciseDestination == CustomExerciseDestination.Library) {
+            uiState = uiState.copy(
+                customExerciseDraft = null,
+                customExerciseDestination = null,
+                message = "${exercise.name} is already in your library.",
+            )
+            return
+        }
         queueExerciseForPickerSelection(exercise)
     }
 
