@@ -79,6 +79,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.AccountTree
+import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.CenterFocusStrong
 import androidx.compose.material.icons.rounded.CenterFocusWeak
@@ -1221,6 +1222,13 @@ fun ToastLiftApp(
                                         onOpenExerciseVideos = viewModel::openExerciseVideos,
                                         onAddExerciseToExistingTemplate = viewModel::addExerciseToExistingTemplate,
                                         onCreateTemplateFromExercise = viewModel::createTemplateFromExercise,
+                                        onOpenCustomExercise = viewModel::openCustomExerciseForLibrary,
+                                        onCloseCustomExercise = viewModel::closeCustomExerciseFlow,
+                                        onCustomExerciseDraftChange = viewModel::updateCustomExerciseDraft,
+                                        onCustomExerciseNameChange = viewModel::updateCustomExerciseName,
+                                        onGenerateCustomExercise = viewModel::generateCustomExerciseDetails,
+                                        onUseExistingExercise = viewModel::useExistingExerciseFromCustomFlow,
+                                        onSaveCustomExercise = viewModel::saveCustomExercise,
                                     )
 
                                     MainTab.History -> HistoryScreen(
@@ -4491,7 +4499,27 @@ private fun LibraryScreen(
     onOpenExerciseVideos: (Long, String) -> Unit,
     onAddExerciseToExistingTemplate: (Long, ExerciseSummary) -> Unit,
     onCreateTemplateFromExercise: (String, ExerciseSummary) -> Unit,
+    onOpenCustomExercise: () -> Unit,
+    onCloseCustomExercise: () -> Unit,
+    onCustomExerciseDraftChange: (CustomExerciseDraft) -> Unit,
+    onCustomExerciseNameChange: (String) -> Unit,
+    onGenerateCustomExercise: () -> Unit,
+    onUseExistingExercise: (ExerciseSummary) -> Unit,
+    onSaveCustomExercise: () -> Unit,
 ) {
+    if (state.customExerciseDraft != null && state.customExerciseDestination == CustomExerciseDestination.Library) {
+        CustomExerciseEditorScreen(
+            draft = state.customExerciseDraft,
+            onBack = onCloseCustomExercise,
+            onDraftChange = onCustomExerciseDraftChange,
+            onNameChange = onCustomExerciseNameChange,
+            onGenerate = onGenerateCustomExercise,
+            onUseExistingExercise = onUseExistingExercise,
+            onSave = onSaveCustomExercise,
+        )
+        return
+    }
+
     var showFilterSheet by remember { mutableStateOf(false) }
     var existingTemplateTarget by remember { mutableStateOf<ExerciseSummary?>(null) }
     var newTemplateTarget by remember { mutableStateOf<ExerciseSummary?>(null) }
@@ -4524,6 +4552,13 @@ private fun LibraryScreen(
                         },
                     )
                 } else {
+                    IconButton(onClick = onOpenCustomExercise) {
+                        Icon(
+                            imageVector = Icons.Rounded.Add,
+                            contentDescription = "Add custom exercise",
+                            tint = MaterialTheme.colorScheme.onBackground,
+                        )
+                    }
                     Spacer(modifier = Modifier.weight(1f))
                     OutlinedButton(onClick = { showFilterSheet = true }) {
                         Icon(
