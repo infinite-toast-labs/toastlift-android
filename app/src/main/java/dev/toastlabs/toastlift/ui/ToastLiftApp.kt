@@ -2957,19 +2957,25 @@ private fun CompletionReceiptScreen(
     ) {
         Scaffold(
             topBar = {
-                CenterAlignedTopAppBar(
-                    title = {
-                        Text(if (receipt.isReplay) "Workout Receipt" else "Workout Logged")
-                    },
-                    navigationIcon = {
-                        IconButton(onClick = onDismiss) {
-                            Icon(
-                                imageVector = Icons.Rounded.Close,
-                                contentDescription = "Close receipt",
-                            )
-                        }
-                    },
-                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .statusBarsPadding()
+                        .padding(start = 20.dp, end = 12.dp, top = 12.dp, bottom = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        if (receipt.isReplay) "Workout Receipt" else "Workout Logged",
+                        style = MaterialTheme.typography.displaySmall,
+                        modifier = Modifier.weight(1f),
+                    )
+                    IconButton(onClick = onDismiss) {
+                        Icon(
+                            imageVector = Icons.Rounded.Close,
+                            contentDescription = "Close receipt",
+                        )
+                    }
+                }
             },
             bottomBar = {
                 Surface(
