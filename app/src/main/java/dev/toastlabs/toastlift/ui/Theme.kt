@@ -53,8 +53,8 @@ object Spacing {
     val cardPadding: Dp = 20.dp
     val heroPadding: Dp = 28.dp
     val minTouchTarget: Dp = 48.dp
-    val bottomBarHeight: Dp = 60.dp
-    val bottomBarMargin: Dp = 24.dp
+    val bottomBarHeight: Dp = 72.dp
+    val bottomBarMargin: Dp = 16.dp
 }
 
 internal val LocalSpacing = staticCompositionLocalOf { Spacing }
@@ -184,11 +184,11 @@ private val ToastLiftLightColors = lightColorScheme(
     primaryContainer = Color(0xFFD1FEC3),
     onPrimaryContainer = Color(0xFF13250C),
     secondary = Color(0xFF00854E),
-    onSecondary = Color(0xFF111318),
+    onSecondary = Color(0xFFFFFFFF),
     secondaryContainer = Color(0xFFBDFFD6),
     onSecondaryContainer = Color(0xFF062615),
     tertiary = Color(0xFF9A6E00),
-    onTertiary = Color(0xFF111318),
+    onTertiary = Color(0xFFFFFFFF),
     tertiaryContainer = Color(0xFFFFE8A5),
     onTertiaryContainer = Color(0xFF2E1F00),
     background = Color(0xFFFAFAF8),

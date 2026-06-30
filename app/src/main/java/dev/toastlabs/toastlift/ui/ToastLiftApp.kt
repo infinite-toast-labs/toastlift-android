@@ -57,6 +57,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.WindowInsets
@@ -335,8 +336,8 @@ private val MainTab.navIconRes: Int
  * Custom floating bottom nav bar per DESIGN.md §5 "Bottom Bar (Custom, replaces NavigationBar)".
  *
  * - Floating pill shape: RoundedCornerShape(28.dp)
- * - 16dp horizontal margin, 24dp bottom margin
- * - 60dp height
+ * - 16dp horizontal margin, 16dp bottom margin
+ * - 72dp height
  * - surface color @ 90% alpha background
  * - 3 items only, icon-only by default (label shown on selected tab)
  * - Active item: accent color + 4dp top indicator line
@@ -357,7 +358,8 @@ private fun ToastLiftBottomBar(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp)
-            .padding(bottom = 24.dp),
+            .navigationBarsPadding()
+            .padding(bottom = 16.dp),
         contentAlignment = Alignment.BottomCenter,
     ) {
         Surface(
@@ -365,7 +367,7 @@ private fun ToastLiftBottomBar(
             color = surface.copy(alpha = 0.9f),
             modifier = Modifier
                 .fillMaxWidth()
-                .height(60.dp),
+                .height(72.dp),
         ) {
             Row(
                 modifier = Modifier.fillMaxSize(),
@@ -381,12 +383,12 @@ private fun ToastLiftBottomBar(
                     )
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
                         modifier = Modifier
-                            .height(60.dp)
+                            .fillMaxHeight()
                             .weight(1f)
                             .clickable { onSelectTab(tab) }
-                            .padding(vertical = 8.dp),
+                            .padding(top = 9.dp, bottom = 8.dp),
                     ) {
                         // 4dp top indicator line on active item.
                         Box(
@@ -396,12 +398,11 @@ private fun ToastLiftBottomBar(
                                 .clip(RoundedCornerShape(2.dp))
                                 .background(if (isSelected) accent else Color.Transparent),
                         )
-                        Spacer(modifier = Modifier.height(2.dp))
                         Icon(
                             painter = painterResource(tab.navIconRes),
                             contentDescription = tab.label,
                             tint = iconTint,
-                            modifier = Modifier.size(22.dp),
+                            modifier = Modifier.size(24.dp),
                         )
                         // Label only on selected tab.
                         if (isSelected) {
@@ -410,12 +411,13 @@ private fun ToastLiftBottomBar(
                                 color = iconTint,
                                 fontFamily = MonoFamily,
                                 fontSize = 9.sp,
+                                lineHeight = 10.sp,
                                 letterSpacing = 0.15.em,
                                 fontWeight = FontWeight.Medium,
                                 maxLines = 1,
                             )
                         } else {
-                            Spacer(modifier = Modifier.height(11.dp))
+                            Spacer(modifier = Modifier.height(10.dp))
                         }
                     }
                 }
@@ -441,6 +443,7 @@ private fun ToastLiftScreenHeader(
     Row(
         modifier = modifier
             .fillMaxWidth()
+            .statusBarsPadding()
             .padding(horizontal = 20.dp, vertical = 12.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
@@ -3598,7 +3601,6 @@ private fun FreshnessReEntryCard(
     }
     FeatureCard(
         containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.98f),
-        border = BorderStroke(1.dp, accent.start.copy(alpha = 0.32f)),
         accentKey = "freshness reentry ${state.mode.name}",
     ) {
         Box(
@@ -3737,7 +3739,6 @@ private fun TrainingFreshnessCard(
                 role = Role.Button
             },
         containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
-        border = BorderStroke(1.dp, accent.start.copy(alpha = 0.24f)),
     ) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -6258,13 +6259,6 @@ private data class RewardVisualSpec(
     val message: String,
 )
 
-private fun historyStatRewardIcon(title: String): Int? = when (title) {
-    "Stats" -> R.drawable.ic_chart
-    "Milestones" -> R.drawable.ic_trophy
-    "Current Streak" -> R.drawable.ic_flame
-    else -> null
-}
-
 @Composable
 private fun milestoneRewardSpec(milestone: MilestoneProgress): RewardVisualSpec {
     val achieved = milestone.current >= milestone.target
@@ -6366,8 +6360,8 @@ private fun HistoryOverviewHeader(
                     HistoryStatTile("Milestones", data.milestoneProgress.sumOf { it.achievedCount }.toString(), onClick = onOpenMilestones, modifier = Modifier.weight(1f))
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
-                    HistoryStatTile("Weekly Goal", "${data.currentWeekCount}/${data.weeklyGoal}", modifier = Modifier.weight(1f))
-                    HistoryStatTile("Current Streak", "${data.currentStreakWeeks} week${if (data.currentStreakWeeks == 1) "" else "s"}", onClick = onOpenStreak, modifier = Modifier.weight(1f))
+                    HistoryStatTile("Weekly", "${data.currentWeekCount}/${data.weeklyGoal}", modifier = Modifier.weight(1f))
+                    HistoryStatTile("Streak", "${data.currentStreakWeeks} week${if (data.currentStreakWeeks == 1) "" else "s"}", onClick = onOpenStreak, modifier = Modifier.weight(1f))
                 }
                 onOpenBountyCards?.let { openCards ->
                     HistoryStatTile(
@@ -7709,36 +7703,21 @@ private fun HistoryStatTile(
     onClick: (() -> Unit)? = null,
 ) {
     val accent = accentForKey(title)
-    val rewardIcon = historyStatRewardIcon(title)
-    FeatureCard(
-        modifier = modifier.then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
-        containerColor = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.dp, accent.color.copy(alpha = 0.22f)),
+    Surface(
+        modifier = modifier
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            .heightIn(min = 116.dp),
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.46f),
+        contentColor = MaterialTheme.colorScheme.onSurface,
     ) {
-        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                MiniTag(text = title, accent = accent.color)
-                rewardIcon?.let { icon ->
-                    Box(
-                        modifier = Modifier
-                            .size(30.dp)
-                            .clip(CircleShape)
-                            .background(accent.color.copy(alpha = 0.12f)),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(
-                            painter = painterResource(icon),
-                            contentDescription = null,
-                            tint = accent.color,
-                            modifier = Modifier.size(16.dp),
-                        )
-                    }
-                }
-            }
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            MiniTag(text = title, accent = accent.color)
             Text(value, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black)
         }
     }
@@ -9096,7 +9075,7 @@ private fun ProfileEditor(
                 items = listOf(
                     Triple("Split", compactSplitLabel(splitName), "program"),
                     Triple("Duration", draft.durationMinutes.toString(), "min"),
-                    Triple("Frequency", draft.weeklyFrequency.toString(), "days"),
+                    Triple("Freq", draft.weeklyFrequency.toString(), "days"),
                 ),
             )
         }
@@ -17767,20 +17746,22 @@ private fun MiniTag(
     text: String,
     accent: Color = MaterialTheme.colorScheme.primary,
 ) {
-    // DESIGN.md §5 MiniTag: pill shape, accent.color @ 0.15 alpha bg,
-    // Mono Label 9sp text in accent.color, 4dp vertical / 10dp horizontal padding.
+    val colors = toneChipColors(tint = accent)
+    // DESIGN.md §5 MiniTag shape/spacing with contrast-safe text over
+    // the composited accent tint.
     Box(
         modifier = Modifier
             .clip(RoundedCornerShape(50))
-            .background(accent.copy(alpha = 0.15f))
+            .background(colors.container)
             .padding(horizontal = 10.dp, vertical = 4.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(
             text = text.uppercase(),
-            color = accent,
+            color = colors.content,
             fontFamily = MonoFamily,
             fontSize = 9.sp,
+            lineHeight = 10.sp,
             letterSpacing = 0.15.em,
             fontWeight = FontWeight.Medium,
             maxLines = 1,
@@ -17924,7 +17905,6 @@ private fun ProgramLaunchCard(
     val accent = accentForKey("guided program")
     FeatureCard(
         containerColor = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.dp, accent.start.copy(alpha = 0.22f)),
     ) {
         Column(
             modifier = Modifier.padding(16.dp),
