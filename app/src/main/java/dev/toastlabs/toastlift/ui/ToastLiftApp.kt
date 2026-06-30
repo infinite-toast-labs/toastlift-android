@@ -1,6 +1,8 @@
 package dev.toastlabs.toastlift.ui
 
 import android.content.ActivityNotFoundException
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -59,6 +61,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.lazy.LazyColumn
@@ -209,6 +212,8 @@ import dev.toastlabs.toastlift.data.BountyType
 import dev.toastlabs.toastlift.data.BountyCardRarity
 import dev.toastlabs.toastlift.data.BountyResolutionScope
 import dev.toastlabs.toastlift.data.CustomExerciseDraft
+import dev.toastlabs.toastlift.data.CustomExerciseAiModelOption
+import dev.toastlabs.toastlift.data.CustomExerciseGenerationReport
 import dev.toastlabs.toastlift.data.DailyCoachMessage
 import dev.toastlabs.toastlift.data.EarnedBountyCard
 import dev.toastlabs.toastlift.data.formatBountySeconds
@@ -290,6 +295,9 @@ import dev.toastlabs.toastlift.data.StrengthScoreSummary
 import dev.toastlabs.toastlift.data.WorkoutAbFlagSnapshot
 import dev.toastlabs.toastlift.data.WorkoutMovementInsight
 import dev.toastlabs.toastlift.data.WorkoutMuscleInsight
+import dev.toastlabs.toastlift.data.customExerciseAiModelOptionForId
+import dev.toastlabs.toastlift.data.customExerciseAiModelOptions
+import dev.toastlabs.toastlift.data.formatCustomExerciseGenerationReportForClipboard
 import dev.toastlabs.toastlift.data.generatedWorkoutFocusDisplayName
 import dev.toastlabs.toastlift.data.isValidWorkoutDurationMinutes
 import dev.toastlabs.toastlift.data.intensityPrescriptionIntentForFocusKey
@@ -340,7 +348,6 @@ private fun ToastLiftBottomBar(
     onSelectTab: (MainTab) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val uiColors = LocalUiColors.current
     val surface = MaterialTheme.colorScheme.surface
     val accent = MaterialTheme.colorScheme.primary
     val inactive = MaterialTheme.colorScheme.onSurfaceVariant
@@ -8968,6 +8975,7 @@ private fun ProfileScreen(state: AppUiState, viewModel: ToastLiftViewModel) {
         onSetDevRestTimerSoundDisabled = viewModel::setDevRestTimerSoundDisabled,
         onSetDevSessionSetSwipeCompleteEnabled = viewModel::setDevSessionSetSwipeCompleteEnabled,
         onSetDevInSessionBountiesEnabled = viewModel::setDevInSessionBountiesEnabled,
+        onSetCustomExerciseAiModelId = viewModel::setCustomExerciseAiModelId,
         onSetTrainingFreshnessThresholdDays = viewModel::setTrainingFreshnessThresholdDays,
         onSetTrainingFreshnessMinimumBucketExercises = viewModel::setTrainingFreshnessMinimumBucketExercises,
         onOpenRestTimerSoundSettings = { openRestTimerSoundSettings(context) },
@@ -9018,6 +9026,7 @@ private fun ProfileEditor(
     onSetDevRestTimerSoundDisabled: ((Boolean) -> Unit)? = null,
     onSetDevSessionSetSwipeCompleteEnabled: ((Boolean) -> Unit)? = null,
     onSetDevInSessionBountiesEnabled: ((Boolean) -> Unit)? = null,
+    onSetCustomExerciseAiModelId: ((String) -> Unit)? = null,
     onSetTrainingFreshnessThresholdDays: ((Int) -> Unit)? = null,
     onSetTrainingFreshnessMinimumBucketExercises: ((Int) -> Unit)? = null,
     onOpenRestTimerSoundSettings: (() -> Unit)? = null,
@@ -9249,6 +9258,7 @@ private fun ProfileEditor(
                     onSetDevRestTimerSoundDisabled != null ||
                     onSetDevSessionSetSwipeCompleteEnabled != null ||
                     onSetDevInSessionBountiesEnabled != null ||
+                    onSetCustomExerciseAiModelId != null ||
                     onSetTrainingFreshnessThresholdDays != null ||
                     onSetTrainingFreshnessMinimumBucketExercises != null ||
                     onOpenRestTimerSoundSettings != null
@@ -9272,6 +9282,16 @@ private fun ProfileEditor(
                         supportingText = "Shows each completed workout's persisted Today completion feedback experiment snapshot in History detail. Export JSON always includes the snapshot.",
                         checked = profile.historyWorkoutAbFlagsVisible,
                         onCheckedChange = onToggle,
+                    )
+                }
+                onSetCustomExerciseAiModelId?.let { onSelect ->
+                    val selectedModel = customExerciseAiModelOptionForId(profile.customExerciseAiModelId)
+                    SettingsDropdownRow(
+                        label = "Custom exercise AI model",
+                        selected = selectedModel,
+                        options = customExerciseAiModelOptions,
+                        supportingText = selectedModel.supportingText,
+                        onSelect = { option -> onSelect(option.id) },
                     )
                 }
                 onSetDevPickNextExerciseEnabled?.let { onToggle ->
@@ -12486,6 +12506,29 @@ private fun CustomExerciseEditorScreen(
                 }
             }
 
+            FeatureCard(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f)) {
+                val selectedModel = customExerciseAiModelOptionForId(draft.aiModelId)
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("Model Selection", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    SettingsDropdownRow(
+                        label = "Model",
+                        selected = selectedModel,
+                        options = customExerciseAiModelOptions,
+                        onSelect = { option ->
+                            onDraftChange(
+                                draft.copy(
+                                    aiModelId = option.id,
+                                    generatedWithAi = false,
+                                    generationReport = null,
+                                    errorMessage = null,
+                                ),
+                            )
+                        },
+                        supportingText = "Defaults to the Profile dev model for this draft. Changes here apply only to this custom exercise.",
+                    )
+                }
+            }
+
             if (draft.errorMessage != null) {
                 FeatureCard(containerColor = emberAccent.glow.copy(alpha = 0.22f)) {
                     Text(
@@ -12600,6 +12643,11 @@ private fun CustomExerciseEditorScreen(
                 DraftField(label = "Synonyms", value = draft.synonymsInput, onValueChange = { onDraftChange(draft.copy(synonymsInput = it)) }, supporting = "Comma separated aliases")
             }
 
+            draft.generationReport?.let { report ->
+                Divider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.22f))
+                CustomExerciseGenerationReportSection(report = report)
+            }
+
             Spacer(modifier = Modifier.height(96.dp))
         }
     }
@@ -12651,6 +12699,145 @@ private fun CustomExerciseSection(
             },
         )
     }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun CustomExerciseGenerationReportSection(report: CustomExerciseGenerationReport) {
+    val context = LocalContext.current
+    val clipboardText = remember(report) { formatCustomExerciseGenerationReportForClipboard(report) }
+    val usage = report.tokenUsage
+    FeatureCard(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f)) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Text("AI Generation Report", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text(
+                        "Read-only provider response details for external analysis.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                OutlinedButton(
+                    onClick = {
+                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        clipboard.setPrimaryClip(ClipData.newPlainText("Custom exercise AI generation report", clipboardText))
+                        Toast.makeText(context, "AI generation report copied.", Toast.LENGTH_SHORT).show()
+                    },
+                ) {
+                    Text("Copy")
+                }
+            }
+
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                GenerationReportPill(label = "Provider", value = report.providerLabel)
+                GenerationReportPill(label = "Model", value = report.model)
+                GenerationReportPill(label = "Prompt", value = report.promptVersion)
+            }
+
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                GenerationReportRow("Endpoint", report.endpoint ?: "Not returned")
+                GenerationReportRow("Input tokens", usage?.inputTokens?.toString() ?: "Not returned")
+                GenerationReportRow("Output tokens", usage?.outputTokens?.toString() ?: "Not returned")
+                GenerationReportRow("Cached input tokens", usage?.cachedInputTokens?.toString() ?: "Not returned")
+                GenerationReportRow("Reasoning tokens", usage?.reasoningTokens?.toString() ?: "Not returned")
+                GenerationReportRow("Total tokens", usage?.totalTokens?.toString() ?: "Not returned")
+                Divider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.14f))
+                GenerationReportRow("Cost source", usage?.costSource ?: "Not returned")
+                GenerationReportRow("Input USD cost", formatGenerationUsd(usage?.inputCostUsd))
+                GenerationReportRow("Output USD cost", formatGenerationUsd(usage?.outputCostUsd))
+                GenerationReportRow("Cached input USD cost", formatGenerationUsd(usage?.cachedInputCostUsd))
+                GenerationReportRow("Total token USD cost", formatGenerationUsd(usage?.totalCostUsd))
+            }
+
+            if (!usage?.rawUsageJson.isNullOrBlank()) {
+                GenerationReportCodeBlock(title = "Raw usage JSON", text = usage?.rawUsageJson.orEmpty())
+            }
+
+            GenerationReportCodeBlock(
+                title = "Model response",
+                text = report.prettyModelResponse.ifBlank { report.rawModelResponse },
+            )
+        }
+    }
+}
+
+@Composable
+private fun GenerationReportPill(label: String, value: String) {
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+        shape = RoundedCornerShape(8.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.14f)),
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Text(label.uppercase(), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(value, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        }
+    }
+}
+
+@Composable
+private fun GenerationReportRow(label: String, value: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.Top,
+    ) {
+        Text(
+            label,
+            modifier = Modifier.widthIn(min = 116.dp, max = 152.dp),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            value,
+            modifier = Modifier.weight(1f),
+            style = MaterialTheme.typography.bodySmall,
+            fontWeight = FontWeight.SemiBold,
+        )
+    }
+}
+
+@Composable
+private fun GenerationReportCodeBlock(title: String, text: String) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+        Surface(
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.38f),
+            shape = RoundedCornerShape(8.dp),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.12f)),
+        ) {
+            SelectionContainer {
+                Text(
+                    text = text,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(12.dp),
+                    style = MaterialTheme.typography.bodySmall,
+                    fontFamily = MonoFamily,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+            }
+        }
+    }
+}
+
+private fun formatGenerationUsd(value: Double?): String {
+    return value?.let { String.format(Locale.US, "USD $%.6f", it) } ?: "Not returned"
 }
 
 @Composable
@@ -17372,6 +17559,98 @@ private fun RecommendationBiasSwitchRow(
         checked = checked,
         onCheckedChange = onCheckedChange,
     )
+}
+
+@Composable
+private fun SettingsDropdownRow(
+    label: String,
+    selected: CustomExerciseAiModelOption,
+    options: List<CustomExerciseAiModelOption>,
+    onSelect: (CustomExerciseAiModelOption) -> Unit,
+    supportingText: String? = null,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Surface(
+        color = MaterialTheme.colorScheme.surface,
+        shape = RoundedCornerShape(10.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.16f)),
+    ) {
+        Box {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { expanded = true }
+                    .padding(horizontal = 14.dp, vertical = 12.dp)
+                    .heightIn(min = 56.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Text(
+                        text = label,
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = if (supportingText == null) 1 else 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    if (!supportingText.isNullOrBlank()) {
+                        Text(
+                            text = supportingText,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                Column(
+                    horizontalAlignment = Alignment.End,
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                    modifier = Modifier.widthIn(min = 116.dp, max = 172.dp),
+                ) {
+                    Text(
+                        text = selected.label,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.primary,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = selected.providerLabel,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+            DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                options.forEach { option ->
+                    DropdownMenuItem(
+                        text = {
+                            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Text(
+                                    text = option.label,
+                                    fontWeight = if (option.id == selected.id) FontWeight.SemiBold else FontWeight.Normal,
+                                )
+                                Text(
+                                    text = "${option.providerLabel} / ${option.modelLabel}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        },
+                        onClick = {
+                            expanded = false
+                            onSelect(option)
+                        },
+                    )
+                }
+            }
+        }
+    }
 }
 
 @Composable

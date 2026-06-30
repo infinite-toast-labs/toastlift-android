@@ -2,7 +2,6 @@ package dev.toastlabs.toastlift.data
 
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
-import dev.toastlabs.toastlift.BuildConfig
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -16,7 +15,8 @@ class CustomExerciseRepository(
     context: Context,
     private val database: ToastLiftDatabase,
     private val catalogRepository: CatalogRepository,
-    private val metadataGenerator: ExerciseMetadataGenerator = GeminiExerciseMetadataGenerator(),
+    private val userRepository: UserRepository? = null,
+    private val metadataGeneratorFactory: (CustomExerciseAiModelOption) -> ExerciseMetadataGenerator = ::createExerciseMetadataGeneratorForOption,
 ) {
     private val appContext = context.applicationContext
     private val snapshotFile = File(appContext.filesDir, "custom_exercises_snapshot.json")
@@ -45,9 +45,13 @@ class CustomExerciseRepository(
         require(name.isNotBlank()) { "Enter an exercise name first." }
         val taxonomy = draft.taxonomy.takeIf { it.difficultyLevels.isNotEmpty() } ?: loadTaxonomy()
         val nearby = loadMatches(name)
-        val generated = metadataGenerator.generate(name, taxonomy, nearby)
+        val modelOption = customExerciseAiModelOptionForId(draft.aiModelId)
+        val metadataGenerator = selectedMetadataGenerator(modelOption.id)
+        val result = metadataGenerator.generateWithReport(name, taxonomy, nearby)
+        val generated = result.metadata
 
         return draft.copy(
+            aiModelId = modelOption.id,
             name = generated.name.ifBlank { name },
             difficultyLevel = canonicalOrFallback(generated.difficultyLevel, taxonomy.difficultyLevels, taxonomy.difficultyLevels.pick("Intermediate")),
             bodyRegion = canonicalOrFallback(generated.bodyRegion, taxonomy.bodyRegions, taxonomy.bodyRegions.pick("Upper Body")),
@@ -89,6 +93,7 @@ class CustomExerciseRepository(
             taxonomy = taxonomy,
             existingMatches = nearby,
             generatedWithAi = true,
+            generationReport = result.report,
             errorMessage = null,
         )
     }
@@ -407,6 +412,7 @@ class CustomExerciseRepository(
     private fun defaultDraft(taxonomy: CustomExerciseTaxonomy, name: String): CustomExerciseDraft =
         CustomExerciseDraft(
             name = name,
+            aiModelId = defaultCustomExerciseAiModelOption().id,
             difficultyLevel = taxonomy.difficultyLevels.pick("Intermediate"),
             bodyRegion = taxonomy.bodyRegions.pick("Upper Body"),
             targetMuscleGroup = taxonomy.targetMuscles.pick("Chest"),
@@ -446,6 +452,7 @@ class CustomExerciseRepository(
         ).take(3)
         val primaryEquipment = canonicalOrFallback(draft.primaryEquipment, taxonomy.equipmentOptions, taxonomy.equipmentOptions.pick("Machine"))
         val secondaryEquipment = canonicalOrBlank(draft.secondaryEquipment, taxonomy.equipmentOptions)
+        val metadataGenerator = selectedMetadataGenerator(draft.aiModelId)
         val muscles = buildList {
             draft.primeMoverMuscle.trim().takeIf { it.isNotBlank() }?.let { add("prime_mover" to it) }
             draft.secondaryMuscle.trim().takeIf { it.isNotBlank() }?.let { add("secondary" to it) }
@@ -486,10 +493,19 @@ class CustomExerciseRepository(
             equipment = buildEquipment(primaryEquipment, secondaryEquipment, draft.primaryItemCount.trim(), draft.secondaryItemCount.trim()),
             equipmentSlotCount = if (secondaryEquipment.isBlank()) 1 else 2,
             muscleSlotCount = muscles.size,
-            generationModel = BuildConfig.GEMINI_PRIMARY_MODEL.takeIf { draft.generatedWithAi && it.isNotBlank() },
-            generationPromptVersion = if (draft.generatedWithAi) "custom_exercise_v1" else "manual_custom_exercise_v1",
+            generationModel = metadataGenerator.generationModel.takeIf { draft.generatedWithAi },
+            generationPromptVersion = if (draft.generatedWithAi) metadataGenerator.generationPromptVersion else "manual_custom_exercise_v1",
         )
     }
+
+    private fun selectedMetadataGenerator(modelId: String? = null): ExerciseMetadataGenerator {
+        return metadataGeneratorFactory(
+            customExerciseAiModelOptionForId(modelId ?: defaultCustomExerciseAiModelOption().id),
+        )
+    }
+
+    private fun defaultCustomExerciseAiModelOption(): CustomExerciseAiModelOption =
+        customExerciseAiModelOptionForId(userRepository?.loadProfile()?.customExerciseAiModelId)
 
     private fun buildEquipment(
         primaryEquipment: String,

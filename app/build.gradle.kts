@@ -20,6 +20,15 @@ fun readDotEnv(root: java.io.File): Map<String, String> {
 fun escapeBuildConfig(value: String): String = value.replace("\\", "\\\\").replace("\"", "\\\"")
 
 val dotEnv = readDotEnv(rootProject.projectDir)
+val customExerciseAiProvider = dotEnv["CUSTOM_EXERCISE_AI_PROVIDER"].orEmpty().ifBlank { "gemini" }
+val opencodeModel = dotEnv["OPENCODE_MODEL"].orEmpty().ifBlank { "deepseek-v4-flash" }
+val opencodeChatCompletionsUrl = dotEnv["OPENCODE_CHAT_COMPLETIONS_URL"].orEmpty()
+    .ifBlank { "https://opencode.ai/zen/v1/chat/completions" }
+val openRouterModel = dotEnv["OPENROUTER_MODEL"].orEmpty().ifBlank { "z-ai/glm-5.2" }
+val openRouterChatCompletionsUrl = dotEnv["OPENROUTER_CHAT_COMPLETIONS_URL"].orEmpty()
+    .ifBlank { "https://openrouter.ai/api/v1/chat/completions" }
+val openRouterGenerationUrl = dotEnv["OPENROUTER_GENERATION_URL"].orEmpty()
+    .ifBlank { "https://openrouter.ai/api/v1/generation" }
 
 android {
     namespace = "dev.toastlabs.toastlift"
@@ -42,11 +51,27 @@ android {
         debug {
             buildConfigField("String", "GEMINI_API_KEY", "\"${escapeBuildConfig(dotEnv["GEMINI_API_KEY"].orEmpty())}\"")
             buildConfigField("String", "GEMINI_PRIMARY_MODEL", "\"${escapeBuildConfig(dotEnv["GEMINI_PRIMARY_MODEL"].orEmpty())}\"")
+            buildConfigField("String", "CUSTOM_EXERCISE_AI_PROVIDER", "\"${escapeBuildConfig(customExerciseAiProvider)}\"")
+            buildConfigField("String", "OPENCODE_API_KEY", "\"${escapeBuildConfig(dotEnv["OPENCODE_API_KEY"].orEmpty())}\"")
+            buildConfigField("String", "OPENCODE_MODEL", "\"${escapeBuildConfig(opencodeModel)}\"")
+            buildConfigField("String", "OPENCODE_CHAT_COMPLETIONS_URL", "\"${escapeBuildConfig(opencodeChatCompletionsUrl)}\"")
+            buildConfigField("String", "OPENROUTER_API_KEY", "\"${escapeBuildConfig(dotEnv["OPENROUTER_API_KEY"].orEmpty())}\"")
+            buildConfigField("String", "OPENROUTER_MODEL", "\"${escapeBuildConfig(openRouterModel)}\"")
+            buildConfigField("String", "OPENROUTER_CHAT_COMPLETIONS_URL", "\"${escapeBuildConfig(openRouterChatCompletionsUrl)}\"")
+            buildConfigField("String", "OPENROUTER_GENERATION_URL", "\"${escapeBuildConfig(openRouterGenerationUrl)}\"")
         }
         release {
             isMinifyEnabled = false
             buildConfigField("String", "GEMINI_API_KEY", "\"\"")
             buildConfigField("String", "GEMINI_PRIMARY_MODEL", "\"\"")
+            buildConfigField("String", "CUSTOM_EXERCISE_AI_PROVIDER", "\"gemini\"")
+            buildConfigField("String", "OPENCODE_API_KEY", "\"\"")
+            buildConfigField("String", "OPENCODE_MODEL", "\"\"")
+            buildConfigField("String", "OPENCODE_CHAT_COMPLETIONS_URL", "\"\"")
+            buildConfigField("String", "OPENROUTER_API_KEY", "\"\"")
+            buildConfigField("String", "OPENROUTER_MODEL", "\"\"")
+            buildConfigField("String", "OPENROUTER_CHAT_COMPLETIONS_URL", "\"\"")
+            buildConfigField("String", "OPENROUTER_GENERATION_URL", "\"\"")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",

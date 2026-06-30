@@ -258,6 +258,7 @@ class ToastLiftDatabase(private val context: Context) {
                 training_freshness_min_bucket_exercises INTEGER NOT NULL DEFAULT 2,
                 dev_session_set_swipe_complete_enabled INTEGER NOT NULL DEFAULT 1,
                 dev_in_session_bounties_enabled INTEGER NOT NULL DEFAULT 0,
+                custom_exercise_ai_model_id TEXT NOT NULL DEFAULT 'gemini_primary',
                 next_focus TEXT NOT NULL DEFAULT 'full_body',
                 created_at_utc TEXT NOT NULL,
                 updated_at_utc TEXT NOT NULL
@@ -356,6 +357,12 @@ class ToastLiftDatabase(private val context: Context) {
             table = "user_profile",
             column = "dev_in_session_bounties_enabled",
             definition = "INTEGER NOT NULL DEFAULT 0",
+        )
+        ensureColumn(
+            db = db,
+            table = "user_profile",
+            column = "custom_exercise_ai_model_id",
+            definition = "TEXT NOT NULL DEFAULT 'gemini_primary'",
         )
         db.execSQL(
             """
