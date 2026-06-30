@@ -547,9 +547,6 @@ private val LightOrangeAccent = GlowAccent(
     textOnAccent = Color(0xFFFFFFFF),
 )
 
-private val LightTopBorderAccent = Color(0xFF7B2FF7)
-private val DarkTopBorderAccent = Color(0xFFB81E19)
-
 private val emberAccent: GlowAccent
     @Composable get() = if (LocalToastLiftIsDarkTheme.current) DarkEmberAccent else LightEmberAccent
 
@@ -585,11 +582,6 @@ private fun fallbackAccentForContainer(containerColor: Color): GlowAccent {
         containerColor.luminance() > 0.7f -> goldAccent
         else -> amethystAccent
     }
-}
-
-@Composable
-private fun topBorderAccentColor(accent: GlowAccent): Color {
-    return if (LocalToastLiftIsDarkTheme.current) DarkTopBorderAccent else LightTopBorderAccent
 }
 
 private enum class TokenBalanceWindow(val label: String, val days: Int, val labelStep: Int) {
@@ -1589,7 +1581,6 @@ private fun ActiveBountyCardStrip(bounty: ActiveWorkoutBounty) {
     FeatureCard(
         containerColor = containerColor,
         border = BorderStroke(1.dp, accent.color.copy(alpha = if (isDark) 0.55f else 0.42f)),
-        showTopAccent = false,
         modifier = Modifier.clickable { expanded = !expanded },
     ) {
         Column(
@@ -1611,7 +1602,7 @@ private fun ActiveBountyCardStrip(bounty: ActiveWorkoutBounty) {
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(
-                        imageVector = bountyFamilyIcon(bounty.family),
+                        painter = painterResource(bountyFamilyIcon(bounty.family)),
                         contentDescription = null,
                         tint = accent.color,
                         modifier = Modifier.size(26.dp),
@@ -1807,7 +1798,7 @@ private fun BountyCollectibleCard(
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
-                    imageVector = bountyFamilyIcon(card.family),
+                    painter = painterResource(bountyFamilyIcon(card.family)),
                     contentDescription = null,
                     tint = accent.color,
                     modifier = Modifier.size(if (compact) 52.dp else 112.dp),
@@ -1845,12 +1836,12 @@ private fun bountyRarityAccent(rarity: BountyCardRarity): GlowAccent = when (rar
     BountyCardRarity.PRISM -> emberAccent
 }
 
-private fun bountyFamilyIcon(family: BountyCardFamily): ImageVector = when (family) {
-    BountyCardFamily.CLOSEOUT -> Icons.Rounded.WorkspacePremium
-    BountyCardFamily.REST_WINDOW -> Icons.Rounded.Schedule
-    BountyCardFamily.CONTINUITY -> Icons.Rounded.Shield
-    BountyCardFamily.CONSISTENCY -> Icons.Rounded.CenterFocusStrong
-    BountyCardFamily.HONESTY -> Icons.Rounded.Info
+private fun bountyFamilyIcon(family: BountyCardFamily): Int = when (family) {
+    BountyCardFamily.CLOSEOUT -> R.drawable.ic_trophy
+    BountyCardFamily.REST_WINDOW -> R.drawable.ic_timer
+    BountyCardFamily.CONTINUITY -> R.drawable.ic_settings
+    BountyCardFamily.CONSISTENCY -> R.drawable.ic_target
+    BountyCardFamily.HONESTY -> R.drawable.ic_settings
 }
 
 @Composable
@@ -3304,7 +3295,7 @@ private fun CompletionReceiptHeroCard(
                         verticalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
                         Icon(
-                            imageVector = completionReceiptOutcomeIcon(snapshot.hero.outcomeTier),
+                            painter = painterResource(completionReceiptOutcomeIcon(snapshot.hero.outcomeTier)),
                             contentDescription = null,
                             tint = accent.textOnAccent,
                             modifier = Modifier.size(24.dp),
@@ -3469,11 +3460,11 @@ private fun ReceiptInfoRow(
     }
 }
 
-private fun completionReceiptOutcomeIcon(tier: SessionOutcomeTier): ImageVector = when (tier) {
-    SessionOutcomeTier.CLOSED_CLEAN -> Icons.Rounded.EmojiEvents
-    SessionOutcomeTier.SOLID_SESSION -> Icons.Rounded.WorkspacePremium
-    SessionOutcomeTier.MEANINGFUL_PARTIAL -> Icons.Rounded.FitnessCenter
-    SessionOutcomeTier.SHOWED_UP -> Icons.Rounded.LocalFireDepartment
+private fun completionReceiptOutcomeIcon(tier: SessionOutcomeTier): Int = when (tier) {
+    SessionOutcomeTier.CLOSED_CLEAN -> R.drawable.ic_trophy
+    SessionOutcomeTier.SOLID_SESSION -> R.drawable.ic_trophy
+    SessionOutcomeTier.MEANINGFUL_PARTIAL -> R.drawable.ic_lift
+    SessionOutcomeTier.SHOWED_UP -> R.drawable.ic_flame
 }
 
 private fun deltaSetLabel(delta: Double): String = when {
@@ -5035,7 +5026,7 @@ private fun ExerciseFamilyMessageState(
 @Composable
 private fun FamilyAnchorSnapshot(family: ExerciseFamily) {
     val anchor = family.anchor
-    FeatureCard(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.58f), showTopAccent = false) {
+    FeatureCard(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.58f)) {
         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("Current branch", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
             ExerciseAttributeText(exercise = anchor.summary)
@@ -6260,10 +6251,10 @@ private data class RewardVisualSpec(
     val message: String,
 )
 
-private fun historyStatRewardIcon(title: String): ImageVector? = when (title) {
-    "Stats" -> Icons.Rounded.QueryStats
-    "Milestones" -> Icons.Rounded.WorkspacePremium
-    "Current Streak" -> Icons.Rounded.LocalFireDepartment
+private fun historyStatRewardIcon(title: String): Int? = when (title) {
+    "Stats" -> R.drawable.ic_chart
+    "Milestones" -> R.drawable.ic_trophy
+    "Current Streak" -> R.drawable.ic_flame
     else -> null
 }
 
@@ -6918,7 +6909,6 @@ private fun TokenBalanceOverviewCard(
         modifier = modifier,
         containerColor = palette.shellBottom.copy(alpha = if (LocalToastLiftIsDarkTheme.current) 0.82f else 0.98f),
         border = BorderStroke(1.dp, palette.shellStroke.copy(alpha = 0.34f)),
-        showTopAccent = false,
     ) {
         Box(
             modifier = Modifier
@@ -7078,7 +7068,6 @@ private fun TokenBalanceDetailScreen(
         FeatureCard(
             containerColor = palette.shellBottom.copy(alpha = if (LocalToastLiftIsDarkTheme.current) 0.82f else 0.98f),
             border = BorderStroke(1.dp, palette.shellStroke.copy(alpha = 0.34f)),
-            showTopAccent = false,
         ) {
             Box(
                 modifier = Modifier
@@ -7713,47 +7702,37 @@ private fun HistoryStatTile(
     onClick: (() -> Unit)? = null,
 ) {
     val accent = accentForKey(title)
-    val topAccentColor = topBorderAccentColor(accent)
     val rewardIcon = historyStatRewardIcon(title)
     FeatureCard(
         modifier = modifier.then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
         containerColor = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.dp, topAccentColor.copy(alpha = 0.22f)),
-        showTopAccent = false,
+        border = BorderStroke(1.dp, accent.color.copy(alpha = 0.22f)),
     ) {
-        Column {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(2.dp)
-                    .background(topAccentColor),
-            )
-            Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(title.uppercase(), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    rewardIcon?.let { icon ->
-                        Box(
-                            modifier = Modifier
-                                .size(30.dp)
-                                .clip(CircleShape)
-                                .background(accent.color.copy(alpha = 0.12f)),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Icon(
-                                imageVector = icon,
-                                contentDescription = null,
-                                tint = accent.color,
-                                modifier = Modifier.size(16.dp),
-                            )
-                        }
+        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                MiniTag(text = title, accent = accent.color)
+                rewardIcon?.let { icon ->
+                    Box(
+                        modifier = Modifier
+                            .size(30.dp)
+                            .clip(CircleShape)
+                            .background(accent.color.copy(alpha = 0.12f)),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            painter = painterResource(icon),
+                            contentDescription = null,
+                            tint = accent.color,
+                            modifier = Modifier.size(16.dp),
+                        )
                     }
                 }
-                Text(value, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black)
             }
+            Text(value, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black)
         }
     }
 }
@@ -8086,11 +8065,21 @@ private fun HistoryStreakScreen(
 
 @Composable
 private fun HistoryDetailHeader(title: String, onBack: () -> Unit) {
-    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
         IconButton(onClick = onBack) {
-            Text("←", style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.primary)
+            Icon(
+                imageVector = Icons.Rounded.KeyboardArrowLeft,
+                contentDescription = "Back",
+                tint = MaterialTheme.colorScheme.primary,
+            )
         }
-        Text(title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.onBackground)
+        Text(
+            title,
+            color = MaterialTheme.colorScheme.onBackground,
+            fontFamily = DisplayFamily,
+            fontSize = 28.sp,
+            letterSpacing = 0.02.em,
+        )
     }
 }
 
@@ -15042,7 +15031,7 @@ private fun RestTimerCard(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Icon(
-                        imageVector = bountyFamilyIcon(bounty.family),
+                        painter = painterResource(bountyFamilyIcon(bounty.family)),
                         contentDescription = null,
                         tint = bountyAccent!!.color,
                         modifier = Modifier.size(18.dp),
@@ -16862,32 +16851,22 @@ private fun StatRail(items: List<Triple<String, String, String>>) {
     Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
         items.forEach { (label, value, suffix) ->
             val accent = accentForKey(label)
-            val topAccentColor = topBorderAccentColor(accent)
             val cardContainer = MaterialTheme.colorScheme.surface
             val cardPrimary = readableTextColorFor(cardContainer)
             val cardSecondary = readableMutedTextColorFor(cardContainer)
             Card(
                 modifier = Modifier.weight(1f),
-                shape = RoundedCornerShape(10.dp),
+                shape = RoundedCornerShape(16.dp),
                 colors = CardDefaults.cardColors(
                     containerColor = cardContainer,
                     contentColor = cardPrimary,
                 ),
-                border = BorderStroke(1.dp, topAccentColor.copy(alpha = 0.22f)),
                 elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
             ) {
-                Column {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(2.dp)
-                            .background(topAccentColor),
-                    )
-                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text(label.uppercase(), style = MaterialTheme.typography.labelMedium, color = cardSecondary)
-                        Text(value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, maxLines = 1, color = cardPrimary)
-                        Text(suffix, style = MaterialTheme.typography.bodySmall, color = cardSecondary, maxLines = 1)
-                    }
+                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    MiniTag(text = label, accent = accent.color)
+                    Text(value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, maxLines = 1, color = cardPrimary)
+                    Text(suffix, style = MaterialTheme.typography.bodySmall, color = cardSecondary, maxLines = 1)
                 }
             }
         }
@@ -17590,7 +17569,6 @@ private fun FeatureCard(
     elevation: androidx.compose.ui.unit.Dp = 0.dp,
     fullWidth: Boolean = true,
     accentKey: String? = null,
-    showTopAccent: Boolean = true,
     variant: FeatureCardVariant = FeatureCardVariant.Flat,
     content: @Composable () -> Unit,
 ) {
@@ -18627,24 +18605,12 @@ private fun ProgramProgressMetric(
     accent: GlowAccent,
     modifier: Modifier = Modifier,
 ) {
-    val topAccentColor = topBorderAccentColor(accent)
     FeatureCard(
         modifier = modifier,
         containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.88f),
     ) {
         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(4.dp)
-                    .clip(RoundedCornerShape(999.dp))
-                    .background(topAccentColor),
-            )
-            Text(
-                label.uppercase(),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            MiniTag(text = label, accent = accent.color)
             Text(
                 value,
                 style = MaterialTheme.typography.titleLarge,
