@@ -2,6 +2,7 @@ package dev.toastlabs.toastlift.data
 
 import dev.toastlabs.toastlift.BuildConfig
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Test
@@ -223,6 +224,51 @@ class ExerciseMetadataGeneratorTest {
         assertEquals(null, metadata.secondaryEquipment)
         assertEquals(listOf("Horizontal Press"), metadata.movementPatterns)
         assertEquals(listOf("Seated Machine Chest Press"), metadata.synonyms)
+    }
+
+    @Test
+    fun redactCustomExerciseSecretMaterial_removesCommonRuntimeSecretForms() {
+        val openRouterKey = "sk-or-v1-" + "abcdefghijklmnopqrstuvwxyz123456"
+        val openAiStyleKey = "sk-" + "abcdefghijklmnopqrstuvwxyz123456"
+        val googleKey = "AIza" + "abcdefghijklmnopqrstuvwxyz123456789"
+        val text = """
+            url=https://example.test/v1/chat?api_key=$openRouterKey&model=glm
+            Authorization: Bearer $openAiStyleKey
+            {"GEMINI_API_KEY":"$googleKey"}
+        """.trimIndent()
+
+        val redacted = redactCustomExerciseSecretMaterial(text)
+
+        assertFalse(redacted.contains(openRouterKey))
+        assertFalse(redacted.contains(openAiStyleKey))
+        assertFalse(redacted.contains(googleKey))
+        assertTrue(redacted.contains("api_key=[REDACTED]"))
+        assertTrue(redacted.contains("Authorization: Bearer [REDACTED]"))
+    }
+
+    @Test
+    fun formatCustomExerciseGenerationReportForClipboard_redactsEndpointUsageAndModelResponse() {
+        val openRouterKey = "sk-or-v1-" + "abcdefghijklmnopqrstuvwxyz123456"
+        val openAiStyleKey = "sk-" + "abcdefghijklmnopqrstuvwxyz123456"
+        val report = CustomExerciseGenerationReport(
+            providerLabel = "OpenRouter",
+            model = "z-ai/glm-5.2",
+            endpoint = "https://openrouter.ai/api/v1/chat/completions?api_key=$openRouterKey",
+            promptVersion = CUSTOM_EXERCISE_PROMPT_VERSION,
+            tokenUsage = CustomExerciseTokenUsage(
+                totalTokens = 42,
+                rawUsageJson = """{"authorization":"Bearer $openAiStyleKey"}""",
+            ),
+            rawModelResponse = """{"name":"Machine Chest Press","note":"$openAiStyleKey"}""",
+            prettyModelResponse = "",
+        )
+
+        val clipboardText = report.clipboardText
+
+        assertFalse(clipboardText.contains(openRouterKey))
+        assertFalse(clipboardText.contains(openAiStyleKey))
+        assertTrue(clipboardText.contains("api_key=[REDACTED]"))
+        assertTrue(clipboardText.contains("authorization\":\"[REDACTED]"))
     }
 
     @Test

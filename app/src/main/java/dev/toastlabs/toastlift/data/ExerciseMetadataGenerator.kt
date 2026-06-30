@@ -313,7 +313,7 @@ class GeminiExerciseMetadataGenerator : ExerciseMetadataGenerator {
                 ?.use(BufferedReader::readText)
                 .orEmpty()
             if (status !in 200..299) {
-                throw IllegalStateException("Gemini request failed ($status): $body")
+                throw IllegalStateException("Gemini request failed ($status): ${redactCustomExerciseSecretMaterial(body)}")
             }
             val root = JSONObject(body)
             val responseText = root
@@ -336,8 +336,8 @@ class GeminiExerciseMetadataGenerator : ExerciseMetadataGenerator {
                     endpoint = "https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent",
                     promptVersion = generationPromptVersion,
                     tokenUsage = parseGeminiTokenUsage(root.optJSONObject("usageMetadata")),
-                    rawModelResponse = responseText,
-                    prettyModelResponse = prettyPrintCustomExerciseModelResponse(responseText),
+                    rawModelResponse = redactCustomExerciseSecretMaterial(responseText),
+                    prettyModelResponse = prettyPrintCustomExerciseModelResponse(redactCustomExerciseSecretMaterial(responseText)),
                 ),
             )
         } finally {
@@ -413,7 +413,7 @@ class OpenCodeExerciseMetadataGenerator(
                 ?.use(BufferedReader::readText)
                 .orEmpty()
             if (status !in 200..299) {
-                throw IllegalStateException("OpenCode request failed ($status): $body")
+                throw IllegalStateException("OpenCode request failed ($status): ${redactCustomExerciseSecretMaterial(body)}")
             }
             val root = JSONObject(body)
             val responseText = root
@@ -431,11 +431,11 @@ class OpenCodeExerciseMetadataGenerator(
                 report = CustomExerciseGenerationReport(
                     providerLabel = "OpenCode",
                     model = openCodeReportModelLabel(requestModel, reasoningEffort),
-                    endpoint = chatCompletionsUrl,
+                    endpoint = redactCustomExerciseSecretMaterial(chatCompletionsUrl),
                     promptVersion = generationPromptVersion,
                     tokenUsage = parseOpenCodeTokenUsage(root.optJSONObject("usage"), requestModel),
-                    rawModelResponse = responseText,
-                    prettyModelResponse = prettyPrintCustomExerciseModelResponse(responseText),
+                    rawModelResponse = redactCustomExerciseSecretMaterial(responseText),
+                    prettyModelResponse = prettyPrintCustomExerciseModelResponse(redactCustomExerciseSecretMaterial(responseText)),
                 ),
             )
         } finally {
@@ -514,7 +514,7 @@ class OpenRouterExerciseMetadataGenerator(
                 ?.use(BufferedReader::readText)
                 .orEmpty()
             if (status !in 200..299) {
-                throw IllegalStateException("OpenRouter request failed ($status): $body")
+                throw IllegalStateException("OpenRouter request failed ($status): ${redactCustomExerciseSecretMaterial(body)}")
             }
             val root = JSONObject(body)
             val responseText = root
@@ -536,11 +536,11 @@ class OpenRouterExerciseMetadataGenerator(
                 report = CustomExerciseGenerationReport(
                     providerLabel = "OpenRouter",
                     model = openRouterReportModelLabel(model, reasoningEffort),
-                    endpoint = chatCompletionsUrl,
+                    endpoint = redactCustomExerciseSecretMaterial(chatCompletionsUrl),
                     promptVersion = generationPromptVersion,
                     tokenUsage = usage,
-                    rawModelResponse = responseText,
-                    prettyModelResponse = prettyPrintCustomExerciseModelResponse(responseText),
+                    rawModelResponse = redactCustomExerciseSecretMaterial(responseText),
+                    prettyModelResponse = prettyPrintCustomExerciseModelResponse(redactCustomExerciseSecretMaterial(responseText)),
                 ),
             )
         } finally {
@@ -613,7 +613,7 @@ internal fun parseCustomExerciseMetadataResponse(rawText: String): GeneratedCust
 
 fun formatCustomExerciseGenerationReportForClipboard(report: CustomExerciseGenerationReport): String {
     val usage = report.tokenUsage
-    return buildString {
+    return redactCustomExerciseSecretMaterial(buildString {
         appendLine("Custom Exercise AI Generation Report")
         appendLine()
         appendLine("Provider: ${report.providerLabel}")
@@ -642,7 +642,45 @@ fun formatCustomExerciseGenerationReportForClipboard(report: CustomExerciseGener
         appendLine()
         appendLine("Model response")
         appendLine(report.prettyModelResponse.ifBlank { report.rawModelResponse })
-    }
+    })
+}
+
+internal fun redactCustomExerciseSecretMaterial(text: String): String {
+    if (text.isBlank()) return text
+    val configuredSecrets = listOf(
+        BuildConfig.GEMINI_API_KEY,
+        BuildConfig.OPENCODE_API_KEY,
+        BuildConfig.OPENROUTER_API_KEY,
+    )
+        .map { it.trim() }
+        .filter { it.length >= 8 }
+
+    return configuredSecrets
+        .fold(redactCommonSecretPatterns(text)) { redacted, secret ->
+            redacted.replace(secret, "[REDACTED]")
+        }
+}
+
+private fun redactCommonSecretPatterns(text: String): String {
+    return text
+        .replace(
+            Regex("""(?i)([?&](?:key|api[_-]?key|apiKey|token|access[_-]?token|client[_-]?secret|authorization|auth)=)[^&\s"'<>]+"""),
+            "$1[REDACTED]",
+        )
+        .replace(
+            Regex("""(?i)\b(Authorization\s*[:=]\s*Bearer\s+)[A-Za-z0-9._~+/\-=]{8,}"""),
+            "$1[REDACTED]",
+        )
+        .replace(
+            Regex("""(?i)(["'](?:api[_-]?key|apiKey|token|access[_-]?token|client[_-]?secret|authorization|secret)["']\s*:\s*["'])[^"']+(["'])"""),
+            "$1[REDACTED]$2",
+        )
+        .replace(Regex("""AIza[0-9A-Za-z_-]{20,}"""), "[REDACTED]")
+        .replace(Regex("""sk-or-v1-[0-9A-Za-z_-]{20,}"""), "[REDACTED]")
+        .replace(Regex("""sk-[0-9A-Za-z_-]{20,}"""), "[REDACTED]")
+        .replace(Regex("""gh[pousr]_[0-9A-Za-z_]{20,}"""), "[REDACTED]")
+        .replace(Regex("""github_pat_[0-9A-Za-z_]{20,}"""), "[REDACTED]")
+        .replace(Regex("""AKIA[0-9A-Z]{16}"""), "[REDACTED]")
 }
 
 private fun parseGeminiTokenUsage(usage: JSONObject?): CustomExerciseTokenUsage? {
@@ -653,7 +691,7 @@ private fun parseGeminiTokenUsage(usage: JSONObject?): CustomExerciseTokenUsage?
         cachedInputTokens = usage.firstLongOrNull("cachedContentTokenCount"),
         reasoningTokens = usage.firstLongOrNull("thoughtsTokenCount"),
         totalTokens = usage.firstLongOrNull("totalTokenCount"),
-        rawUsageJson = usage.toString(2),
+        rawUsageJson = redactCustomExerciseSecretMaterial(usage.toString(2)),
     ).withEstimatedCost(geminiPricingForModel(BuildConfig.GEMINI_PRIMARY_MODEL))
 }
 
@@ -681,7 +719,7 @@ private fun parseOpenCodeTokenUsage(usage: JSONObject?, model: String): CustomEx
         } else {
             null
         },
-        rawUsageJson = usage.toString(2),
+        rawUsageJson = redactCustomExerciseSecretMaterial(usage.toString(2)),
     ).withEstimatedCost(openCodePricingForModel(model))
 }
 
@@ -767,7 +805,7 @@ private fun parseOpenRouterTokenUsage(usage: JSONObject?): CustomExerciseTokenUs
         } else {
             null
         },
-        rawUsageJson = usage.toString(2),
+        rawUsageJson = redactCustomExerciseSecretMaterial(usage.toString(2)),
     )
 }
 
@@ -798,7 +836,7 @@ private fun parseOpenRouterGenerationTokenUsage(
         cachedInputCostUsd = base?.cachedInputCostUsd,
         totalCostUsd = totalCost ?: base?.totalCostUsd,
         costSource = if (totalCost != null) "OpenRouter generation stats response, USD credits" else base?.costSource,
-        rawUsageJson = rawUsageJson,
+        rawUsageJson = redactCustomExerciseSecretMaterial(rawUsageJson),
     )
 }
 
