@@ -23,7 +23,7 @@ class UserRepository(private val database: ToastLiftDatabase) {
                    dev_exercise_detail_personal_note_visible, dev_exercise_detail_learned_preference_visible,
                    dev_rest_timer_sound_disabled, training_freshness_threshold_days,
                    training_freshness_min_bucket_exercises, dev_session_set_swipe_complete_enabled,
-                   dev_in_session_bounties_enabled
+                   dev_in_session_bounties_enabled, custom_exercise_ai_model_id
             FROM user_profile
             WHERE user_id = 1
             """.trimIndent(),
@@ -55,6 +55,7 @@ class UserRepository(private val database: ToastLiftDatabase) {
                 trainingFreshnessMinimumBucketExercises = normalizeTrainingFreshnessBucketExercises(cursor.getInt(19)),
                 devSessionSetSwipeCompleteEnabled = cursor.getInt(20) == 1,
                 devInSessionBountiesEnabled = cursor.getInt(21) == 1,
+                customExerciseAiModelId = customExerciseAiModelOptionForId(cursor.getStringOrNull(22)).id,
             )
         }
     }
@@ -282,6 +283,14 @@ class UserRepository(private val database: ToastLiftDatabase) {
         )
     }
 
+    fun saveCustomExerciseAiModelId(modelId: String) {
+        val db = database.open()
+        db.execSQL(
+            "UPDATE user_profile SET custom_exercise_ai_model_id = ?, updated_at_utc = ? WHERE user_id = 1",
+            arrayOf(customExerciseAiModelOptionForId(modelId).id, Instant.now().toString()),
+        )
+    }
+
     fun loadNextFocus(): String? {
         val db = database.open()
         return db.rawQuery(
@@ -388,6 +397,7 @@ class UserRepository(private val database: ToastLiftDatabase) {
                 p.training_freshness_min_bucket_exercises,
                 p.dev_session_set_swipe_complete_enabled,
                 p.dev_in_session_bounties_enabled,
+                p.custom_exercise_ai_model_id,
                 p.next_focus,
                 p.created_at_utc,
                 p.updated_at_utc
@@ -427,9 +437,10 @@ class UserRepository(private val database: ToastLiftDatabase) {
                 .put("training_freshness_min_bucket_exercises", normalizeTrainingFreshnessBucketExercises(cursor.getInt(23)))
                 .put("dev_session_set_swipe_complete_enabled", cursor.getInt(24) == 1)
                 .put("dev_in_session_bounties_enabled", cursor.getInt(25) == 1)
-                .put("next_focus", cursor.getString(26))
-                .put("created_at_utc", cursor.getString(27))
-                .put("updated_at_utc", cursor.getString(28))
+                .put("custom_exercise_ai_model_id", customExerciseAiModelOptionForId(cursor.getStringOrNull(26)).id)
+                .put("next_focus", cursor.getString(27))
+                .put("created_at_utc", cursor.getString(28))
+                .put("updated_at_utc", cursor.getString(29))
         }
     }
 

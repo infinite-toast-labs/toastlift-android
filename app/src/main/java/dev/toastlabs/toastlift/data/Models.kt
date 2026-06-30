@@ -332,6 +332,7 @@ data class UserProfile(
     val trainingFreshnessMinimumBucketExercises: Int = DEFAULT_TRAINING_FRESHNESS_BUCKET_EXERCISES,
     val devSessionSetSwipeCompleteEnabled: Boolean = true,
     val devInSessionBountiesEnabled: Boolean = false,
+    val customExerciseAiModelId: String = DEFAULT_CUSTOM_EXERCISE_AI_MODEL_ID,
 )
 
 data class WorkoutExercise(
@@ -801,6 +802,7 @@ data class CustomExerciseTaxonomy(
 
 data class CustomExerciseDraft(
     val name: String = "",
+    val aiModelId: String = DEFAULT_CUSTOM_EXERCISE_AI_MODEL_ID,
     val difficultyLevel: String = "",
     val bodyRegion: String = "",
     val targetMuscleGroup: String = "",
@@ -835,6 +837,7 @@ data class CustomExerciseDraft(
     val isGenerating: Boolean = false,
     val isSaving: Boolean = false,
     val generatedWithAi: Boolean = false,
+    val generationReport: CustomExerciseGenerationReport? = null,
     val errorMessage: String? = null,
 )
 
