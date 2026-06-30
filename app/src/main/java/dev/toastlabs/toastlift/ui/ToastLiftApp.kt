@@ -411,27 +411,29 @@ private fun ToastLiftBottomBar(
     }
 }
 
-/**
- * Minimal top chrome for global overflow.
- *
- * The revamp uses icon-only main navigation, so the old large screen labels are
- * intentionally omitted.
- */
 @Composable
-private fun ToastLiftScreenHeader(
+private fun GlobalOverflowMenu(
+    onOpenProfile: () -> Unit,
     modifier: Modifier = Modifier,
-    trailing: (@Composable () -> Unit)? = null,
 ) {
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .statusBarsPadding()
-            .padding(horizontal = 20.dp)
-            .padding(top = 4.dp),
-        contentAlignment = Alignment.CenterEnd,
-    ) {
-        if (trailing != null) {
-            trailing()
+    var expanded by remember { mutableStateOf(false) }
+    Box(modifier = modifier) {
+        IconButton(onClick = { expanded = true }) {
+            Text(
+                "⋮",
+                modifier = Modifier.semantics { contentDescription = "More actions" },
+                style = MaterialTheme.typography.titleLarge,
+                color = MaterialTheme.colorScheme.onBackground,
+            )
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            DropdownMenuItem(
+                text = { Text("Open profile") },
+                onClick = {
+                    expanded = false
+                    onOpenProfile()
+                },
+            )
         }
     }
 }
@@ -476,6 +478,42 @@ private fun ExploreSectionToggle(
                 selected = selected == section,
                 onClick = { onSelect(section) },
                 label = { Text(section.label) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun LibraryToolbarIconButton(
+    onClick: () -> Unit,
+    imageVector: ImageVector,
+    contentDescription: String,
+    modifier: Modifier = Modifier,
+    selected: Boolean = false,
+) {
+    val container = if (selected) {
+        MaterialTheme.colorScheme.primaryContainer
+    } else {
+        MaterialTheme.colorScheme.surface
+    }
+    val content = if (selected) {
+        MaterialTheme.colorScheme.onPrimaryContainer
+    } else {
+        MaterialTheme.colorScheme.onSurface
+    }
+    Surface(
+        onClick = onClick,
+        modifier = modifier.size(48.dp),
+        shape = RoundedCornerShape(16.dp),
+        color = container,
+        contentColor = content,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = if (selected) 0f else 0.32f)),
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Icon(
+                imageVector = imageVector,
+                contentDescription = contentDescription,
+                modifier = Modifier.size(24.dp),
             )
         }
     }
@@ -1088,34 +1126,7 @@ fun ToastLiftApp(
                 else -> {
                     Scaffold(
                         containerColor = Color.Transparent,
-                        topBar = {
-                            if (!isTodayFullscreenFlow && !isGenerateFullscreenFlow) {
-                                // Minimal top chrome: no page title, just global overflow.
-                                ToastLiftScreenHeader(
-                                    trailing = {
-                                        var expanded by remember { mutableStateOf(false) }
-                                        Box {
-                                            IconButton(onClick = { expanded = true }) {
-                                                Text(
-                                                    "⋮",
-                                                    modifier = Modifier.semantics { contentDescription = "More actions" },
-                                                    style = MaterialTheme.typography.titleLarge,
-                                                )
-                                            }
-                                            DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                                                DropdownMenuItem(
-                                                    text = { Text("Open profile") },
-                                                    onClick = {
-                                                        expanded = false
-                                                        isProfileHiddenScreen = true
-                                                    },
-                                                )
-                                            }
-                                        }
-                                    },
-                                )
-                            }
-                        },
+                        contentWindowInsets = WindowInsets(0, 0, 0, 0),
                         snackbarHost = { SnackbarHost(snackbars) },
                         bottomBar = {
                             if (!isTodayFullscreenFlow && !isGenerateFullscreenFlow && !isProfileHiddenScreen) {
@@ -1132,7 +1143,14 @@ fun ToastLiftApp(
                             modifier = Modifier
                                 .fillMaxSize()
                                 .background(MaterialTheme.colorScheme.background)
-                                .padding(padding),
+                                .padding(padding)
+                                .then(
+                                    if (!isTodayFullscreenFlow && !isGenerateFullscreenFlow) {
+                                        Modifier.statusBarsPadding()
+                                    } else {
+                                        Modifier
+                                    },
+                                ),
                         ) {
                             AnimatedContent(
                                 targetState = displayedTab,
@@ -1402,6 +1420,14 @@ fun ToastLiftApp(
                                         }
                                     }
                                 }
+                            }
+                            if (!isTodayFullscreenFlow && !isGenerateFullscreenFlow) {
+                                GlobalOverflowMenu(
+                                    onOpenProfile = { isProfileHiddenScreen = true },
+                                    modifier = Modifier
+                                        .align(Alignment.TopEnd)
+                                        .padding(top = 4.dp, end = 20.dp),
+                                )
                             }
                         }
                     }
@@ -4702,15 +4728,19 @@ private fun LibraryScreen(
                         },
                     )
                 } else {
-                    IconButton(onClick = onOpenCustomExercise) {
-                        Icon(
-                            imageVector = Icons.Rounded.Add,
-                            contentDescription = "Add custom exercise",
-                            tint = MaterialTheme.colorScheme.onBackground,
-                        )
-                    }
-                    Spacer(modifier = Modifier.weight(1f))
-                    OutlinedButton(onClick = { showFilterSheet = true }) {
+                    LibraryToolbarIconButton(
+                        onClick = onOpenCustomExercise,
+                        imageVector = Icons.Rounded.Add,
+                        contentDescription = "Add custom exercise",
+                    )
+                    OutlinedButton(
+                        onClick = { showFilterSheet = true },
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(48.dp),
+                        shape = RoundedCornerShape(16.dp),
+                        contentPadding = PaddingValues(horizontal = 16.dp),
+                    ) {
                         Icon(
                             imageVector = Icons.Rounded.FilterList,
                             contentDescription = "Open filters",
@@ -4725,23 +4755,24 @@ private fun LibraryScreen(
                             },
                         )
                     }
-                    IconButton(onClick = onToggleFavoritesOnly) {
-                        Icon(
-                            imageVector = if (state.libraryFilters.favoritesOnly) Icons.Rounded.Star else Icons.Rounded.StarOutline,
-                            contentDescription = if (state.libraryFilters.favoritesOnly) "Show all exercises" else "Show favorites only",
-                            tint = if (state.libraryFilters.favoritesOnly) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.onBackground.copy(alpha = 0.78f),
-                        )
-                    }
-                    IconButton(onClick = onToggleSearch) {
-                        Icon(
-                            imageVector = Icons.Rounded.Search,
-                            contentDescription = "Search exercises",
-                            tint = MaterialTheme.colorScheme.onBackground,
-                        )
-                    }
+                    LibraryToolbarIconButton(
+                        onClick = onToggleFavoritesOnly,
+                        imageVector = if (state.libraryFilters.favoritesOnly) Icons.Rounded.Star else Icons.Rounded.StarOutline,
+                        contentDescription = if (state.libraryFilters.favoritesOnly) "Show all exercises" else "Show favorites only",
+                        selected = state.libraryFilters.favoritesOnly,
+                    )
+                    LibraryToolbarIconButton(
+                        onClick = onToggleSearch,
+                        imageVector = Icons.Rounded.Search,
+                        contentDescription = "Search exercises",
+                    )
                 }
             }
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxSize()) {
+            LazyColumn(
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                contentPadding = PaddingValues(bottom = 24.dp),
+                modifier = Modifier.fillMaxSize(),
+            ) {
                 item(key = "exercise-discovery") {
                     ExerciseDiscoveryPanel(
                         result = state.exerciseDiscoveryResult,
@@ -5174,6 +5205,7 @@ private fun ExerciseFamilyCandidateCard(
                             "⋮",
                             modifier = Modifier.semantics { contentDescription = "Exercise actions" },
                             style = MaterialTheme.typography.titleLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                     DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
@@ -5456,6 +5488,7 @@ private fun ExerciseDiscoveryPickRow(
                             "⋮",
                             modifier = Modifier.semantics { contentDescription = "Exercise actions" },
                             style = MaterialTheme.typography.titleLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                     DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
@@ -8898,6 +8931,7 @@ private fun HistoryEntryCard(
                             "⋮",
                             modifier = Modifier.semantics { contentDescription = "History entry actions" },
                             style = MaterialTheme.typography.titleLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                     DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
@@ -9512,6 +9546,7 @@ private fun ExerciseListCard(
                                 "⋮",
                                 modifier = Modifier.semantics { contentDescription = "Exercise actions" },
                                 style = MaterialTheme.typography.titleLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
                     }
@@ -9559,6 +9594,7 @@ private fun CompactSectionCard(
                                 "⋮",
                                 modifier = Modifier.semantics { contentDescription = "Section actions" },
                                 style = MaterialTheme.typography.titleLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
                         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
@@ -17139,6 +17175,7 @@ private fun TemplateListRow(
                     "⋮",
                     modifier = Modifier.semantics { contentDescription = "Template actions" },
                     style = MaterialTheme.typography.titleLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
             DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
@@ -18202,6 +18239,7 @@ private fun PlannedSessionCard(
                                 "⋮",
                                 modifier = Modifier.semantics { contentDescription = "Planned session actions" },
                                 style = MaterialTheme.typography.titleLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
                         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
