@@ -145,11 +145,11 @@ import kotlin.math.roundToInt
 import kotlin.random.Random
 
 enum class MainTab(val label: String) {
-    Today("Today"),
+    // DESIGN.md §2: 3-tab structure replacing the old 5-tab layout.
+    // Home = Today; Generate = one-off generator + builder; Explore = Library + History.
+    Home("Home"),
     Generate("Generate"),
-    Library("Library"),
-    History("History"),
-    Profile("Profile"),
+    Explore("Explore"),
 }
 
 enum class CustomExerciseDestination {
@@ -347,7 +347,7 @@ data class ProjectedMovementInsight(
 
 internal data class AppUiState(
     val isLoading: Boolean = true,
-    val selectedTab: MainTab = MainTab.Today,
+    val selectedTab: MainTab = MainTab.Home,
     val themePreference: ThemePreference = ThemePreference.Dark,
     val onboardingDraft: OnboardingDraft = OnboardingDraft(),
     val profile: UserProfile? = null,
@@ -360,6 +360,7 @@ internal data class AppUiState(
     val libraryQuery: String = "",
     val librarySearchVisible: Boolean = false,
     val libraryFilters: LibraryFilters = LibraryFilters(),
+    val libraryNavigationRevision: Long = 0L,
     val libraryFacets: LibraryFacets = LibraryFacets(),
     val libraryResults: List<ExerciseSummary> = emptyList(),
     val exerciseDiscoveryResult: ExerciseDiscoveryResult? = null,
@@ -3026,10 +3027,11 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
         )
         updateLibraryContext {
             it.copy(
-                selectedTab = MainTab.Library,
+                selectedTab = MainTab.Explore,
                 librarySearchVisible = false,
                 libraryQuery = "",
                 libraryFilters = filters,
+                libraryNavigationRevision = it.libraryNavigationRevision + 1,
                 message = null,
             )
         }
@@ -3047,10 +3049,11 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
         )
         updateLibraryContext {
             it.copy(
-                selectedTab = MainTab.Library,
+                selectedTab = MainTab.Explore,
                 librarySearchVisible = false,
                 libraryQuery = "",
                 libraryFilters = filters,
+                libraryNavigationRevision = it.libraryNavigationRevision + 1,
                 message = null,
             )
         }

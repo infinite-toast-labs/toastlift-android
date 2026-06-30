@@ -57,6 +57,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.WindowInsets
@@ -115,7 +116,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Divider
 import androidx.compose.material3.DropdownMenu
@@ -128,8 +128,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -177,6 +175,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalFocusManager
@@ -309,6 +308,8 @@ import dev.toastlabs.toastlift.data.muscleTargetSubcategoriesForBucket
 import dev.toastlabs.toastlift.data.normalizeExerciseVideoLinkLabel
 import dev.toastlabs.toastlift.data.normalizeExerciseVideoLinkUrl
 import dev.toastlabs.toastlift.data.resolveMuscleTargetContributions
+import dev.toastlabs.toastlift.R
+import androidx.compose.ui.res.painterResource
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
@@ -324,14 +325,119 @@ import java.time.format.DateTimeFormatter
 import java.time.temporal.TemporalAdjusters
 import java.util.Locale
 
-private val MainTab.icon
+// DESIGN.md §2: 3 nav tabs with custom VectorDrawable icons.
+private val MainTab.navIconRes: Int
     get() = when (this) {
-        MainTab.Today -> Icons.Rounded.Home
-        MainTab.Generate -> Icons.Rounded.AutoAwesome
-        MainTab.Library -> Icons.Rounded.LibraryBooks
-        MainTab.History -> Icons.Rounded.QueryStats
-        MainTab.Profile -> Icons.Rounded.AccountCircle
+        MainTab.Home -> R.drawable.ic_nav_home
+        MainTab.Generate -> R.drawable.ic_nav_generate
+        MainTab.Explore -> R.drawable.ic_nav_explore
     }
+
+/**
+ * Custom floating bottom nav bar per DESIGN.md §5 "Bottom Bar (Custom, replaces NavigationBar)".
+ *
+ * - Floating pill shape: RoundedCornerShape(28.dp)
+ * - 16dp horizontal margin, 16dp bottom margin
+ * - 72dp height
+ * - surface color @ 90% alpha background
+ * - 3 items only, icon-only
+ * - Active item: accent color + 4dp top indicator line
+ * - Inactive item: muted (onSurfaceVariant) color
+ */
+@Composable
+private fun ToastLiftBottomBar(
+    selectedTab: MainTab,
+    onSelectTab: (MainTab) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val surface = MaterialTheme.colorScheme.surface
+    val accent = MaterialTheme.colorScheme.primary
+    val inactive = MaterialTheme.colorScheme.onSurfaceVariant
+    val barShape = RoundedCornerShape(28.dp)
+
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp)
+            .navigationBarsPadding()
+            .padding(bottom = 16.dp),
+        contentAlignment = Alignment.BottomCenter,
+    ) {
+        Surface(
+            shape = barShape,
+            color = surface.copy(alpha = 0.9f),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(72.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxSize(),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                MainTab.entries.forEach { tab ->
+                    val isSelected = selectedTab == tab
+                    val iconTint by animateColorAsState(
+                        targetValue = if (isSelected) accent else inactive,
+                        animationSpec = tween(180),
+                        label = "nav-icon-tint-${tab.label}",
+                    )
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                        modifier = Modifier
+                            .fillMaxHeight()
+                            .weight(1f)
+                            .clickable { onSelectTab(tab) }
+                            .padding(top = 9.dp, bottom = 8.dp),
+                    ) {
+                        // 4dp top indicator line on active item.
+                        Box(
+                            modifier = Modifier
+                                .width(28.dp)
+                                .height(4.dp)
+                                .clip(RoundedCornerShape(2.dp))
+                                .background(if (isSelected) accent else Color.Transparent),
+                        )
+                        Icon(
+                            painter = painterResource(tab.navIconRes),
+                            contentDescription = tab.label,
+                            tint = iconTint,
+                            modifier = Modifier.size(24.dp),
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun GlobalOverflowMenu(
+    onOpenProfile: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Box(modifier = modifier) {
+        IconButton(onClick = { expanded = true }) {
+            Text(
+                "⋮",
+                modifier = Modifier.semantics { contentDescription = "More actions" },
+                style = MaterialTheme.typography.titleLarge,
+                color = MaterialTheme.colorScheme.onBackground,
+            )
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            DropdownMenuItem(
+                text = { Text("Open profile") },
+                onClick = {
+                    expanded = false
+                    onOpenProfile()
+                },
+            )
+        }
+    }
+}
 
 private data class GlowAccent(
     val color: Color,
@@ -341,6 +447,77 @@ private data class GlowAccent(
     val start: Color get() = color
     val end: Color get() = color
     val glow: Color get() = color.copy(alpha = 0.12f)
+}
+
+/**
+ * Internal sub-sections within the Explore tab (DESIGN.md §2: Explore merges
+ * old Library + History). Toggled via [ExploreSectionToggle].
+ */
+private enum class ExploreSection(val label: String) {
+    Library("Library"),
+    History("History"),
+}
+
+/**
+ * DESIGN.md §2: Explore tab hosts Library + History. A compact FilterChip row
+ * toggles between them — keeps the canvas flat (no Material TabRow chrome).
+ */
+@Composable
+private fun ExploreSectionToggle(
+    selected: ExploreSection,
+    onSelect: (ExploreSection) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        ExploreSection.entries.forEach { section ->
+            FilterChip(
+                selected = selected == section,
+                onClick = { onSelect(section) },
+                label = { Text(section.label) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun LibraryToolbarIconButton(
+    onClick: () -> Unit,
+    imageVector: ImageVector,
+    contentDescription: String,
+    modifier: Modifier = Modifier,
+    selected: Boolean = false,
+) {
+    val container = if (selected) {
+        MaterialTheme.colorScheme.primaryContainer
+    } else {
+        MaterialTheme.colorScheme.surface
+    }
+    val content = if (selected) {
+        MaterialTheme.colorScheme.onPrimaryContainer
+    } else {
+        MaterialTheme.colorScheme.onSurface
+    }
+    Surface(
+        onClick = onClick,
+        modifier = modifier.size(48.dp),
+        shape = RoundedCornerShape(16.dp),
+        color = container,
+        contentColor = content,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = if (selected) 0f else 0.32f)),
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Icon(
+                imageVector = imageVector,
+                contentDescription = contentDescription,
+                modifier = Modifier.size(24.dp),
+            )
+        }
+    }
 }
 
 private val DarkEmberAccent = GlowAccent(
@@ -394,9 +571,6 @@ private val LightOrangeAccent = GlowAccent(
     textOnAccent = Color(0xFFFFFFFF),
 )
 
-private val LightTopBorderAccent = Color(0xFF7B2FF7)
-private val DarkTopBorderAccent = Color(0xFFB81E19)
-
 private val emberAccent: GlowAccent
     @Composable get() = if (LocalToastLiftIsDarkTheme.current) DarkEmberAccent else LightEmberAccent
 
@@ -432,11 +606,6 @@ private fun fallbackAccentForContainer(containerColor: Color): GlowAccent {
         containerColor.luminance() > 0.7f -> goldAccent
         else -> amethystAccent
     }
-}
-
-@Composable
-private fun topBorderAccentColor(accent: GlowAccent): Color {
-    return if (LocalToastLiftIsDarkTheme.current) DarkTopBorderAccent else LightTopBorderAccent
 }
 
 private enum class TokenBalanceWindow(val label: String, val days: Int, val labelStep: Int) {
@@ -799,6 +968,7 @@ fun ToastLiftApp(
     val latestPendingWorkoutShare = rememberUpdatedState(state.pendingWorkoutShare)
     var isGenerateFullscreenFlow by remember { mutableStateOf(false) }
     var isTodayFullscreenFlow by remember { mutableStateOf(false) }
+    var isProfileHiddenScreen by remember { mutableStateOf(false) }
     val historyNavigationState = rememberHistoryNavigationState()
     val createExportDocument = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/json"),
@@ -957,113 +1127,16 @@ fun ToastLiftApp(
                 else -> {
                     Scaffold(
                         containerColor = Color.Transparent,
-                        topBar = {
-                            if (
-                                displayedTab != MainTab.Library &&
-                                !(displayedTab == MainTab.Generate && isGenerateFullscreenFlow) &&
-                                !(displayedTab == MainTab.Today && isTodayFullscreenFlow)
-                            ) {
-                                CenterAlignedTopAppBar(
-                                    title = {
-                                        if (displayedTab == MainTab.Generate) {
-                                            Box(
-                                                modifier = Modifier
-                                                    .heightIn(min = 48.dp)
-                                                    .clip(RoundedCornerShape(percent = 10))
-                                                    .clickable(onClick = viewModel::generateWorkout)
-                                                    .padding(horizontal = 12.dp),
-                                                contentAlignment = Alignment.Center,
-                                            ) {
-                                                Text(
-                                                    displayedTab.label.uppercase(),
-                                                    fontFamily = MonoFamily,
-                                                    fontSize = 12.sp,
-                                                    letterSpacing = 0.15.em,
-                                                    fontWeight = FontWeight.Medium,
-                                                )
-                                            }
-                                        } else {
-                                            Text(
-                                                displayedTab.label.uppercase(),
-                                                fontFamily = MonoFamily,
-                                                fontSize = 12.sp,
-                                                letterSpacing = 0.15.em,
-                                                fontWeight = FontWeight.Medium,
-                                            )
-                                        }
-                                    },
-                                    actions = {
-                                        var expanded by remember { mutableStateOf(false) }
-                                        IconButton(onClick = { expanded = true }) {
-                                            Text(
-                                                "⋮",
-                                                modifier = Modifier.semantics { contentDescription = "More actions" },
-                                                style = MaterialTheme.typography.titleLarge,
-                                            )
-                                        }
-                                        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                                            DropdownMenuItem(
-                                                text = { Text("Generate workout") },
-                                                onClick = {
-                                                    expanded = false
-                                                    viewModel.generateWorkout()
-                                                },
-                                            )
-                                            DropdownMenuItem(
-                                                text = { Text("Open profile") },
-                                                onClick = {
-                                                    expanded = false
-                                                    viewModel.selectTab(MainTab.Profile)
-                                                },
-                                            )
-                                        }
-                                    },
-                                )
-                            }
-                        },
+                        contentWindowInsets = WindowInsets(0, 0, 0, 0),
                         snackbarHost = { SnackbarHost(snackbars) },
                         bottomBar = {
-                            if (
-                                !(displayedTab == MainTab.Generate && isGenerateFullscreenFlow) &&
-                                !(displayedTab == MainTab.Today && isTodayFullscreenFlow)
-                            ) {
-                                val uiColors = LocalUiColors.current
-                                Column {
-                                    Divider(color = uiColors.chromeDivider, thickness = 1.dp)
-                                    NavigationBar(containerColor = MaterialTheme.colorScheme.background) {
-                                        MainTab.entries.forEach { tab ->
-                                            NavigationBarItem(
-                                                selected = displayedTab == tab,
-                                                onClick = { viewModel.selectTab(tab) },
-                                                icon = {
-                                                    Icon(
-                                                        imageVector = tab.icon,
-                                                        contentDescription = tab.label,
-                                                        modifier = Modifier.size(20.dp),
-                                                        tint = if (displayedTab == tab) {
-                                                            MaterialTheme.colorScheme.onBackground
-                                                        } else {
-                                                            uiColors.inactiveNavigation
-                                                        },
-                                                    )
-                                                },
-                                                label = {
-                                                    Text(
-                                                        tab.label.uppercase(),
-                                                        fontFamily = MonoFamily,
-                                                        fontSize = 9.sp,
-                                                        letterSpacing = 0.12.em,
-                                                        color = if (displayedTab == tab) {
-                                                            MaterialTheme.colorScheme.onBackground
-                                                        } else {
-                                                            uiColors.inactiveNavigation
-                                                        },
-                                                    )
-                                                },
-                                            )
-                                        }
-                                    }
-                                }
+                            if (!isTodayFullscreenFlow && !isGenerateFullscreenFlow && !isProfileHiddenScreen) {
+                                // DESIGN.md §5 custom Bottom Bar (replaces NavigationBar):
+                                // floating pill, 3 icon-only tabs.
+                                ToastLiftBottomBar(
+                                    selectedTab = displayedTab,
+                                    onSelectTab = viewModel::selectTab,
+                                )
                             }
                         },
                     ) { padding ->
@@ -1071,7 +1144,14 @@ fun ToastLiftApp(
                             modifier = Modifier
                                 .fillMaxSize()
                                 .background(MaterialTheme.colorScheme.background)
-                                .padding(padding),
+                                .padding(padding)
+                                .then(
+                                    if (!isTodayFullscreenFlow && !isGenerateFullscreenFlow) {
+                                        Modifier.statusBarsPadding()
+                                    } else {
+                                        Modifier
+                                    },
+                                ),
                         ) {
                             AnimatedContent(
                                 targetState = displayedTab,
@@ -1087,178 +1167,268 @@ fun ToastLiftApp(
                                 },
                                 label = "main-tab-transition",
                             ) { tab ->
-                                when (tab) {
-                                    MainTab.Today -> TodayScreen(
-                                        state = state,
-                                        onGenerate = viewModel::generateWorkout,
-                                        onOpenGenerate = { viewModel.selectTab(MainTab.Generate) },
-                                        onStartFreshnessReEntry = viewModel::startFreshnessReEntryWorkout,
-                                        onStartTemplate = viewModel::startTemplate,
-                                        onEditTemplate = viewModel::editTemplate,
-                                        onRenameTemplate = viewModel::renameTemplate,
-                                        onDeleteTemplate = viewModel::deleteTemplate,
-                                        onTemplateNameChange = viewModel::updateTodayTemplateName,
-                                        onRemoveTemplateExercise = viewModel::removeTodayTemplateExercise,
-                                        onAddExercisesToTemplate = viewModel::addExercisesToTodayTemplate,
-                                        onSaveTemplateEdits = viewModel::saveTodayTemplate,
-                                        onSaveFilteredTemplate = viewModel::saveTodayTemplateAs,
-                                        onStartEditedTemplate = viewModel::startTodayTemplateWorkout,
-                                        onStartFilteredTemplate = viewModel::startTodayTemplateViewWorkout,
-                                        onCloseTemplateEditor = viewModel::closeTodayTemplateEditor,
-                                        onLibraryQueryChange = viewModel::updateLibraryQuery,
-                                        onToggleLibrarySearch = viewModel::toggleLibrarySearch,
-                                        onToggleLibraryFavoritesOnly = viewModel::toggleLibraryFavoritesOnly,
-                                        onToggleLibraryEquipmentFilter = viewModel::toggleLibraryEquipmentFilter,
-                                        onToggleLibraryEquipmentLocationFilter = viewModel::toggleLibraryEquipmentLocationFilter,
-                                        onToggleLibraryTargetMuscleFilter = viewModel::toggleLibraryTargetMuscleFilter,
-                                        onToggleLibraryPrimeMoverFilter = viewModel::toggleLibraryPrimeMoverFilter,
-                                        onToggleLibraryFreshnessMuscleFilter = viewModel::toggleLibraryFreshnessMuscleFilter,
-                                        onToggleLibraryMuscleTargetBucketFilter = viewModel::toggleLibraryMuscleTargetBucketFilter,
-                                        onToggleLibraryMuscleTargetSubcategoryFilter = viewModel::toggleLibraryMuscleTargetSubcategoryFilter,
-                                        onToggleLibraryRecommendationBiasFilter = viewModel::toggleLibraryRecommendationBiasFilter,
-                                        onToggleLibraryLoggedHistoryFilter = viewModel::toggleLibraryLoggedHistoryFilter,
-                                        onClearLibraryFreshnessMuscleFilters = viewModel::clearLibraryFreshnessMuscleFilters,
-                                        onClearLibraryMuscleTargetFilters = viewModel::clearLibraryMuscleTargetFilters,
-                                        onClearLibraryFilters = viewModel::clearLibraryFilters,
-                                        onShowExerciseDetail = viewModel::showExerciseDetail,
-                                        onOpenCustomExercise = viewModel::openCustomExerciseForTodayTemplate,
-                                        onCloseCustomExercise = viewModel::closeCustomExerciseFlow,
-                                        onCustomExerciseDraftChange = viewModel::updateCustomExerciseDraft,
-                                        onCustomExerciseNameChange = viewModel::updateCustomExerciseName,
-                                        onGenerateCustomExercise = viewModel::generateCustomExerciseDetails,
-                                        onUseExistingExercise = viewModel::useExistingExerciseFromCustomFlow,
-                                        onSaveCustomExercise = viewModel::saveCustomExercise,
-                                        onPendingSelectionConsumed = viewModel::clearPendingAddExercisePickerSelection,
-                                        onAddExerciseToExistingTemplate = viewModel::addExerciseToExistingTemplate,
-                                        onCreateTemplateFromExercise = viewModel::createTemplateFromExercise,
-                                        onAddWorkoutExerciseToExistingTemplate = viewModel::addWorkoutExerciseToExistingTemplate,
-                                        onCreateTemplateFromWorkoutExercise = viewModel::createTemplateFromWorkoutExercise,
-                                        onAddTemplateExerciseToBuilder = viewModel::addWorkoutExerciseToBuilder,
-                                        onAddTemplateExerciseToMyPlan = viewModel::addWorkoutExerciseToGeneratedWorkout,
-                                        onOpenExerciseFamily = viewModel::openExerciseFamily,
-                                        onToggleFavorite = viewModel::toggleFavorite,
-                                        onOpenExerciseHistory = viewModel::openExerciseHistory,
-                                        onOpenExerciseVideos = viewModel::openExerciseVideos,
-                                        onOpenHistoryWorkout = viewModel::openHistoryWorkout,
-                                        onViewReceipt = viewModel::openHistoryReceipt,
-                                        onRestoreAbandonedWorkout = viewModel::restoreAbandonedWorkout,
-                                        onFullscreenFlowChange = { isTodayFullscreenFlow = it },
-                                        onShowProgramSetup = viewModel::showProgramSetup,
-                                        onRealizeSession = { viewModel.realizeNextSession(state.programReadiness) },
-                                        onSkipSession = { state.nextPlannedSession?.id?.let { viewModel.skipPlannedSession(it) } },
-                                        onUnskipSession = viewModel::unskipMostRecentSession,
-                                        onPauseProgram = viewModel::pauseProgram,
-                                        onResumeProgram = viewModel::resumeProgram,
-                                        onEndProgram = { state.activeProgram?.id?.let { viewModel.endProgram(it) } },
-                                        onUpdateReadiness = viewModel::updateReadiness,
-                                        onRunCheckpoint = viewModel::runPendingCheckpoint,
-                                        onTrainingFreshnessFilterChange = viewModel::setTrainingFreshnessFilter,
-                                        onTrainingFreshnessSortChange = viewModel::setTrainingFreshnessSort,
-                                        onOpenLibraryFreshnessMuscle = viewModel::openLibraryForFreshnessMuscle,
-                                    )
+                                if (isProfileHiddenScreen) {
+                                    BackHandler { isProfileHiddenScreen = false }
+                                    ProfileScreen(state = state, viewModel = viewModel)
+                                } else when (tab) {
+                                    // Home owns today's plan/program surface. Generate
+                                    // now lives in its own main tab.
+                                    MainTab.Home -> {
+                                        if (isGenerateFullscreenFlow) {
+                                            BackHandler { isGenerateFullscreenFlow = false }
+                                            GenerateScreen(
+                                                state = state,
+                                                onGenerate = viewModel::generateWorkout,
+                                                onSwapGenerated = viewModel::swapGeneratedWorkoutToFocus,
+                                                onStartGenerated = viewModel::startGeneratedWorkout,
+                                                onSaveGenerated = viewModel::saveGeneratedTemplate,
+                                                onShowExerciseDetail = viewModel::showExerciseDetail,
+                                                onRemoveGeneratedExercise = viewModel::removeGeneratedExercise,
+                                                onAddExercisesToGeneratedWorkout = viewModel::addExercisesToGeneratedWorkout,
+                                                onOpenExerciseHistory = viewModel::openExerciseHistory,
+                                                onOpenExerciseVideos = viewModel::openExerciseVideos,
+                                                onLibraryQueryChange = viewModel::updateLibraryQuery,
+                                                onToggleLibrarySearch = viewModel::toggleLibrarySearch,
+                                                onToggleLibraryFavoritesOnly = viewModel::toggleLibraryFavoritesOnly,
+                                                onToggleLibraryEquipmentFilter = viewModel::toggleLibraryEquipmentFilter,
+                                                onToggleLibraryEquipmentLocationFilter = viewModel::toggleLibraryEquipmentLocationFilter,
+                                                onToggleLibraryTargetMuscleFilter = viewModel::toggleLibraryTargetMuscleFilter,
+                                                onToggleLibraryPrimeMoverFilter = viewModel::toggleLibraryPrimeMoverFilter,
+                                                onToggleLibraryFreshnessMuscleFilter = viewModel::toggleLibraryFreshnessMuscleFilter,
+                                                onToggleLibraryMuscleTargetBucketFilter = viewModel::toggleLibraryMuscleTargetBucketFilter,
+                                                onToggleLibraryMuscleTargetSubcategoryFilter = viewModel::toggleLibraryMuscleTargetSubcategoryFilter,
+                                                onToggleLibraryRecommendationBiasFilter = viewModel::toggleLibraryRecommendationBiasFilter,
+                                                onToggleLibraryLoggedHistoryFilter = viewModel::toggleLibraryLoggedHistoryFilter,
+                                                onClearLibraryFreshnessMuscleFilters = viewModel::clearLibraryFreshnessMuscleFilters,
+                                                onClearLibraryMuscleTargetFilters = viewModel::clearLibraryMuscleTargetFilters,
+                                                onClearLibraryFilters = viewModel::clearLibraryFilters,
+                                                onOpenCustomExerciseForGeneratedWorkout = viewModel::openCustomExerciseForGeneratedWorkout,
+                                                onOpenCustomExerciseForBuilder = viewModel::openCustomExerciseForBuilder,
+                                                onCloseCustomExercise = viewModel::closeCustomExerciseFlow,
+                                                onCustomExerciseDraftChange = viewModel::updateCustomExerciseDraft,
+                                                onCustomExerciseNameChange = viewModel::updateCustomExerciseName,
+                                                onGenerateCustomExercise = viewModel::generateCustomExerciseDetails,
+                                                onUseExistingExercise = viewModel::useExistingExerciseFromCustomFlow,
+                                                onSaveCustomExercise = viewModel::saveCustomExercise,
+                                                onPendingSelectionConsumed = viewModel::clearPendingAddExercisePickerSelection,
+                                                onAddExerciseToExistingTemplate = viewModel::addExerciseToExistingTemplate,
+                                                onCreateTemplateFromExercise = viewModel::createTemplateFromExercise,
+                                                onManualNameChange = viewModel::updateManualWorkoutName,
+                                                onRemoveManualExercise = viewModel::removeBuilderExercise,
+                                                onAddExercisesToBuilder = viewModel::addExercisesToBuilder,
+                                                onStartManualWorkout = viewModel::startManualWorkout,
+                                                onSaveManualTemplate = viewModel::saveManualTemplate,
+                                                onFullscreenFlowChange = { isGenerateFullscreenFlow = it },
+                                            )
+                                        } else {
+                                            TodayScreen(
+                                                state = state,
+                                                onGenerate = {
+                                                    viewModel.selectTab(MainTab.Generate)
+                                                    viewModel.generateWorkout()
+                                                },
+                                                onOpenGenerate = {
+                                                    viewModel.selectTab(MainTab.Generate)
+                                                    viewModel.generateWorkout()
+                                                },
+                                                onStartFreshnessReEntry = viewModel::startFreshnessReEntryWorkout,
+                                                onStartTemplate = viewModel::startTemplate,
+                                                onEditTemplate = viewModel::editTemplate,
+                                                onRenameTemplate = viewModel::renameTemplate,
+                                                onDeleteTemplate = viewModel::deleteTemplate,
+                                                onTemplateNameChange = viewModel::updateTodayTemplateName,
+                                                onRemoveTemplateExercise = viewModel::removeTodayTemplateExercise,
+                                                onAddExercisesToTemplate = viewModel::addExercisesToTodayTemplate,
+                                                onSaveTemplateEdits = viewModel::saveTodayTemplate,
+                                                onSaveFilteredTemplate = viewModel::saveTodayTemplateAs,
+                                                onStartEditedTemplate = viewModel::startTodayTemplateWorkout,
+                                                onStartFilteredTemplate = viewModel::startTodayTemplateViewWorkout,
+                                                onCloseTemplateEditor = viewModel::closeTodayTemplateEditor,
+                                                onLibraryQueryChange = viewModel::updateLibraryQuery,
+                                                onToggleLibrarySearch = viewModel::toggleLibrarySearch,
+                                                onToggleLibraryFavoritesOnly = viewModel::toggleLibraryFavoritesOnly,
+                                                onToggleLibraryEquipmentFilter = viewModel::toggleLibraryEquipmentFilter,
+                                                onToggleLibraryEquipmentLocationFilter = viewModel::toggleLibraryEquipmentLocationFilter,
+                                                onToggleLibraryTargetMuscleFilter = viewModel::toggleLibraryTargetMuscleFilter,
+                                                onToggleLibraryPrimeMoverFilter = viewModel::toggleLibraryPrimeMoverFilter,
+                                                onToggleLibraryFreshnessMuscleFilter = viewModel::toggleLibraryFreshnessMuscleFilter,
+                                                onToggleLibraryMuscleTargetBucketFilter = viewModel::toggleLibraryMuscleTargetBucketFilter,
+                                                onToggleLibraryMuscleTargetSubcategoryFilter = viewModel::toggleLibraryMuscleTargetSubcategoryFilter,
+                                                onToggleLibraryRecommendationBiasFilter = viewModel::toggleLibraryRecommendationBiasFilter,
+                                                onToggleLibraryLoggedHistoryFilter = viewModel::toggleLibraryLoggedHistoryFilter,
+                                                onClearLibraryFreshnessMuscleFilters = viewModel::clearLibraryFreshnessMuscleFilters,
+                                                onClearLibraryMuscleTargetFilters = viewModel::clearLibraryMuscleTargetFilters,
+                                                onClearLibraryFilters = viewModel::clearLibraryFilters,
+                                                onShowExerciseDetail = viewModel::showExerciseDetail,
+                                                onOpenCustomExercise = viewModel::openCustomExerciseForTodayTemplate,
+                                                onCloseCustomExercise = viewModel::closeCustomExerciseFlow,
+                                                onCustomExerciseDraftChange = viewModel::updateCustomExerciseDraft,
+                                                onCustomExerciseNameChange = viewModel::updateCustomExerciseName,
+                                                onGenerateCustomExercise = viewModel::generateCustomExerciseDetails,
+                                                onUseExistingExercise = viewModel::useExistingExerciseFromCustomFlow,
+                                                onSaveCustomExercise = viewModel::saveCustomExercise,
+                                                onPendingSelectionConsumed = viewModel::clearPendingAddExercisePickerSelection,
+                                                onAddExerciseToExistingTemplate = viewModel::addExerciseToExistingTemplate,
+                                                onCreateTemplateFromExercise = viewModel::createTemplateFromExercise,
+                                                onAddWorkoutExerciseToExistingTemplate = viewModel::addWorkoutExerciseToExistingTemplate,
+                                                onCreateTemplateFromWorkoutExercise = viewModel::createTemplateFromWorkoutExercise,
+                                                onAddTemplateExerciseToBuilder = viewModel::addWorkoutExerciseToBuilder,
+                                                onAddTemplateExerciseToMyPlan = viewModel::addWorkoutExerciseToGeneratedWorkout,
+                                                onOpenExerciseFamily = viewModel::openExerciseFamily,
+                                                onToggleFavorite = viewModel::toggleFavorite,
+                                                onOpenExerciseHistory = viewModel::openExerciseHistory,
+                                                onOpenExerciseVideos = viewModel::openExerciseVideos,
+                                                onOpenHistoryWorkout = viewModel::openHistoryWorkout,
+                                                onViewReceipt = viewModel::openHistoryReceipt,
+                                                onRestoreAbandonedWorkout = viewModel::restoreAbandonedWorkout,
+                                                onFullscreenFlowChange = { isTodayFullscreenFlow = it },
+                                                onShowProgramSetup = viewModel::showProgramSetup,
+                                                onRealizeSession = { viewModel.realizeNextSession(state.programReadiness) },
+                                                onSkipSession = { state.nextPlannedSession?.id?.let { viewModel.skipPlannedSession(it) } },
+                                                onUnskipSession = viewModel::unskipMostRecentSession,
+                                                onPauseProgram = viewModel::pauseProgram,
+                                                onResumeProgram = viewModel::resumeProgram,
+                                                onEndProgram = { state.activeProgram?.id?.let { viewModel.endProgram(it) } },
+                                                onUpdateReadiness = viewModel::updateReadiness,
+                                                onRunCheckpoint = viewModel::runPendingCheckpoint,
+                                                onTrainingFreshnessFilterChange = viewModel::setTrainingFreshnessFilter,
+                                                onTrainingFreshnessSortChange = viewModel::setTrainingFreshnessSort,
+                                                onOpenLibraryFreshnessMuscle = viewModel::openLibraryForFreshnessMuscle,
+                                            )
+                                        }
+                                    }
 
-                                MainTab.Generate -> GenerateScreen(
-                                    state = state,
-                                    onGenerate = viewModel::generateWorkout,
-                                    onSwapGenerated = viewModel::swapGeneratedWorkoutToFocus,
-                                    onStartGenerated = viewModel::startGeneratedWorkout,
-                                    onSaveGenerated = viewModel::saveGeneratedTemplate,
-                                    onShowExerciseDetail = viewModel::showExerciseDetail,
-                                    onRemoveGeneratedExercise = viewModel::removeGeneratedExercise,
-                                    onAddExercisesToGeneratedWorkout = viewModel::addExercisesToGeneratedWorkout,
-                                    onOpenExerciseHistory = viewModel::openExerciseHistory,
-                                    onOpenExerciseVideos = viewModel::openExerciseVideos,
-                                    onLibraryQueryChange = viewModel::updateLibraryQuery,
-                                    onToggleLibrarySearch = viewModel::toggleLibrarySearch,
-                                    onToggleLibraryFavoritesOnly = viewModel::toggleLibraryFavoritesOnly,
-                                    onToggleLibraryEquipmentFilter = viewModel::toggleLibraryEquipmentFilter,
-                                    onToggleLibraryEquipmentLocationFilter = viewModel::toggleLibraryEquipmentLocationFilter,
-                                    onToggleLibraryTargetMuscleFilter = viewModel::toggleLibraryTargetMuscleFilter,
-                                    onToggleLibraryPrimeMoverFilter = viewModel::toggleLibraryPrimeMoverFilter,
-                                    onToggleLibraryFreshnessMuscleFilter = viewModel::toggleLibraryFreshnessMuscleFilter,
-                                    onToggleLibraryMuscleTargetBucketFilter = viewModel::toggleLibraryMuscleTargetBucketFilter,
-                                    onToggleLibraryMuscleTargetSubcategoryFilter = viewModel::toggleLibraryMuscleTargetSubcategoryFilter,
-                                    onToggleLibraryRecommendationBiasFilter = viewModel::toggleLibraryRecommendationBiasFilter,
-                                    onToggleLibraryLoggedHistoryFilter = viewModel::toggleLibraryLoggedHistoryFilter,
-                                    onClearLibraryFreshnessMuscleFilters = viewModel::clearLibraryFreshnessMuscleFilters,
-                                    onClearLibraryMuscleTargetFilters = viewModel::clearLibraryMuscleTargetFilters,
-                                    onClearLibraryFilters = viewModel::clearLibraryFilters,
-                                    onOpenCustomExerciseForGeneratedWorkout = viewModel::openCustomExerciseForGeneratedWorkout,
-                                    onOpenCustomExerciseForBuilder = viewModel::openCustomExerciseForBuilder,
-                                    onCloseCustomExercise = viewModel::closeCustomExerciseFlow,
-                                    onCustomExerciseDraftChange = viewModel::updateCustomExerciseDraft,
-                                    onCustomExerciseNameChange = viewModel::updateCustomExerciseName,
-                                    onGenerateCustomExercise = viewModel::generateCustomExerciseDetails,
-                                    onUseExistingExercise = viewModel::useExistingExerciseFromCustomFlow,
-                                    onSaveCustomExercise = viewModel::saveCustomExercise,
-                                    onPendingSelectionConsumed = viewModel::clearPendingAddExercisePickerSelection,
-                                    onAddExerciseToExistingTemplate = viewModel::addExerciseToExistingTemplate,
-                                    onCreateTemplateFromExercise = viewModel::createTemplateFromExercise,
-                                    onManualNameChange = viewModel::updateManualWorkoutName,
-                                    onRemoveManualExercise = viewModel::removeBuilderExercise,
-                                    onAddExercisesToBuilder = viewModel::addExercisesToBuilder,
-                                    onStartManualWorkout = viewModel::startManualWorkout,
-                                    onSaveManualTemplate = viewModel::saveManualTemplate,
-                                    onFullscreenFlowChange = { isGenerateFullscreenFlow = it },
-                                )
+                                    MainTab.Generate -> {
+                                        GenerateScreen(
+                                            state = state,
+                                            onGenerate = viewModel::generateWorkout,
+                                            onSwapGenerated = viewModel::swapGeneratedWorkoutToFocus,
+                                            onStartGenerated = viewModel::startGeneratedWorkout,
+                                            onSaveGenerated = viewModel::saveGeneratedTemplate,
+                                            onShowExerciseDetail = viewModel::showExerciseDetail,
+                                            onRemoveGeneratedExercise = viewModel::removeGeneratedExercise,
+                                            onAddExercisesToGeneratedWorkout = viewModel::addExercisesToGeneratedWorkout,
+                                            onOpenExerciseHistory = viewModel::openExerciseHistory,
+                                            onOpenExerciseVideos = viewModel::openExerciseVideos,
+                                            onLibraryQueryChange = viewModel::updateLibraryQuery,
+                                            onToggleLibrarySearch = viewModel::toggleLibrarySearch,
+                                            onToggleLibraryFavoritesOnly = viewModel::toggleLibraryFavoritesOnly,
+                                            onToggleLibraryEquipmentFilter = viewModel::toggleLibraryEquipmentFilter,
+                                            onToggleLibraryEquipmentLocationFilter = viewModel::toggleLibraryEquipmentLocationFilter,
+                                            onToggleLibraryTargetMuscleFilter = viewModel::toggleLibraryTargetMuscleFilter,
+                                            onToggleLibraryPrimeMoverFilter = viewModel::toggleLibraryPrimeMoverFilter,
+                                            onToggleLibraryFreshnessMuscleFilter = viewModel::toggleLibraryFreshnessMuscleFilter,
+                                            onToggleLibraryMuscleTargetBucketFilter = viewModel::toggleLibraryMuscleTargetBucketFilter,
+                                            onToggleLibraryMuscleTargetSubcategoryFilter = viewModel::toggleLibraryMuscleTargetSubcategoryFilter,
+                                            onToggleLibraryRecommendationBiasFilter = viewModel::toggleLibraryRecommendationBiasFilter,
+                                            onToggleLibraryLoggedHistoryFilter = viewModel::toggleLibraryLoggedHistoryFilter,
+                                            onClearLibraryFreshnessMuscleFilters = viewModel::clearLibraryFreshnessMuscleFilters,
+                                            onClearLibraryMuscleTargetFilters = viewModel::clearLibraryMuscleTargetFilters,
+                                            onClearLibraryFilters = viewModel::clearLibraryFilters,
+                                            onOpenCustomExerciseForGeneratedWorkout = viewModel::openCustomExerciseForGeneratedWorkout,
+                                            onOpenCustomExerciseForBuilder = viewModel::openCustomExerciseForBuilder,
+                                            onCloseCustomExercise = viewModel::closeCustomExerciseFlow,
+                                            onCustomExerciseDraftChange = viewModel::updateCustomExerciseDraft,
+                                            onCustomExerciseNameChange = viewModel::updateCustomExerciseName,
+                                            onGenerateCustomExercise = viewModel::generateCustomExerciseDetails,
+                                            onUseExistingExercise = viewModel::useExistingExerciseFromCustomFlow,
+                                            onSaveCustomExercise = viewModel::saveCustomExercise,
+                                            onPendingSelectionConsumed = viewModel::clearPendingAddExercisePickerSelection,
+                                            onAddExerciseToExistingTemplate = viewModel::addExerciseToExistingTemplate,
+                                            onCreateTemplateFromExercise = viewModel::createTemplateFromExercise,
+                                            onManualNameChange = viewModel::updateManualWorkoutName,
+                                            onRemoveManualExercise = viewModel::removeBuilderExercise,
+                                            onAddExercisesToBuilder = viewModel::addExercisesToBuilder,
+                                            onStartManualWorkout = viewModel::startManualWorkout,
+                                            onSaveManualTemplate = viewModel::saveManualTemplate,
+                                            onFullscreenFlowChange = { isGenerateFullscreenFlow = it },
+                                        )
+                                    }
 
-                                    MainTab.Library -> LibraryScreen(
-                                        state = state,
-                                        onToggleSearch = viewModel::toggleLibrarySearch,
-                                        onQueryChange = viewModel::updateLibraryQuery,
-                                        onToggleFavoritesOnly = viewModel::toggleLibraryFavoritesOnly,
-                                        onToggleEquipmentFilter = viewModel::toggleLibraryEquipmentFilter,
-                                        onToggleEquipmentLocationFilter = viewModel::toggleLibraryEquipmentLocationFilter,
-                                        onToggleTargetMuscleFilter = viewModel::toggleLibraryTargetMuscleFilter,
-                                        onTogglePrimeMoverFilter = viewModel::toggleLibraryPrimeMoverFilter,
-                                        onToggleFreshnessMuscleFilter = viewModel::toggleLibraryFreshnessMuscleFilter,
-                                        onToggleMuscleTargetBucketFilter = viewModel::toggleLibraryMuscleTargetBucketFilter,
-                                        onToggleMuscleTargetSubcategoryFilter = viewModel::toggleLibraryMuscleTargetSubcategoryFilter,
-                                        onToggleRecommendationBiasFilter = viewModel::toggleLibraryRecommendationBiasFilter,
-                                        onToggleLoggedHistoryFilter = viewModel::toggleLibraryLoggedHistoryFilter,
-                                        onClearFreshnessMuscleFilters = viewModel::clearLibraryFreshnessMuscleFilters,
-                                        onClearMuscleTargetFilters = viewModel::clearLibraryMuscleTargetFilters,
-                                        onClearFilters = viewModel::clearLibraryFilters,
-                                        onDiscoverExercises = viewModel::generateExerciseDiscovery,
-                                        onClearExerciseDiscovery = viewModel::clearExerciseDiscovery,
-                                        onShowDetail = viewModel::showExerciseDetail,
-                                        onAddToBuilder = viewModel::addExerciseToBuilder,
-                                        onAddToMyPlan = viewModel::addExerciseToGeneratedWorkout,
-                                        onExploreFamily = viewModel::openExerciseFamily,
-                                        onToggleFavorite = viewModel::toggleFavorite,
-                                        onOpenExerciseHistory = viewModel::openExerciseHistory,
-                                        onOpenExerciseVideos = viewModel::openExerciseVideos,
-                                        onAddExerciseToExistingTemplate = viewModel::addExerciseToExistingTemplate,
-                                        onCreateTemplateFromExercise = viewModel::createTemplateFromExercise,
-                                        onOpenCustomExercise = viewModel::openCustomExerciseForLibrary,
-                                        onCloseCustomExercise = viewModel::closeCustomExerciseFlow,
-                                        onCustomExerciseDraftChange = viewModel::updateCustomExerciseDraft,
-                                        onCustomExerciseNameChange = viewModel::updateCustomExerciseName,
-                                        onGenerateCustomExercise = viewModel::generateCustomExerciseDetails,
-                                        onUseExistingExercise = viewModel::useExistingExerciseFromCustomFlow,
-                                        onSaveCustomExercise = viewModel::saveCustomExercise,
-                                    )
-
-                                    MainTab.History -> HistoryScreen(
-                                        navigationState = historyNavigationState,
-                                        profile = state.profile,
-                                        history = state.history,
-                                        bountyCards = state.bountyCards,
-                                        historyWorkoutMetrics = state.historyWorkoutMetrics,
-                                        tokenBalanceTrend = state.tokenBalanceTrend,
-                                        weeklyMuscleTargets = state.weeklyMuscleTargets,
-                                        topExercise = state.historyTopExercise,
-                                        topEquipment = state.historyTopEquipment,
-                                        strengthScore = state.historyStrengthScore,
-                                        historicalMuscleInsights = state.historicalMuscleInsights,
-                                        historicalMovementInsights = state.historicalMovementInsights,
-                                        onOpenWorkout = viewModel::openHistoryWorkout,
-                                        onShareWorkout = viewModel::prepareHistoryWorkoutShare,
-                                        onDeleteWorkout = viewModel::deleteHistoryWorkout,
-                                        onOpenLibraryMuscleTarget = viewModel::openLibraryForMuscleTarget,
-                                    )
-                                    MainTab.Profile -> ProfileScreen(state = state, viewModel = viewModel)
+                                    // DESIGN.md §2: Explore merges old Library + History.
+                                    // An internal sub-tab row toggles between the
+                                    // exercise Library and the History dashboard
+                                    // (stats, calendar, bounty cards, strength score).
+                                    MainTab.Explore -> {
+                                        var exploreSection by remember { mutableStateOf(ExploreSection.Library) }
+                                        LaunchedEffect(state.libraryNavigationRevision) {
+                                            if (state.libraryNavigationRevision > 0L) {
+                                                exploreSection = ExploreSection.Library
+                                                historyNavigationState.destination = "dashboard"
+                                            }
+                                        }
+                                        Column(modifier = Modifier.fillMaxSize()) {
+                                            ExploreSectionToggle(
+                                                selected = exploreSection,
+                                                onSelect = { exploreSection = it },
+                                            )
+                                            when (exploreSection) {
+                                                ExploreSection.Library -> LibraryScreen(
+                                                    state = state,
+                                                    onToggleSearch = viewModel::toggleLibrarySearch,
+                                                    onQueryChange = viewModel::updateLibraryQuery,
+                                                    onToggleFavoritesOnly = viewModel::toggleLibraryFavoritesOnly,
+                                                    onToggleEquipmentFilter = viewModel::toggleLibraryEquipmentFilter,
+                                                    onToggleEquipmentLocationFilter = viewModel::toggleLibraryEquipmentLocationFilter,
+                                                    onToggleTargetMuscleFilter = viewModel::toggleLibraryTargetMuscleFilter,
+                                                    onTogglePrimeMoverFilter = viewModel::toggleLibraryPrimeMoverFilter,
+                                                    onToggleFreshnessMuscleFilter = viewModel::toggleLibraryFreshnessMuscleFilter,
+                                                    onToggleMuscleTargetBucketFilter = viewModel::toggleLibraryMuscleTargetBucketFilter,
+                                                    onToggleMuscleTargetSubcategoryFilter = viewModel::toggleLibraryMuscleTargetSubcategoryFilter,
+                                                    onToggleRecommendationBiasFilter = viewModel::toggleLibraryRecommendationBiasFilter,
+                                                    onToggleLoggedHistoryFilter = viewModel::toggleLibraryLoggedHistoryFilter,
+                                                    onClearFreshnessMuscleFilters = viewModel::clearLibraryFreshnessMuscleFilters,
+                                                    onClearMuscleTargetFilters = viewModel::clearLibraryMuscleTargetFilters,
+                                                    onClearFilters = viewModel::clearLibraryFilters,
+                                                    onDiscoverExercises = viewModel::generateExerciseDiscovery,
+                                                    onClearExerciseDiscovery = viewModel::clearExerciseDiscovery,
+                                                    onShowDetail = viewModel::showExerciseDetail,
+                                                    onAddToBuilder = viewModel::addExerciseToBuilder,
+                                                    onAddToMyPlan = viewModel::addExerciseToGeneratedWorkout,
+                                                    onExploreFamily = viewModel::openExerciseFamily,
+                                                    onToggleFavorite = viewModel::toggleFavorite,
+                                                    onOpenExerciseHistory = viewModel::openExerciseHistory,
+                                                    onOpenExerciseVideos = viewModel::openExerciseVideos,
+                                                    onAddExerciseToExistingTemplate = viewModel::addExerciseToExistingTemplate,
+                                                    onCreateTemplateFromExercise = viewModel::createTemplateFromExercise,
+                                                    onOpenCustomExercise = viewModel::openCustomExerciseForLibrary,
+                                                    onCloseCustomExercise = viewModel::closeCustomExerciseFlow,
+                                                    onCustomExerciseDraftChange = viewModel::updateCustomExerciseDraft,
+                                                    onCustomExerciseNameChange = viewModel::updateCustomExerciseName,
+                                                    onGenerateCustomExercise = viewModel::generateCustomExerciseDetails,
+                                                    onUseExistingExercise = viewModel::useExistingExerciseFromCustomFlow,
+                                                    onSaveCustomExercise = viewModel::saveCustomExercise,
+                                                )
+                                                ExploreSection.History -> HistoryScreen(
+                                                    navigationState = historyNavigationState,
+                                                    profile = state.profile,
+                                                    history = state.history,
+                                                    bountyCards = state.bountyCards,
+                                                    historyWorkoutMetrics = state.historyWorkoutMetrics,
+                                                    tokenBalanceTrend = state.tokenBalanceTrend,
+                                                    weeklyMuscleTargets = state.weeklyMuscleTargets,
+                                                    topExercise = state.historyTopExercise,
+                                                    topEquipment = state.historyTopEquipment,
+                                                    strengthScore = state.historyStrengthScore,
+                                                    historicalMuscleInsights = state.historicalMuscleInsights,
+                                                    historicalMovementInsights = state.historicalMovementInsights,
+                                                    onOpenWorkout = viewModel::openHistoryWorkout,
+                                                    onShareWorkout = viewModel::prepareHistoryWorkoutShare,
+                                                    onDeleteWorkout = viewModel::deleteHistoryWorkout,
+                                                    onOpenLibraryMuscleTarget = viewModel::openLibraryForMuscleTarget,
+                                                )
+                                            }
+                                        }
+                                    }
                                 }
+                            }
+                            if (!isTodayFullscreenFlow && !isGenerateFullscreenFlow) {
+                                GlobalOverflowMenu(
+                                    onOpenProfile = { isProfileHiddenScreen = true },
+                                    modifier = Modifier
+                                        .align(Alignment.TopEnd)
+                                        .padding(top = 4.dp, end = 20.dp),
+                                )
                             }
                         }
                     }
@@ -1467,7 +1637,6 @@ private fun ActiveBountyCardStrip(bounty: ActiveWorkoutBounty) {
     FeatureCard(
         containerColor = containerColor,
         border = BorderStroke(1.dp, accent.color.copy(alpha = if (isDark) 0.55f else 0.42f)),
-        showTopAccent = false,
         modifier = Modifier.clickable { expanded = !expanded },
     ) {
         Column(
@@ -1489,7 +1658,7 @@ private fun ActiveBountyCardStrip(bounty: ActiveWorkoutBounty) {
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(
-                        imageVector = bountyFamilyIcon(bounty.family),
+                        painter = painterResource(bountyFamilyIcon(bounty.family)),
                         contentDescription = null,
                         tint = accent.color,
                         modifier = Modifier.size(26.dp),
@@ -1685,7 +1854,7 @@ private fun BountyCollectibleCard(
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
-                    imageVector = bountyFamilyIcon(card.family),
+                    painter = painterResource(bountyFamilyIcon(card.family)),
                     contentDescription = null,
                     tint = accent.color,
                     modifier = Modifier.size(if (compact) 52.dp else 112.dp),
@@ -1723,12 +1892,12 @@ private fun bountyRarityAccent(rarity: BountyCardRarity): GlowAccent = when (rar
     BountyCardRarity.PRISM -> emberAccent
 }
 
-private fun bountyFamilyIcon(family: BountyCardFamily): ImageVector = when (family) {
-    BountyCardFamily.CLOSEOUT -> Icons.Rounded.WorkspacePremium
-    BountyCardFamily.REST_WINDOW -> Icons.Rounded.Schedule
-    BountyCardFamily.CONTINUITY -> Icons.Rounded.Shield
-    BountyCardFamily.CONSISTENCY -> Icons.Rounded.CenterFocusStrong
-    BountyCardFamily.HONESTY -> Icons.Rounded.Info
+private fun bountyFamilyIcon(family: BountyCardFamily): Int = when (family) {
+    BountyCardFamily.CLOSEOUT -> R.drawable.ic_trophy
+    BountyCardFamily.REST_WINDOW -> R.drawable.ic_timer
+    BountyCardFamily.CONTINUITY -> R.drawable.ic_settings
+    BountyCardFamily.CONSISTENCY -> R.drawable.ic_target
+    BountyCardFamily.HONESTY -> R.drawable.ic_settings
 }
 
 @Composable
@@ -2835,19 +3004,25 @@ private fun CompletionReceiptScreen(
     ) {
         Scaffold(
             topBar = {
-                CenterAlignedTopAppBar(
-                    title = {
-                        Text(if (receipt.isReplay) "Workout Receipt" else "Workout Logged")
-                    },
-                    navigationIcon = {
-                        IconButton(onClick = onDismiss) {
-                            Icon(
-                                imageVector = Icons.Rounded.Close,
-                                contentDescription = "Close receipt",
-                            )
-                        }
-                    },
-                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .statusBarsPadding()
+                        .padding(start = 20.dp, end = 12.dp, top = 12.dp, bottom = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        if (receipt.isReplay) "Workout Receipt" else "Workout Logged",
+                        style = MaterialTheme.typography.displaySmall,
+                        modifier = Modifier.weight(1f),
+                    )
+                    IconButton(onClick = onDismiss) {
+                        Icon(
+                            imageVector = Icons.Rounded.Close,
+                            contentDescription = "Close receipt",
+                        )
+                    }
+                }
             },
             bottomBar = {
                 Surface(
@@ -3176,7 +3351,7 @@ private fun CompletionReceiptHeroCard(
                         verticalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
                         Icon(
-                            imageVector = completionReceiptOutcomeIcon(snapshot.hero.outcomeTier),
+                            painter = painterResource(completionReceiptOutcomeIcon(snapshot.hero.outcomeTier)),
                             contentDescription = null,
                             tint = accent.textOnAccent,
                             modifier = Modifier.size(24.dp),
@@ -3341,11 +3516,11 @@ private fun ReceiptInfoRow(
     }
 }
 
-private fun completionReceiptOutcomeIcon(tier: SessionOutcomeTier): ImageVector = when (tier) {
-    SessionOutcomeTier.CLOSED_CLEAN -> Icons.Rounded.EmojiEvents
-    SessionOutcomeTier.SOLID_SESSION -> Icons.Rounded.WorkspacePremium
-    SessionOutcomeTier.MEANINGFUL_PARTIAL -> Icons.Rounded.FitnessCenter
-    SessionOutcomeTier.SHOWED_UP -> Icons.Rounded.LocalFireDepartment
+private fun completionReceiptOutcomeIcon(tier: SessionOutcomeTier): Int = when (tier) {
+    SessionOutcomeTier.CLOSED_CLEAN -> R.drawable.ic_trophy
+    SessionOutcomeTier.SOLID_SESSION -> R.drawable.ic_trophy
+    SessionOutcomeTier.MEANINGFUL_PARTIAL -> R.drawable.ic_lift
+    SessionOutcomeTier.SHOWED_UP -> R.drawable.ic_flame
 }
 
 private fun deltaSetLabel(delta: Double): String = when {
@@ -3470,23 +3645,57 @@ private fun FreshnessReEntryCard(
         FreshnessReEntryMode.ReEntry -> "Re-entry mode"
         FreshnessReEntryMode.MaintenanceSave -> "Momentum save"
     }
+    val isDark = LocalToastLiftIsDarkTheme.current
+    val washShape = RoundedCornerShape(12.dp)
     FeatureCard(
         containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.98f),
-        border = BorderStroke(1.dp, accent.start.copy(alpha = 0.32f)),
         accentKey = "freshness reentry ${state.mode.name}",
     ) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
+                .clip(washShape)
                 .background(
                     Brush.verticalGradient(
                         colors = listOf(
-                            accent.glow.copy(alpha = 0.74f),
+                            accent.glow.copy(alpha = if (isDark) 0.44f else 0.22f),
+                            accent.glow.copy(alpha = if (isDark) 0.16f else 0.08f),
                             Color.Transparent,
                         ),
+                        endY = 720f,
                     ),
                 ),
         ) {
+            Canvas(modifier = Modifier.matchParentSize()) {
+                val upperGlowRadius = size.maxDimension * 0.62f
+                val upperGlowCenter = Offset(size.width * 0.14f, size.height * 0.04f)
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colors = listOf(
+                            accent.start.copy(alpha = if (isDark) 0.18f else 0.1f),
+                            Color.Transparent,
+                        ),
+                        center = upperGlowCenter,
+                        radius = upperGlowRadius,
+                    ),
+                    radius = upperGlowRadius,
+                    center = upperGlowCenter,
+                )
+                val sideGlowRadius = size.maxDimension * 0.54f
+                val sideGlowCenter = Offset(size.width * 1.02f, size.height * 0.42f)
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colors = listOf(
+                            accent.glow.copy(alpha = if (isDark) 0.16f else 0.08f),
+                            Color.Transparent,
+                        ),
+                        center = sideGlowCenter,
+                        radius = sideGlowRadius,
+                    ),
+                    radius = sideGlowRadius,
+                    center = sideGlowCenter,
+                )
+            }
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -3611,7 +3820,6 @@ private fun TrainingFreshnessCard(
                 role = Role.Button
             },
         containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
-        border = BorderStroke(1.dp, accent.start.copy(alpha = 0.24f)),
     ) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -4198,10 +4406,6 @@ private fun GenerateScreen(
         else -> "${state.manualWorkoutItems.size} exercises queued"
     }
 
-    LaunchedEffect(showBuilderAddSheet, showGeneratedAddScreen) {
-        onFullscreenFlowChange(showBuilderAddSheet || showGeneratedAddScreen)
-    }
-
     DisposableEffect(Unit) {
         onDispose { onFullscreenFlowChange(false) }
     }
@@ -4560,15 +4764,19 @@ private fun LibraryScreen(
                         },
                     )
                 } else {
-                    IconButton(onClick = onOpenCustomExercise) {
-                        Icon(
-                            imageVector = Icons.Rounded.Add,
-                            contentDescription = "Add custom exercise",
-                            tint = MaterialTheme.colorScheme.onBackground,
-                        )
-                    }
-                    Spacer(modifier = Modifier.weight(1f))
-                    OutlinedButton(onClick = { showFilterSheet = true }) {
+                    LibraryToolbarIconButton(
+                        onClick = onOpenCustomExercise,
+                        imageVector = Icons.Rounded.Add,
+                        contentDescription = "Add custom exercise",
+                    )
+                    OutlinedButton(
+                        onClick = { showFilterSheet = true },
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(48.dp),
+                        shape = RoundedCornerShape(16.dp),
+                        contentPadding = PaddingValues(horizontal = 16.dp),
+                    ) {
                         Icon(
                             imageVector = Icons.Rounded.FilterList,
                             contentDescription = "Open filters",
@@ -4583,23 +4791,24 @@ private fun LibraryScreen(
                             },
                         )
                     }
-                    IconButton(onClick = onToggleFavoritesOnly) {
-                        Icon(
-                            imageVector = if (state.libraryFilters.favoritesOnly) Icons.Rounded.Star else Icons.Rounded.StarOutline,
-                            contentDescription = if (state.libraryFilters.favoritesOnly) "Show all exercises" else "Show favorites only",
-                            tint = if (state.libraryFilters.favoritesOnly) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.onBackground.copy(alpha = 0.78f),
-                        )
-                    }
-                    IconButton(onClick = onToggleSearch) {
-                        Icon(
-                            imageVector = Icons.Rounded.Search,
-                            contentDescription = "Search exercises",
-                            tint = MaterialTheme.colorScheme.onBackground,
-                        )
-                    }
+                    LibraryToolbarIconButton(
+                        onClick = onToggleFavoritesOnly,
+                        imageVector = if (state.libraryFilters.favoritesOnly) Icons.Rounded.Star else Icons.Rounded.StarOutline,
+                        contentDescription = if (state.libraryFilters.favoritesOnly) "Show all exercises" else "Show favorites only",
+                        selected = state.libraryFilters.favoritesOnly,
+                    )
+                    LibraryToolbarIconButton(
+                        onClick = onToggleSearch,
+                        imageVector = Icons.Rounded.Search,
+                        contentDescription = "Search exercises",
+                    )
                 }
             }
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxSize()) {
+            LazyColumn(
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                contentPadding = PaddingValues(bottom = 132.dp),
+                modifier = Modifier.fillMaxSize(),
+            ) {
                 item(key = "exercise-discovery") {
                     ExerciseDiscoveryPanel(
                         result = state.exerciseDiscoveryResult,
@@ -4907,7 +5116,7 @@ private fun ExerciseFamilyMessageState(
 @Composable
 private fun FamilyAnchorSnapshot(family: ExerciseFamily) {
     val anchor = family.anchor
-    FeatureCard(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.58f), showTopAccent = false) {
+    FeatureCard(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.58f)) {
         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("Current branch", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
             ExerciseAttributeText(exercise = anchor.summary)
@@ -5032,6 +5241,7 @@ private fun ExerciseFamilyCandidateCard(
                             "⋮",
                             modifier = Modifier.semantics { contentDescription = "Exercise actions" },
                             style = MaterialTheme.typography.titleLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                     DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
@@ -5105,30 +5315,38 @@ private fun ExerciseDiscoveryPanel(
                 }
                 if (isLoading) {
                     CircularProgressIndicator(modifier = Modifier.size(28.dp), strokeWidth = 2.dp)
-                } else if (result == null) {
-                    Button(onClick = onDiscover) {
+                }
+            }
+            if (!isLoading && result == null) {
+                Button(
+                    onClick = onDiscover,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.AutoAwesome,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Discover")
+                }
+            } else if (result != null) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    IconButton(onClick = onDiscover) {
                         Icon(
                             imageVector = Icons.Rounded.AutoAwesome,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp),
+                            contentDescription = "Refresh discovery picks",
                         )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Discover")
                     }
-                } else {
-                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        IconButton(onClick = onDiscover) {
-                            Icon(
-                                imageVector = Icons.Rounded.AutoAwesome,
-                                contentDescription = "Refresh discovery picks",
-                            )
-                        }
-                        IconButton(onClick = onClear) {
-                            Icon(
-                                imageVector = Icons.Rounded.Close,
-                                contentDescription = "Clear discovery picks",
-                            )
-                        }
+                    IconButton(onClick = onClear) {
+                        Icon(
+                            imageVector = Icons.Rounded.Close,
+                            contentDescription = "Clear discovery picks",
+                        )
                     }
                 }
             }
@@ -5284,53 +5502,59 @@ private fun ExerciseDiscoveryPickRow(
                 Text(pick.exercise.name, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
                 ExerciseAttributeText(exercise = pick.exercise)
             }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onAddToBuilder) {
-                    Icon(
-                        imageVector = Icons.Rounded.FitnessCenter,
-                        contentDescription = "Add ${pick.exercise.name} to builder",
+            Box {
+                IconButton(onClick = { expanded = true }) {
+                    Text(
+                        "⋮",
+                        modifier = Modifier.semantics { contentDescription = "Exercise actions" },
+                        style = MaterialTheme.typography.titleLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                IconButton(onClick = onAddToMyPlan) {
-                    Icon(
-                        imageVector = Icons.Rounded.AutoAwesome,
-                        contentDescription = "Add ${pick.exercise.name} to My Plan",
+                DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                    DropdownMenuItem(text = { Text("Details") }, onClick = { expanded = false; onShowDetail() })
+                    DropdownMenuItem(text = { Text("Explore family") }, onClick = { expanded = false; onExploreFamily() })
+                    DropdownMenuItem(text = { Text("Add to builder") }, onClick = { expanded = false; onAddToBuilder() })
+                    DropdownMenuItem(text = { Text("Add to My Plan") }, onClick = { expanded = false; onAddToMyPlan() })
+                    DropdownMenuItem(text = { Text("Add to existing template") }, onClick = { expanded = false; onAddToExistingTemplate() })
+                    DropdownMenuItem(text = { Text("Add to new template") }, onClick = { expanded = false; onCreateTemplateFromExercise() })
+                    DropdownMenuItem(text = { Text("Exercise history") }, onClick = { expanded = false; onOpenExerciseHistory() })
+                    DropdownMenuItem(text = { Text("Videos") }, onClick = { expanded = false; onOpenExerciseVideos() })
+                    DropdownMenuItem(
+                        text = { Text(if (pick.exercise.favorite) "Unfavorite" else "Favorite") },
+                        onClick = { expanded = false; onToggleFavorite() },
                     )
                 }
-                IconButton(onClick = onToggleFavorite) {
-                    Icon(
-                        imageVector = if (pick.exercise.favorite) Icons.Rounded.Star else Icons.Rounded.StarOutline,
-                        contentDescription = if (pick.exercise.favorite) {
-                            "Unfavorite ${pick.exercise.name}"
-                        } else {
-                            "Favorite ${pick.exercise.name}"
-                        },
-                        tint = if (pick.exercise.favorite) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                Box {
-                    IconButton(onClick = { expanded = true }) {
-                        Text(
-                            "⋮",
-                            modifier = Modifier.semantics { contentDescription = "Exercise actions" },
-                            style = MaterialTheme.typography.titleLarge,
-                        )
-                    }
-                    DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                        DropdownMenuItem(text = { Text("Details") }, onClick = { expanded = false; onShowDetail() })
-                        DropdownMenuItem(text = { Text("Explore family") }, onClick = { expanded = false; onExploreFamily() })
-                        DropdownMenuItem(text = { Text("Add to builder") }, onClick = { expanded = false; onAddToBuilder() })
-                        DropdownMenuItem(text = { Text("Add to My Plan") }, onClick = { expanded = false; onAddToMyPlan() })
-                        DropdownMenuItem(text = { Text("Add to existing template") }, onClick = { expanded = false; onAddToExistingTemplate() })
-                        DropdownMenuItem(text = { Text("Add to new template") }, onClick = { expanded = false; onCreateTemplateFromExercise() })
-                        DropdownMenuItem(text = { Text("Exercise history") }, onClick = { expanded = false; onOpenExerciseHistory() })
-                        DropdownMenuItem(text = { Text("Videos") }, onClick = { expanded = false; onOpenExerciseVideos() })
-                        DropdownMenuItem(
-                            text = { Text(if (pick.exercise.favorite) "Unfavorite" else "Favorite") },
-                            onClick = { expanded = false; onToggleFavorite() },
-                        )
-                    }
-                }
+            }
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            IconButton(onClick = onAddToBuilder) {
+                Icon(
+                    imageVector = Icons.Rounded.FitnessCenter,
+                    contentDescription = "Add ${pick.exercise.name} to builder",
+                )
+            }
+            IconButton(onClick = onAddToMyPlan) {
+                Icon(
+                    imageVector = Icons.Rounded.AutoAwesome,
+                    contentDescription = "Add ${pick.exercise.name} to My Plan",
+                )
+            }
+            IconButton(onClick = onToggleFavorite) {
+                Icon(
+                    imageVector = if (pick.exercise.favorite) Icons.Rounded.Star else Icons.Rounded.StarOutline,
+                    contentDescription = if (pick.exercise.favorite) {
+                        "Unfavorite ${pick.exercise.name}"
+                    } else {
+                        "Favorite ${pick.exercise.name}"
+                    },
+                    tint = if (pick.exercise.favorite) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
 
@@ -6132,13 +6356,6 @@ private data class RewardVisualSpec(
     val message: String,
 )
 
-private fun historyStatRewardIcon(title: String): ImageVector? = when (title) {
-    "Stats" -> Icons.Rounded.QueryStats
-    "Milestones" -> Icons.Rounded.WorkspacePremium
-    "Current Streak" -> Icons.Rounded.LocalFireDepartment
-    else -> null
-}
-
 @Composable
 private fun milestoneRewardSpec(milestone: MilestoneProgress): RewardVisualSpec {
     val achieved = milestone.current >= milestone.target
@@ -6240,8 +6457,8 @@ private fun HistoryOverviewHeader(
                     HistoryStatTile("Milestones", data.milestoneProgress.sumOf { it.achievedCount }.toString(), onClick = onOpenMilestones, modifier = Modifier.weight(1f))
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
-                    HistoryStatTile("Weekly Goal", "${data.currentWeekCount}/${data.weeklyGoal}", modifier = Modifier.weight(1f))
-                    HistoryStatTile("Current Streak", "${data.currentStreakWeeks} week${if (data.currentStreakWeeks == 1) "" else "s"}", onClick = onOpenStreak, modifier = Modifier.weight(1f))
+                    HistoryStatTile("Weekly", "${data.currentWeekCount}/${data.weeklyGoal}", modifier = Modifier.weight(1f))
+                    HistoryStatTile("Streak", "${data.currentStreakWeeks} week${if (data.currentStreakWeeks == 1) "" else "s"}", onClick = onOpenStreak, modifier = Modifier.weight(1f))
                 }
                 onOpenBountyCards?.let { openCards ->
                     HistoryStatTile(
@@ -6789,12 +7006,11 @@ private fun TokenBalanceOverviewCard(
     FeatureCard(
         modifier = modifier,
         containerColor = palette.shellBottom.copy(alpha = if (LocalToastLiftIsDarkTheme.current) 0.82f else 0.98f),
-        border = BorderStroke(1.dp, palette.shellStroke.copy(alpha = 0.34f)),
-        showTopAccent = false,
     ) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
                 .background(
                     brush = Brush.verticalGradient(
                         colors = listOf(
@@ -6949,12 +7165,11 @@ private fun TokenBalanceDetailScreen(
 
         FeatureCard(
             containerColor = palette.shellBottom.copy(alpha = if (LocalToastLiftIsDarkTheme.current) 0.82f else 0.98f),
-            border = BorderStroke(1.dp, palette.shellStroke.copy(alpha = 0.34f)),
-            showTopAccent = false,
         ) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
                     .background(
                         brush = Brush.verticalGradient(
                             colors = listOf(
@@ -7585,47 +7800,22 @@ private fun HistoryStatTile(
     onClick: (() -> Unit)? = null,
 ) {
     val accent = accentForKey(title)
-    val topAccentColor = topBorderAccentColor(accent)
-    val rewardIcon = historyStatRewardIcon(title)
-    FeatureCard(
-        modifier = modifier.then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
-        containerColor = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.dp, topAccentColor.copy(alpha = 0.22f)),
-        showTopAccent = false,
+    Surface(
+        modifier = modifier
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            .heightIn(min = 116.dp),
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.46f),
+        contentColor = MaterialTheme.colorScheme.onSurface,
     ) {
-        Column {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(2.dp)
-                    .background(topAccentColor),
-            )
-            Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(title.uppercase(), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    rewardIcon?.let { icon ->
-                        Box(
-                            modifier = Modifier
-                                .size(30.dp)
-                                .clip(CircleShape)
-                                .background(accent.color.copy(alpha = 0.12f)),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Icon(
-                                imageVector = icon,
-                                contentDescription = null,
-                                tint = accent.color,
-                                modifier = Modifier.size(16.dp),
-                            )
-                        }
-                    }
-                }
-                Text(value, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black)
-            }
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            MiniTag(text = title, accent = accent.color)
+            Text(value, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black)
         }
     }
 }
@@ -7958,11 +8148,21 @@ private fun HistoryStreakScreen(
 
 @Composable
 private fun HistoryDetailHeader(title: String, onBack: () -> Unit) {
-    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
         IconButton(onClick = onBack) {
-            Text("←", style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.primary)
+            Icon(
+                imageVector = Icons.Rounded.KeyboardArrowLeft,
+                contentDescription = "Back",
+                tint = MaterialTheme.colorScheme.primary,
+            )
         }
-        Text(title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.onBackground)
+        Text(
+            title,
+            color = MaterialTheme.colorScheme.onBackground,
+            fontFamily = DisplayFamily,
+            fontSize = 28.sp,
+            letterSpacing = 0.02.em,
+        )
     }
 }
 
@@ -8742,6 +8942,7 @@ private fun HistoryDateSeparator(label: String) {
 }
 
 @Composable
+@OptIn(ExperimentalLayoutApi::class)
 private fun HistoryEntryCard(
     entry: HistorySummary,
     onOpen: () -> Unit,
@@ -8760,55 +8961,62 @@ private fun HistoryEntryCard(
                 verticalAlignment = Alignment.Top,
             ) {
                 Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(entry.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        entry.title,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                     Text(
                         formatHistoryEntryTime(entry),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    MiniTag("${entry.exerciseCount} exercises", accent = MaterialTheme.colorScheme.primaryContainer)
-                    entry.strengthScore?.let { score ->
-                        MiniTag("Strength ${formatCompactNumber(score.toDouble())}", accent = MaterialTheme.colorScheme.tertiaryContainer)
+                Box {
+                    IconButton(onClick = { expanded = true }) {
+                        Text(
+                            "⋮",
+                            modifier = Modifier.semantics { contentDescription = "History entry actions" },
+                            style = MaterialTheme.typography.titleLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                     }
-                    Box {
-                        IconButton(onClick = { expanded = true }) {
-                            Text(
-                                "⋮",
-                                modifier = Modifier.semantics { contentDescription = "History entry actions" },
-                                style = MaterialTheme.typography.titleLarge,
-                            )
-                        }
-                        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                            DropdownMenuItem(
-                                text = { Text("View") },
-                                onClick = {
-                                    expanded = false
-                                    onOpen()
-                                },
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Share") },
-                                onClick = {
-                                    expanded = false
-                                    onShare()
-                                },
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Delete") },
-                                onClick = {
-                                    expanded = false
-                                    onDelete()
-                                },
-                            )
-                        }
+                    DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                        DropdownMenuItem(
+                            text = { Text("View") },
+                            onClick = {
+                                expanded = false
+                                onOpen()
+                            },
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Share") },
+                            onClick = {
+                                expanded = false
+                                onShare()
+                            },
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Delete") },
+                            onClick = {
+                                expanded = false
+                                onDelete()
+                            },
+                        )
                     }
+                }
+            }
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                MiniTag("${entry.exerciseCount} exercises", accent = MaterialTheme.colorScheme.primaryContainer)
+                entry.strengthScore?.let { score ->
+                    MiniTag("Strength ${formatCompactNumber(score.toDouble())}", accent = MaterialTheme.colorScheme.tertiaryContainer)
                 }
             }
             StatRail(
                 items = listOf(
-                    Triple("Elapsed", formatMinutes(entry.durationSeconds), ""),
+                    Triple("Time", formatMinutes(entry.durationSeconds), ""),
                     Triple("Volume", formatVolume(entry.totalVolume), ""),
                     Triple("Moves", entry.exerciseNames.distinct().size.toString(), "logged"),
                 ),
@@ -8972,7 +9180,7 @@ private fun ProfileEditor(
                 items = listOf(
                     Triple("Split", compactSplitLabel(splitName), "program"),
                     Triple("Duration", draft.durationMinutes.toString(), "min"),
-                    Triple("Frequency", draft.weeklyFrequency.toString(), "days"),
+                    Triple("Freq", draft.weeklyFrequency.toString(), "days"),
                 ),
             )
         }
@@ -9387,6 +9595,7 @@ private fun ExerciseListCard(
                                 "⋮",
                                 modifier = Modifier.semantics { contentDescription = "Exercise actions" },
                                 style = MaterialTheme.typography.titleLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
                     }
@@ -9434,6 +9643,7 @@ private fun CompactSectionCard(
                                 "⋮",
                                 modifier = Modifier.semantics { contentDescription = "Section actions" },
                                 style = MaterialTheme.typography.titleLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
                         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
@@ -11632,156 +11842,152 @@ private fun ActiveSessionScreen(
             }
         },
     ) { padding ->
-        Column(
+        LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
+                .statusBarsPadding()
                 .padding(horizontal = 12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            SessionMomentumHeader(
-                modifier = Modifier
-                    .statusBarsPadding()
-                    .padding(top = ACTIVE_SESSION_HEADER_TOP_PADDING),
-                elapsed = elapsed,
-                isPaused = session.isPaused,
-                focusMode = focusMode,
-                progressMetrics = progressMetrics,
-                completionFraction = completionFraction,
-                onTogglePause = onTogglePauseSession,
-                onToggleFocus = { focusMode = !focusMode },
-                onExitWorkout = { showDiscardDialog = true },
-                onOpenWorkoutDetails = { showWorkoutDetailsSheet = true },
-                equipmentFilterLabel = selectedEquipmentFilter,
-                bodyRegionFilterLabel = selectedBodyRegionFilterLabel,
-                muscleFilterLabel = selectedMuscleFilterLabel,
-                muscleTargetFilterLabel = selectedMuscleTargetLabel,
-                muscleTargetCueLabel = muscleTargetSummary.cueLabel,
-                onOpenFilters = { showExerciseFilterSheet = true },
-            )
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                val activeEquipmentFilter = selectedEquipmentFilter
-                val activeBodyRegionFilterLabel = selectedBodyRegionFilterLabel
-                val activeMuscleFilterLabel = selectedMuscleFilterLabel
-                val activeMuscleTargetFilterLabel = selectedMuscleTargetLabel
-                state.activeBounty?.let { bounty ->
-                    item {
-                        ActiveBountyCardStrip(bounty = bounty)
-                    }
+            item {
+                SessionMomentumHeader(
+                    modifier = Modifier.padding(top = ACTIVE_SESSION_HEADER_TOP_PADDING),
+                    elapsed = elapsed,
+                    isPaused = session.isPaused,
+                    focusMode = focusMode,
+                    progressMetrics = progressMetrics,
+                    completionFraction = completionFraction,
+                    onTogglePause = onTogglePauseSession,
+                    onToggleFocus = { focusMode = !focusMode },
+                    onExitWorkout = { showDiscardDialog = true },
+                    onOpenWorkoutDetails = { showWorkoutDetailsSheet = true },
+                    equipmentFilterLabel = selectedEquipmentFilter,
+                    bodyRegionFilterLabel = selectedBodyRegionFilterLabel,
+                    muscleFilterLabel = selectedMuscleFilterLabel,
+                    muscleTargetFilterLabel = selectedMuscleTargetLabel,
+                    muscleTargetCueLabel = muscleTargetSummary.cueLabel,
+                    onOpenFilters = { showExerciseFilterSheet = true },
+                )
+            }
+            val activeEquipmentFilter = selectedEquipmentFilter
+            val activeBodyRegionFilterLabel = selectedBodyRegionFilterLabel
+            val activeMuscleFilterLabel = selectedMuscleFilterLabel
+            val activeMuscleTargetFilterLabel = selectedMuscleTargetLabel
+            state.activeBounty?.let { bounty ->
+                item {
+                    ActiveBountyCardStrip(bounty = bounty)
                 }
-                if (activeEquipmentFilter != null || activeBodyRegionFilterLabel != null || activeMuscleFilterLabel != null || activeMuscleTargetFilterLabel != null) {
-                    item {
-                        ActiveSessionFilterBanner(
-                            equipment = activeEquipmentFilter,
-                            bodyRegion = activeBodyRegionFilterLabel,
-                            muscle = activeMuscleFilterLabel,
-                            muscleTarget = activeMuscleTargetFilterLabel,
-                            matchingExerciseCount = orderedExercises.size,
-                            onClearEquipment = { selectedEquipmentFilter = null },
-                            onClearBodyRegion = { selectedBodyRegionFilterKey = null },
-                            onClearMuscle = { selectedMuscleFilterKey = null },
-                            onClearMuscleTarget = {
-                                selectedMuscleTargetBucketKey = null
-                                selectedMuscleTargetSubcategoryKey = null
-                            },
-                            onClearAll = {
-                                selectedEquipmentFilter = null
-                                selectedBodyRegionFilterKey = null
-                                selectedMuscleFilterKey = null
-                                selectedMuscleTargetBucketKey = null
-                                selectedMuscleTargetSubcategoryKey = null
-                            },
-                        )
-                    }
-                }
-                if (!focusMode) {
-                    muscleTargetAction?.let { action ->
-                        item {
-                            ActiveWorkoutMuscleTargetActionStrip(
-                                action = action,
-                                onAction = {
-                                    when (action.type) {
-                                        ActiveWorkoutMuscleTargetActionType.OpenExercise -> {
-                                            action.exerciseIndex?.let(onOpenExercise)
-                                        }
-                                        ActiveWorkoutMuscleTargetActionType.OpenFilteredPicker -> {
-                                            onOpenMuscleTargetPicker(action.bucketKey, action.subcategoryKey)
-                                        }
-                                    }
-                                },
-                            )
-                        }
-                    }
-                    freshnessAction?.let { action ->
-                        item {
-                            ActiveWorkoutFreshnessActionStrip(
-                                action = action,
-                                onAction = {
-                                    when (action.type) {
-                                        ActiveWorkoutFreshnessActionType.OpenExercise -> {
-                                            action.exerciseIndex?.let(onOpenExercise)
-                                        }
-                                        ActiveWorkoutFreshnessActionType.OpenFilteredPicker -> {
-                                            onOpenFreshnessTargetPicker(action.muscleKey, action.muscleLabel)
-                                        }
-                                    }
-                                },
-                            )
-                        }
-                    }
-                }
-                if (orderedExercises.isEmpty() && (activeEquipmentFilter != null || activeBodyRegionFilterLabel != null || activeMuscleFilterLabel != null || activeMuscleTargetFilterLabel != null)) {
-                    item {
-                        FeatureCard(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f)) {
-                            Text(
-                                "No exercises match the current filters.",
-                                modifier = Modifier.padding(16.dp),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    }
-                }
-                items(
-                    items = orderedExercises,
-                    key = { orderedExercise -> "${orderedExercise.index}:${orderedExercise.value.exerciseId}" },
-                ) { orderedExercise ->
-                    val exerciseIndex = orderedExercise.index
-                    val exercise = orderedExercise.value
-                    SessionExerciseRow(
-                        exercise = exercise,
-                        fruitIconsEnabled = shouldShowFruitWorkoutBadges,
-                        recommendationBias = state.recommendationBiasByExerciseId[exercise.exerciseId] ?: RecommendationBias.Neutral,
-                        onOpen = { onOpenExercise(exerciseIndex) },
-                        onShowDetail = { onShowExerciseDetail(exercise.exerciseId) },
-                        onDelete = { pendingExerciseDeletionIndex = exerciseIndex },
+            }
+            if (activeEquipmentFilter != null || activeBodyRegionFilterLabel != null || activeMuscleFilterLabel != null || activeMuscleTargetFilterLabel != null) {
+                item {
+                    ActiveSessionFilterBanner(
+                        equipment = activeEquipmentFilter,
+                        bodyRegion = activeBodyRegionFilterLabel,
+                        muscle = activeMuscleFilterLabel,
+                        muscleTarget = activeMuscleTargetFilterLabel,
+                        matchingExerciseCount = orderedExercises.size,
+                        onClearEquipment = { selectedEquipmentFilter = null },
+                        onClearBodyRegion = { selectedBodyRegionFilterKey = null },
+                        onClearMuscle = { selectedMuscleFilterKey = null },
+                        onClearMuscleTarget = {
+                            selectedMuscleTargetBucketKey = null
+                            selectedMuscleTargetSubcategoryKey = null
+                        },
+                        onClearAll = {
+                            selectedEquipmentFilter = null
+                            selectedBodyRegionFilterKey = null
+                            selectedMuscleFilterKey = null
+                            selectedMuscleTargetBucketKey = null
+                            selectedMuscleTargetSubcategoryKey = null
+                        },
                     )
                 }
-                item {
-                    AddExerciseCallToAction(onAddExercise = onOpenAddExercise)
-                }
-                if (!focusMode && shouldShowPickNextExercise) {
+            }
+            if (!focusMode) {
+                muscleTargetAction?.let { action ->
                     item {
-                        PickNextExerciseCallToAction(
-                            untouchedExerciseCount = untouchedExerciseCount,
-                            smartTargetMuscle = state.profile?.smartPickerTargetMuscle,
-                            onPickNextExercise = {
-                                onPickNextExercise(
-                                    selectedEquipmentFilter,
-                                    selectedBodyRegionFilterKey,
-                                    selectedMuscleFilterKey,
-                                    selectedMuscleTargetBucketKey,
-                                    selectedMuscleTargetSubcategoryKey,
-                                )
+                        ActiveWorkoutMuscleTargetActionStrip(
+                            action = action,
+                            onAction = {
+                                when (action.type) {
+                                    ActiveWorkoutMuscleTargetActionType.OpenExercise -> {
+                                        action.exerciseIndex?.let(onOpenExercise)
+                                    }
+                                    ActiveWorkoutMuscleTargetActionType.OpenFilteredPicker -> {
+                                        onOpenMuscleTargetPicker(action.bucketKey, action.subcategoryKey)
+                                    }
+                                }
                             },
                         )
                     }
                 }
-                item { Spacer(modifier = Modifier.height(96.dp)) }
+                freshnessAction?.let { action ->
+                    item {
+                        ActiveWorkoutFreshnessActionStrip(
+                            action = action,
+                            onAction = {
+                                when (action.type) {
+                                    ActiveWorkoutFreshnessActionType.OpenExercise -> {
+                                        action.exerciseIndex?.let(onOpenExercise)
+                                    }
+                                    ActiveWorkoutFreshnessActionType.OpenFilteredPicker -> {
+                                        onOpenFreshnessTargetPicker(action.muscleKey, action.muscleLabel)
+                                    }
+                                }
+                            },
+                        )
+                    }
+                }
             }
+            if (orderedExercises.isEmpty() && (activeEquipmentFilter != null || activeBodyRegionFilterLabel != null || activeMuscleFilterLabel != null || activeMuscleTargetFilterLabel != null)) {
+                item {
+                    FeatureCard(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f)) {
+                        Text(
+                            "No exercises match the current filters.",
+                            modifier = Modifier.padding(16.dp),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+            items(
+                items = orderedExercises,
+                key = { orderedExercise -> "${orderedExercise.index}:${orderedExercise.value.exerciseId}" },
+            ) { orderedExercise ->
+                val exerciseIndex = orderedExercise.index
+                val exercise = orderedExercise.value
+                SessionExerciseRow(
+                    exercise = exercise,
+                    fruitIconsEnabled = shouldShowFruitWorkoutBadges,
+                    recommendationBias = state.recommendationBiasByExerciseId[exercise.exerciseId] ?: RecommendationBias.Neutral,
+                    onOpen = { onOpenExercise(exerciseIndex) },
+                    onShowDetail = { onShowExerciseDetail(exercise.exerciseId) },
+                    onDelete = { pendingExerciseDeletionIndex = exerciseIndex },
+                )
+            }
+            item {
+                AddExerciseCallToAction(onAddExercise = onOpenAddExercise)
+            }
+            if (!focusMode && shouldShowPickNextExercise) {
+                item {
+                    PickNextExerciseCallToAction(
+                        untouchedExerciseCount = untouchedExerciseCount,
+                        smartTargetMuscle = state.profile?.smartPickerTargetMuscle,
+                        onPickNextExercise = {
+                            onPickNextExercise(
+                                selectedEquipmentFilter,
+                                selectedBodyRegionFilterKey,
+                                selectedMuscleFilterKey,
+                                selectedMuscleTargetBucketKey,
+                                selectedMuscleTargetSubcategoryKey,
+                            )
+                        },
+                    )
+                }
+            }
+            item { Spacer(modifier = Modifier.height(96.dp)) }
         }
     }
 
@@ -14965,18 +15171,15 @@ private fun ActiveExercisePerformanceStatsRow(
     ) {
         MiniTag(
             text = "Max: ${formatExercisePerformanceWeight(stats.maxWeight)} x ${stats.maxWeightReps}",
-            accent = goldAccent.start.copy(alpha = 0.18f),
         )
         stats.averageWeightLastFiveSessions?.let { averageWeight ->
             MiniTag(
                 text = "Avg: ${formatExercisePerformanceWeight(averageWeight)}",
-                accent = surgeAccent.start.copy(alpha = 0.18f),
             )
         }
         if (hasPendingSets) {
             ClickableMiniTag(
                 text = "Try ${formatExercisePerformanceWeight(stats.maxWeight + SESSION_WEIGHT_JUMP_LB)}",
-                accent = MaterialTheme.colorScheme.primaryContainer,
                 onClick = onApplyBeatMaxWeight,
                 accessibilityLabel = "Set next incomplete set to ${formatExercisePerformanceWeight(stats.maxWeight + SESSION_WEIGHT_JUMP_LB)}",
             )
@@ -14987,10 +15190,11 @@ private fun ActiveExercisePerformanceStatsRow(
 @Composable
 private fun ClickableMiniTag(
     text: String,
-    accent: Color,
+    accent: Color = MaterialTheme.colorScheme.primary,
     onClick: () -> Unit,
     accessibilityLabel: String,
 ) {
+    val colors = toneChipColors(tint = accent)
     Surface(
         modifier = Modifier
             .clickable(onClick = onClick)
@@ -14999,8 +15203,8 @@ private fun ClickableMiniTag(
                 role = Role.Button
             },
         shape = RoundedCornerShape(999.dp),
-        color = accent,
-        contentColor = MaterialTheme.colorScheme.onSurface,
+        color = colors.container,
+        contentColor = colors.content,
     ) {
         Text(
             text,
@@ -15094,7 +15298,7 @@ private fun RestTimerCard(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Icon(
-                        imageVector = bountyFamilyIcon(bounty.family),
+                        painter = painterResource(bountyFamilyIcon(bounty.family)),
                         contentDescription = null,
                         tint = bountyAccent!!.color,
                         modifier = Modifier.size(18.dp),
@@ -16914,32 +17118,22 @@ private fun StatRail(items: List<Triple<String, String, String>>) {
     Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
         items.forEach { (label, value, suffix) ->
             val accent = accentForKey(label)
-            val topAccentColor = topBorderAccentColor(accent)
             val cardContainer = MaterialTheme.colorScheme.surface
             val cardPrimary = readableTextColorFor(cardContainer)
             val cardSecondary = readableMutedTextColorFor(cardContainer)
             Card(
                 modifier = Modifier.weight(1f),
-                shape = RoundedCornerShape(10.dp),
+                shape = RoundedCornerShape(16.dp),
                 colors = CardDefaults.cardColors(
                     containerColor = cardContainer,
                     contentColor = cardPrimary,
                 ),
-                border = BorderStroke(1.dp, topAccentColor.copy(alpha = 0.22f)),
                 elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
             ) {
-                Column {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(2.dp)
-                            .background(topAccentColor),
-                    )
-                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text(label.uppercase(), style = MaterialTheme.typography.labelMedium, color = cardSecondary)
-                        Text(value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, maxLines = 1, color = cardPrimary)
-                        Text(suffix, style = MaterialTheme.typography.bodySmall, color = cardSecondary, maxLines = 1)
-                    }
+                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    MiniTag(text = label, accent = accent.color)
+                    Text(value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, maxLines = 1, color = cardPrimary)
+                    Text(suffix, style = MaterialTheme.typography.bodySmall, color = cardSecondary, maxLines = 1)
                 }
             }
         }
@@ -17024,6 +17218,7 @@ private fun TemplateListRow(
                     "⋮",
                     modifier = Modifier.semantics { contentDescription = "Template actions" },
                     style = MaterialTheme.typography.titleLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
             DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
@@ -17649,24 +17844,28 @@ private fun LeadingBadge(
 }
 
 @Composable
-private fun MiniTag(text: String, accent: Color = MaterialTheme.colorScheme.surfaceVariant) {
-    val colors = toneChipColors(accent)
-    Card(
-        shape = RoundedCornerShape(3.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = colors.container,
-            contentColor = colors.content,
-        ),
-        border = BorderStroke(1.dp, colors.border),
+private fun MiniTag(
+    text: String,
+    accent: Color = MaterialTheme.colorScheme.primary,
+) {
+    val colors = toneChipColors(tint = accent)
+    // DESIGN.md §5 MiniTag shape/spacing with contrast-safe text over
+    // the composited accent tint.
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(50))
+            .background(colors.container)
+            .padding(horizontal = 10.dp, vertical = 4.dp),
+        contentAlignment = Alignment.Center,
     ) {
         Text(
-            text.uppercase(),
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+            text = text.uppercase(),
+            color = colors.content,
             fontFamily = MonoFamily,
             fontSize = 9.sp,
-            letterSpacing = 0.12.em,
+            lineHeight = 10.sp,
+            letterSpacing = 0.15.em,
             fontWeight = FontWeight.Medium,
-            color = colors.content,
             maxLines = 1,
             softWrap = false,
             overflow = TextOverflow.Ellipsis,
@@ -17706,6 +17905,23 @@ private fun SkeletonBlock(width: androidx.compose.ui.unit.Dp, height: androidx.c
     )
 }
 
+/**
+ * Card variant per DESIGN.md §5.
+ * - Flat: surface color, no border, no elevation, RoundedCornerShape(16.dp), 20dp padding
+ * - Tinted: surface + 8% accent color tint, no border
+ * - Hero: gradient background, 28dp padding, no border, larger
+ * - Outlined: 1dp outline in surfaceVariant color
+ *
+ * The 2dp top accent bar from the old Settings-style design is GONE.
+ * To indicate an accent, place a [MiniTag] pill in card content instead.
+ */
+enum class FeatureCardVariant {
+    Flat,
+    Tinted,
+    Hero,
+    Outlined,
+}
+
 @Composable
 private fun FeatureCard(
     modifier: Modifier = Modifier,
@@ -17715,41 +17931,68 @@ private fun FeatureCard(
     elevation: androidx.compose.ui.unit.Dp = 0.dp,
     fullWidth: Boolean = true,
     accentKey: String? = null,
-    showTopAccent: Boolean = true,
+    variant: FeatureCardVariant = FeatureCardVariant.Flat,
     content: @Composable () -> Unit,
 ) {
-    val uiColors = LocalUiColors.current
-    val resolvedContentColor = if (contentColor == Color.Unspecified) readableTextColorFor(containerColor) else contentColor
     val accent = if (accentKey != null) accentForKey(accentKey) else fallbackAccentForContainer(containerColor)
-    val topAccentColor = if (showTopAccent) {
-        topBorderAccentColor(accent)
+    val resolvedContentColor = if (contentColor == Color.Unspecified) {
+        readableTextColorFor(containerColor)
     } else {
-        Color.Transparent
+        contentColor
     }
-    val resolvedBorder = border ?: BorderStroke(
-        1.dp,
-        if (showTopAccent) topAccentColor.copy(alpha = 0.22f) else uiColors.chromeBorder,
-    )
-    Card(
+    val cardShape = RoundedCornerShape(16.dp)
+    val cardPadding = if (variant == FeatureCardVariant.Hero) 28.dp else 20.dp
+
+    // Resolve container color per variant.
+    val resolvedContainerColor = when (variant) {
+        FeatureCardVariant.Tinted -> accent.color.copy(alpha = 0.08f).compositeOver(containerColor)
+        else -> containerColor
+    }
+
+    // Resolve border per variant — the top accent bar is GONE.
+    val resolvedBorder: BorderStroke? = when {
+        border != null -> border
+        variant == FeatureCardVariant.Outlined -> BorderStroke(1.dp, MaterialTheme.colorScheme.surfaceVariant)
+        else -> null
+    }
+
+    // Hero variant gets a gradient background drawn beneath the surface.
+    val heroGradient = if (variant == FeatureCardVariant.Hero) {
+        Brush.linearGradient(
+            colors = if (LocalToastLiftIsDarkTheme.current) {
+                listOf(Color(0xFF0A0A0B), Color(0xFF1A1A0E))
+            } else {
+                listOf(Color(0xFFFAFAF8), Color(0xFFF1F1E8))
+            },
+        )
+    } else {
+        null
+    }
+
+    Box(
         modifier = if (fullWidth) modifier.fillMaxWidth() else modifier,
-        shape = RoundedCornerShape(10.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = containerColor,
-            contentColor = resolvedContentColor,
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = elevation),
-        border = resolvedBorder,
     ) {
-        Column {
-            if (showTopAccent) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(2.dp)
-                        .background(topAccentColor),
-                )
+        if (heroGradient != null) {
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .clip(cardShape)
+                    .background(heroGradient),
+            )
+        }
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = cardShape,
+            colors = CardDefaults.cardColors(
+                containerColor = if (heroGradient != null) Color.Transparent else resolvedContainerColor,
+                contentColor = resolvedContentColor,
+            ),
+            elevation = CardDefaults.cardElevation(defaultElevation = elevation),
+            border = resolvedBorder,
+        ) {
+            Box(modifier = Modifier.padding(cardPadding)) {
+                content()
             }
-            content()
         }
     }
 }
@@ -17764,7 +18007,6 @@ private fun ProgramLaunchCard(
     val accent = accentForKey("guided program")
     FeatureCard(
         containerColor = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.dp, accent.start.copy(alpha = 0.22f)),
     ) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -18040,6 +18282,7 @@ private fun PlannedSessionCard(
                                 "⋮",
                                 modifier = Modifier.semantics { contentDescription = "Planned session actions" },
                                 style = MaterialTheme.typography.titleLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
                         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
@@ -18094,7 +18337,6 @@ private fun WeeklyMuscleTargetsOverviewCard(
                 contentDescription = "Open weekly muscle targets"
                 role = Role.Button
             },
-        border = BorderStroke(1.dp, goldAccent.start.copy(alpha = 0.22f)),
     ) {
         Row(
             modifier = Modifier.padding(16.dp),
@@ -18724,24 +18966,12 @@ private fun ProgramProgressMetric(
     accent: GlowAccent,
     modifier: Modifier = Modifier,
 ) {
-    val topAccentColor = topBorderAccentColor(accent)
     FeatureCard(
         modifier = modifier,
         containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.88f),
     ) {
         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(4.dp)
-                    .clip(RoundedCornerShape(999.dp))
-                    .background(topAccentColor),
-            )
-            Text(
-                label.uppercase(),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            MiniTag(text = label, accent = accent.color)
             Text(
                 value,
                 style = MaterialTheme.typography.titleLarge,
