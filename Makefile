@@ -4,6 +4,7 @@ APP_ID := dev.toastlabs.toastlift
 MAIN_ACTIVITY := $(APP_ID)/.MainActivity
 DEBUG_APK := app/build/outputs/apk/debug/app-debug.apk
 RELEASE_APK := app/build/outputs/apk/release/app-release-unsigned.apk
+LIVE_AI_SMOKE_TEST_REPORT := app/build/test-results/testDebugUnitTest/TEST-dev.toastlabs.toastlift.data.ExerciseMetadataGeneratorTest.xml
 
 ADB_HOST ?= host.docker.internal
 ADB_PORT ?= 5037
@@ -19,11 +20,12 @@ EMULATOR_ADB := android-emulator-adb
 
 .PHONY: help clean test lint build-debug build-release assemble apk-paths devices \
 	check-emulator check-device install-debug launch-debug install-device-debug \
-	install-device-debug-no-build sync-device-custom-exercises
+	install-device-debug-no-build sync-device-custom-exercises live-ai-smoke-test
 
 help:
 	@echo "Targets:"
 	@echo "  make test                         - Run unit tests"
+	@echo "  make live-ai-smoke-test           - Run live Gemini/OpenCode custom exercise AI smoke tests and print outputs"
 	@echo "  make lint                         - Run Android lint for debug"
 	@echo "  make build-debug                  - Build debug APK"
 	@echo "  make build-release                - Build unsigned release APK"
@@ -42,6 +44,24 @@ clean:
 
 test:
 	$(GRADLE) testDebugUnitTest
+
+live-ai-smoke-test:
+	@set -euo pipefail; \
+	rm -f "$(LIVE_AI_SMOKE_TEST_REPORT)"; \
+	status=0; \
+	RUN_LIVE_AI_SMOKE_TESTS=true $(GRADLE) testDebugUnitTest \
+		--tests dev.toastlabs.toastlift.data.ExerciseMetadataGeneratorTest.liveSmokeGeminiExerciseMetadataGenerator_returnsRealMetadata \
+		--tests dev.toastlabs.toastlift.data.ExerciseMetadataGeneratorTest.liveSmokeOpenCodeDeepSeekV4FlashExerciseMetadataGenerator_returnsRealMetadata \
+		--tests dev.toastlabs.toastlift.data.ExerciseMetadataGeneratorTest.liveSmokeOpenCodeGlm52ExerciseMetadataGenerator_returnsRealMetadata \
+		--tests dev.toastlabs.toastlift.data.ExerciseMetadataGeneratorTest.liveSmokeOpenRouterGlm52ExerciseMetadataGenerator_returnsRealMetadata || status=$$?; \
+	if [[ -f "$(LIVE_AI_SMOKE_TEST_REPORT)" ]]; then \
+		echo; \
+		echo "Live AI smoke test outputs:"; \
+		perl -0ne 'print $$1 if /<system-out><!\[CDATA\[(.*?)\]\]><\/system-out>/s' "$(LIVE_AI_SMOKE_TEST_REPORT)"; \
+	else \
+		echo "Live AI smoke test report was not created: $(LIVE_AI_SMOKE_TEST_REPORT)" >&2; \
+	fi; \
+	exit $$status
 
 lint:
 	$(GRADLE) lintDebug

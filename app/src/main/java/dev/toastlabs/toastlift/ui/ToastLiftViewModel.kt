@@ -2583,6 +2583,18 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
+    fun setCustomExerciseAiModelId(modelId: String) {
+        val profile = uiState.profile ?: return
+        val option = dev.toastlabs.toastlift.data.customExerciseAiModelOptionForId(modelId)
+        uiState = uiState.copy(
+            profile = profile.copy(customExerciseAiModelId = option.id),
+            message = "Custom exercise AI set to ${option.label}.",
+        )
+        viewModelScope.launch(Dispatchers.IO) {
+            container.userRepository.saveCustomExerciseAiModelId(option.id)
+        }
+    }
+
     internal fun setTrainingFreshnessFilter(filter: TrainingFreshnessFilter) {
         uiState = uiState.copy(trainingFreshnessFilter = filter)
     }
@@ -4952,6 +4964,7 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
         uiState = uiState.copy(
             customExerciseDraft = current.copy(
                 name = trimmed,
+                generationReport = null,
                 errorMessage = null,
             ),
         )
