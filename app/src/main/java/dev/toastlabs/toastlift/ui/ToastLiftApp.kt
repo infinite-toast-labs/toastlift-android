@@ -328,8 +328,8 @@ import java.util.Locale
 private val MainTab.navIconRes: Int
     get() = when (this) {
         MainTab.Home -> R.drawable.ic_nav_home
+        MainTab.Generate -> R.drawable.ic_nav_generate
         MainTab.Explore -> R.drawable.ic_nav_explore
-        MainTab.You -> R.drawable.ic_nav_you
     }
 
 /**
@@ -339,7 +339,7 @@ private val MainTab.navIconRes: Int
  * - 16dp horizontal margin, 16dp bottom margin
  * - 72dp height
  * - surface color @ 90% alpha background
- * - 3 items only, icon-only by default (label shown on selected tab)
+ * - 3 items only, icon-only
  * - Active item: accent color + 4dp top indicator line
  * - Inactive item: muted (onSurfaceVariant) color
  */
@@ -404,21 +404,6 @@ private fun ToastLiftBottomBar(
                             tint = iconTint,
                             modifier = Modifier.size(24.dp),
                         )
-                        // Label only on selected tab.
-                        if (isSelected) {
-                            Text(
-                                text = tab.label,
-                                color = iconTint,
-                                fontFamily = MonoFamily,
-                                fontSize = 9.sp,
-                                lineHeight = 10.sp,
-                                letterSpacing = 0.15.em,
-                                fontWeight = FontWeight.Medium,
-                                maxLines = 1,
-                            )
-                        } else {
-                            Spacer(modifier = Modifier.height(10.dp))
-                        }
                     }
                 }
             }
@@ -427,34 +412,24 @@ private fun ToastLiftBottomBar(
 }
 
 /**
- * Screen header per DESIGN.md §5 "Screen Header (Replaces TopAppBar)".
+ * Minimal top chrome for global overflow.
  *
- * - NOT a CenterAlignedTopAppBar. No app bar chrome/background.
- * - Left-aligned Text using Display family (Bebas Neue) at 28sp
- * - 20dp horizontal padding, 12dp top
- * - Optional trailing IconButton on the right
+ * The revamp uses icon-only main navigation, so the old large screen labels are
+ * intentionally omitted.
  */
 @Composable
 private fun ToastLiftScreenHeader(
-    title: String,
     modifier: Modifier = Modifier,
     trailing: (@Composable () -> Unit)? = null,
 ) {
-    Row(
+    Box(
         modifier = modifier
             .fillMaxWidth()
             .statusBarsPadding()
-            .padding(horizontal = 20.dp, vertical = 12.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
+            .padding(horizontal = 20.dp)
+            .padding(top = 4.dp),
+        contentAlignment = Alignment.CenterEnd,
     ) {
-        Text(
-            text = title,
-            color = MaterialTheme.colorScheme.onBackground,
-            fontFamily = DisplayFamily,
-            fontSize = 28.sp,
-            letterSpacing = 0.02.em,
-        )
         if (trailing != null) {
             trailing()
         }
@@ -954,6 +929,7 @@ fun ToastLiftApp(
     val latestPendingWorkoutShare = rememberUpdatedState(state.pendingWorkoutShare)
     var isGenerateFullscreenFlow by remember { mutableStateOf(false) }
     var isTodayFullscreenFlow by remember { mutableStateOf(false) }
+    var isProfileHiddenScreen by remember { mutableStateOf(false) }
     val historyNavigationState = rememberHistoryNavigationState()
     val createExportDocument = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/json"),
@@ -1113,38 +1089,28 @@ fun ToastLiftApp(
                     Scaffold(
                         containerColor = Color.Transparent,
                         topBar = {
-                            if (
-                                !(displayedTab == MainTab.Home && (isTodayFullscreenFlow || isGenerateFullscreenFlow))
-                            ) {
-                                // DESIGN.md §5 Screen Header (replaces CenterAlignedTopAppBar):
-                                // left-aligned Display-family text, no app bar chrome,
-                                // optional trailing IconButton.
+                            if (!isTodayFullscreenFlow && !isGenerateFullscreenFlow) {
+                                // Minimal top chrome: no page title, just global overflow.
                                 ToastLiftScreenHeader(
-                                    title = displayedTab.label,
                                     trailing = {
                                         var expanded by remember { mutableStateOf(false) }
-                                        IconButton(onClick = { expanded = true }) {
-                                            Text(
-                                                "⋮",
-                                                modifier = Modifier.semantics { contentDescription = "More actions" },
-                                                style = MaterialTheme.typography.titleLarge,
-                                            )
-                                        }
-                                        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                                            DropdownMenuItem(
-                                                text = { Text("Generate workout") },
-                                                onClick = {
-                                                    expanded = false
-                                                    viewModel.generateWorkout()
-                                                },
-                                            )
-                                            DropdownMenuItem(
-                                                text = { Text("Open profile") },
-                                                onClick = {
-                                                    expanded = false
-                                                    viewModel.selectTab(MainTab.You)
-                                                },
-                                            )
+                                        Box {
+                                            IconButton(onClick = { expanded = true }) {
+                                                Text(
+                                                    "⋮",
+                                                    modifier = Modifier.semantics { contentDescription = "More actions" },
+                                                    style = MaterialTheme.typography.titleLarge,
+                                                )
+                                            }
+                                            DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                                                DropdownMenuItem(
+                                                    text = { Text("Open profile") },
+                                                    onClick = {
+                                                        expanded = false
+                                                        isProfileHiddenScreen = true
+                                                    },
+                                                )
+                                            }
                                         }
                                     },
                                 )
@@ -1152,11 +1118,9 @@ fun ToastLiftApp(
                         },
                         snackbarHost = { SnackbarHost(snackbars) },
                         bottomBar = {
-                            if (
-                                !(displayedTab == MainTab.Home && (isTodayFullscreenFlow || isGenerateFullscreenFlow))
-                            ) {
+                            if (!isTodayFullscreenFlow && !isGenerateFullscreenFlow && !isProfileHiddenScreen) {
                                 // DESIGN.md §5 custom Bottom Bar (replaces NavigationBar):
-                                // floating pill, 3 tabs, label on selected only.
+                                // floating pill, 3 icon-only tabs.
                                 ToastLiftBottomBar(
                                     selectedTab = displayedTab,
                                     onSelectTab = viewModel::selectTab,
@@ -1184,11 +1148,12 @@ fun ToastLiftApp(
                                 },
                                 label = "main-tab-transition",
                             ) { tab ->
-                                when (tab) {
-                                    // DESIGN.md §2: Home merges old Today + Generate.
-                                    // GenerateScreen is shown as a fullscreen flow
-                                    // (DESIGN.md §6 motion: slide up) triggered from
-                                    // TodayScreen's "Generate" CTA via onOpenGenerate.
+                                if (isProfileHiddenScreen) {
+                                    BackHandler { isProfileHiddenScreen = false }
+                                    ProfileScreen(state = state, viewModel = viewModel)
+                                } else when (tab) {
+                                    // Home owns today's plan/program surface. Generate
+                                    // now lives in its own main tab.
                                     MainTab.Home -> {
                                         if (isGenerateFullscreenFlow) {
                                             BackHandler { isGenerateFullscreenFlow = false }
@@ -1239,9 +1204,12 @@ fun ToastLiftApp(
                                         } else {
                                             TodayScreen(
                                                 state = state,
-                                                onGenerate = viewModel::generateWorkout,
+                                                onGenerate = {
+                                                    viewModel.selectTab(MainTab.Generate)
+                                                    viewModel.generateWorkout()
+                                                },
                                                 onOpenGenerate = {
-                                                    isGenerateFullscreenFlow = true
+                                                    viewModel.selectTab(MainTab.Generate)
                                                     viewModel.generateWorkout()
                                                 },
                                                 onStartFreshnessReEntry = viewModel::startFreshnessReEntryWorkout,
@@ -1311,12 +1279,65 @@ fun ToastLiftApp(
                                         }
                                     }
 
+                                    MainTab.Generate -> {
+                                        GenerateScreen(
+                                            state = state,
+                                            onGenerate = viewModel::generateWorkout,
+                                            onSwapGenerated = viewModel::swapGeneratedWorkoutToFocus,
+                                            onStartGenerated = viewModel::startGeneratedWorkout,
+                                            onSaveGenerated = viewModel::saveGeneratedTemplate,
+                                            onShowExerciseDetail = viewModel::showExerciseDetail,
+                                            onRemoveGeneratedExercise = viewModel::removeGeneratedExercise,
+                                            onAddExercisesToGeneratedWorkout = viewModel::addExercisesToGeneratedWorkout,
+                                            onOpenExerciseHistory = viewModel::openExerciseHistory,
+                                            onOpenExerciseVideos = viewModel::openExerciseVideos,
+                                            onLibraryQueryChange = viewModel::updateLibraryQuery,
+                                            onToggleLibrarySearch = viewModel::toggleLibrarySearch,
+                                            onToggleLibraryFavoritesOnly = viewModel::toggleLibraryFavoritesOnly,
+                                            onToggleLibraryEquipmentFilter = viewModel::toggleLibraryEquipmentFilter,
+                                            onToggleLibraryEquipmentLocationFilter = viewModel::toggleLibraryEquipmentLocationFilter,
+                                            onToggleLibraryTargetMuscleFilter = viewModel::toggleLibraryTargetMuscleFilter,
+                                            onToggleLibraryPrimeMoverFilter = viewModel::toggleLibraryPrimeMoverFilter,
+                                            onToggleLibraryFreshnessMuscleFilter = viewModel::toggleLibraryFreshnessMuscleFilter,
+                                            onToggleLibraryMuscleTargetBucketFilter = viewModel::toggleLibraryMuscleTargetBucketFilter,
+                                            onToggleLibraryMuscleTargetSubcategoryFilter = viewModel::toggleLibraryMuscleTargetSubcategoryFilter,
+                                            onToggleLibraryRecommendationBiasFilter = viewModel::toggleLibraryRecommendationBiasFilter,
+                                            onToggleLibraryLoggedHistoryFilter = viewModel::toggleLibraryLoggedHistoryFilter,
+                                            onClearLibraryFreshnessMuscleFilters = viewModel::clearLibraryFreshnessMuscleFilters,
+                                            onClearLibraryMuscleTargetFilters = viewModel::clearLibraryMuscleTargetFilters,
+                                            onClearLibraryFilters = viewModel::clearLibraryFilters,
+                                            onOpenCustomExerciseForGeneratedWorkout = viewModel::openCustomExerciseForGeneratedWorkout,
+                                            onOpenCustomExerciseForBuilder = viewModel::openCustomExerciseForBuilder,
+                                            onCloseCustomExercise = viewModel::closeCustomExerciseFlow,
+                                            onCustomExerciseDraftChange = viewModel::updateCustomExerciseDraft,
+                                            onCustomExerciseNameChange = viewModel::updateCustomExerciseName,
+                                            onGenerateCustomExercise = viewModel::generateCustomExerciseDetails,
+                                            onUseExistingExercise = viewModel::useExistingExerciseFromCustomFlow,
+                                            onSaveCustomExercise = viewModel::saveCustomExercise,
+                                            onPendingSelectionConsumed = viewModel::clearPendingAddExercisePickerSelection,
+                                            onAddExerciseToExistingTemplate = viewModel::addExerciseToExistingTemplate,
+                                            onCreateTemplateFromExercise = viewModel::createTemplateFromExercise,
+                                            onManualNameChange = viewModel::updateManualWorkoutName,
+                                            onRemoveManualExercise = viewModel::removeBuilderExercise,
+                                            onAddExercisesToBuilder = viewModel::addExercisesToBuilder,
+                                            onStartManualWorkout = viewModel::startManualWorkout,
+                                            onSaveManualTemplate = viewModel::saveManualTemplate,
+                                            onFullscreenFlowChange = { isGenerateFullscreenFlow = it },
+                                        )
+                                    }
+
                                     // DESIGN.md §2: Explore merges old Library + History.
                                     // An internal sub-tab row toggles between the
                                     // exercise Library and the History dashboard
                                     // (stats, calendar, bounty cards, strength score).
                                     MainTab.Explore -> {
                                         var exploreSection by remember { mutableStateOf(ExploreSection.Library) }
+                                        LaunchedEffect(state.libraryNavigationRevision) {
+                                            if (state.libraryNavigationRevision > 0L) {
+                                                exploreSection = ExploreSection.Library
+                                                historyNavigationState.destination = "dashboard"
+                                            }
+                                        }
                                         Column(modifier = Modifier.fillMaxSize()) {
                                             ExploreSectionToggle(
                                                 selected = exploreSection,
@@ -1380,8 +1401,6 @@ fun ToastLiftApp(
                                             }
                                         }
                                     }
-                                    // DESIGN.md §2: You merges old Profile + onboarding.
-                                    MainTab.You -> ProfileScreen(state = state, viewModel = viewModel)
                                 }
                             }
                         }
@@ -4323,10 +4342,6 @@ private fun GenerateScreen(
         state.manualWorkoutItems.isEmpty() -> "Manual builder is empty."
         state.editingTemplateId != null -> "${state.manualWorkoutItems.size} exercises in saved template"
         else -> "${state.manualWorkoutItems.size} exercises queued"
-    }
-
-    LaunchedEffect(showBuilderAddSheet, showGeneratedAddScreen) {
-        onFullscreenFlowChange(showBuilderAddSheet || showGeneratedAddScreen)
     }
 
     DisposableEffect(Unit) {
@@ -8845,6 +8860,7 @@ private fun HistoryDateSeparator(label: String) {
 }
 
 @Composable
+@OptIn(ExperimentalLayoutApi::class)
 private fun HistoryEntryCard(
     entry: HistorySummary,
     onOpen: () -> Unit,
@@ -8863,55 +8879,61 @@ private fun HistoryEntryCard(
                 verticalAlignment = Alignment.Top,
             ) {
                 Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(entry.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        entry.title,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                     Text(
                         formatHistoryEntryTime(entry),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    MiniTag("${entry.exerciseCount} exercises", accent = MaterialTheme.colorScheme.primaryContainer)
-                    entry.strengthScore?.let { score ->
-                        MiniTag("Strength ${formatCompactNumber(score.toDouble())}", accent = MaterialTheme.colorScheme.tertiaryContainer)
+                Box {
+                    IconButton(onClick = { expanded = true }) {
+                        Text(
+                            "⋮",
+                            modifier = Modifier.semantics { contentDescription = "History entry actions" },
+                            style = MaterialTheme.typography.titleLarge,
+                        )
                     }
-                    Box {
-                        IconButton(onClick = { expanded = true }) {
-                            Text(
-                                "⋮",
-                                modifier = Modifier.semantics { contentDescription = "History entry actions" },
-                                style = MaterialTheme.typography.titleLarge,
-                            )
-                        }
-                        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                            DropdownMenuItem(
-                                text = { Text("View") },
-                                onClick = {
-                                    expanded = false
-                                    onOpen()
-                                },
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Share") },
-                                onClick = {
-                                    expanded = false
-                                    onShare()
-                                },
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Delete") },
-                                onClick = {
-                                    expanded = false
-                                    onDelete()
-                                },
-                            )
-                        }
+                    DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                        DropdownMenuItem(
+                            text = { Text("View") },
+                            onClick = {
+                                expanded = false
+                                onOpen()
+                            },
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Share") },
+                            onClick = {
+                                expanded = false
+                                onShare()
+                            },
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Delete") },
+                            onClick = {
+                                expanded = false
+                                onDelete()
+                            },
+                        )
                     }
+                }
+            }
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                MiniTag("${entry.exerciseCount} exercises", accent = MaterialTheme.colorScheme.primaryContainer)
+                entry.strengthScore?.let { score ->
+                    MiniTag("Strength ${formatCompactNumber(score.toDouble())}", accent = MaterialTheme.colorScheme.tertiaryContainer)
                 }
             }
             StatRail(
                 items = listOf(
-                    Triple("Elapsed", formatMinutes(entry.durationSeconds), ""),
+                    Triple("Time", formatMinutes(entry.durationSeconds), ""),
                     Triple("Volume", formatVolume(entry.totalVolume), ""),
                     Triple("Moves", entry.exerciseNames.distinct().size.toString(), "logged"),
                 ),

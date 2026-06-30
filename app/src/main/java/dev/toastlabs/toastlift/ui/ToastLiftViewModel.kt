@@ -146,10 +146,10 @@ import kotlin.random.Random
 
 enum class MainTab(val label: String) {
     // DESIGN.md §2: 3-tab structure replacing the old 5-tab layout.
-    // Home = Today + Generate; Explore = Library + History; You = Profile.
+    // Home = Today; Generate = one-off generator + builder; Explore = Library + History.
     Home("Home"),
+    Generate("Generate"),
     Explore("Explore"),
-    You("You"),
 }
 
 enum class CustomExerciseDestination {
@@ -360,6 +360,7 @@ internal data class AppUiState(
     val libraryQuery: String = "",
     val librarySearchVisible: Boolean = false,
     val libraryFilters: LibraryFilters = LibraryFilters(),
+    val libraryNavigationRevision: Long = 0L,
     val libraryFacets: LibraryFacets = LibraryFacets(),
     val libraryResults: List<ExerciseSummary> = emptyList(),
     val exerciseDiscoveryResult: ExerciseDiscoveryResult? = null,
@@ -3030,6 +3031,7 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
                 librarySearchVisible = false,
                 libraryQuery = "",
                 libraryFilters = filters,
+                libraryNavigationRevision = it.libraryNavigationRevision + 1,
                 message = null,
             )
         }
@@ -3051,6 +3053,7 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
                 librarySearchVisible = false,
                 libraryQuery = "",
                 libraryFilters = filters,
+                libraryNavigationRevision = it.libraryNavigationRevision + 1,
                 message = null,
             )
         }
@@ -3457,7 +3460,7 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
         )
         uiState = uiState.copy(
             manualWorkoutItems = updated,
-            selectedTab = MainTab.Home,
+            selectedTab = MainTab.Generate,
             message = "${exercise.name} added to the manual builder.",
         )
     }
@@ -3469,7 +3472,7 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
         )
         uiState = uiState.copy(
             manualWorkoutItems = updated,
-            selectedTab = MainTab.Home,
+            selectedTab = MainTab.Generate,
             message = if (updated.size == uiState.manualWorkoutItems.size) {
                 "${exercise.name} is already in the manual builder."
             } else {
@@ -3496,7 +3499,7 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
         }
         uiState = uiState.copy(
             manualWorkoutItems = uiState.manualWorkoutItems + additions,
-            selectedTab = MainTab.Home,
+            selectedTab = MainTab.Generate,
             message = "Added ${additions.size} exercise${if (additions.size == 1) "" else "s"} to the manual builder.",
         )
     }
@@ -3528,7 +3531,7 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
                 generatedWorkout = updatedWorkout,
                 projectedMuscleInsights = projectedAnalytics.muscles,
                 projectedMovementInsights = projectedAnalytics.movements,
-                selectedTab = MainTab.Home,
+                selectedTab = MainTab.Generate,
                 message = "${exercise.name} added to My Plan.",
             )
             if (workout.origin == "generated") {
@@ -3563,7 +3566,7 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
                 generatedWorkout = updatedWorkout,
                 projectedMuscleInsights = projectedAnalytics.muscles,
                 projectedMovementInsights = projectedAnalytics.movements,
-                selectedTab = MainTab.Home,
+                selectedTab = MainTab.Generate,
                 message = "${exercise.name} added to My Plan.",
             )
             if (workout.origin == "generated") {
@@ -3608,7 +3611,7 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
                 generatedWorkout = updatedWorkout,
                 projectedMuscleInsights = projectedAnalytics.muscles,
                 projectedMovementInsights = projectedAnalytics.movements,
-                selectedTab = MainTab.Home,
+                selectedTab = MainTab.Generate,
                 message = "Added ${additions.size} exercise${if (additions.size == 1) "" else "s"} to My Plan.",
             )
             if (workout.origin == "generated") {
@@ -3791,7 +3794,7 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
                 generatedWorkout = workout,
                 projectedMuscleInsights = projectedAnalytics.muscles,
                 projectedMovementInsights = projectedAnalytics.movements,
-                selectedTab = MainTab.Home,
+                selectedTab = MainTab.Generate,
                 message = "Generated a ${workout.title.lowercase()} workout.",
             )
         }
@@ -3816,7 +3819,7 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
                 generatedWorkout = workout,
                 projectedMuscleInsights = projectedAnalytics.muscles,
                 projectedMovementInsights = projectedAnalytics.movements,
-                selectedTab = MainTab.Home,
+                selectedTab = MainTab.Generate,
                 message = "Swapped to ${workout.title.lowercase()}.",
             )
         }
@@ -6907,7 +6910,7 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
                 projectedMuscleInsights = projectedAnalytics.muscles,
                 projectedMovementInsights = projectedAnalytics.movements,
                 selectedHistoryDetail = null,
-                selectedTab = MainTab.Home,
+                selectedTab = MainTab.Generate,
                 message = historyReuseConfirmationMessage(workoutTitle, mode),
             )
         }
