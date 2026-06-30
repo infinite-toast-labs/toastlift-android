@@ -4806,7 +4806,7 @@ private fun LibraryScreen(
             }
             LazyColumn(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
-                contentPadding = PaddingValues(bottom = 24.dp),
+                contentPadding = PaddingValues(bottom = 132.dp),
                 modifier = Modifier.fillMaxSize(),
             ) {
                 item(key = "exercise-discovery") {
@@ -5315,30 +5315,38 @@ private fun ExerciseDiscoveryPanel(
                 }
                 if (isLoading) {
                     CircularProgressIndicator(modifier = Modifier.size(28.dp), strokeWidth = 2.dp)
-                } else if (result == null) {
-                    Button(onClick = onDiscover) {
+                }
+            }
+            if (!isLoading && result == null) {
+                Button(
+                    onClick = onDiscover,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.AutoAwesome,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Discover")
+                }
+            } else if (result != null) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    IconButton(onClick = onDiscover) {
                         Icon(
                             imageVector = Icons.Rounded.AutoAwesome,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp),
+                            contentDescription = "Refresh discovery picks",
                         )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Discover")
                     }
-                } else {
-                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        IconButton(onClick = onDiscover) {
-                            Icon(
-                                imageVector = Icons.Rounded.AutoAwesome,
-                                contentDescription = "Refresh discovery picks",
-                            )
-                        }
-                        IconButton(onClick = onClear) {
-                            Icon(
-                                imageVector = Icons.Rounded.Close,
-                                contentDescription = "Clear discovery picks",
-                            )
-                        }
+                    IconButton(onClick = onClear) {
+                        Icon(
+                            imageVector = Icons.Rounded.Close,
+                            contentDescription = "Clear discovery picks",
+                        )
                     }
                 }
             }
@@ -5494,54 +5502,59 @@ private fun ExerciseDiscoveryPickRow(
                 Text(pick.exercise.name, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
                 ExerciseAttributeText(exercise = pick.exercise)
             }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onAddToBuilder) {
-                    Icon(
-                        imageVector = Icons.Rounded.FitnessCenter,
-                        contentDescription = "Add ${pick.exercise.name} to builder",
+            Box {
+                IconButton(onClick = { expanded = true }) {
+                    Text(
+                        "⋮",
+                        modifier = Modifier.semantics { contentDescription = "Exercise actions" },
+                        style = MaterialTheme.typography.titleLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                IconButton(onClick = onAddToMyPlan) {
-                    Icon(
-                        imageVector = Icons.Rounded.AutoAwesome,
-                        contentDescription = "Add ${pick.exercise.name} to My Plan",
+                DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                    DropdownMenuItem(text = { Text("Details") }, onClick = { expanded = false; onShowDetail() })
+                    DropdownMenuItem(text = { Text("Explore family") }, onClick = { expanded = false; onExploreFamily() })
+                    DropdownMenuItem(text = { Text("Add to builder") }, onClick = { expanded = false; onAddToBuilder() })
+                    DropdownMenuItem(text = { Text("Add to My Plan") }, onClick = { expanded = false; onAddToMyPlan() })
+                    DropdownMenuItem(text = { Text("Add to existing template") }, onClick = { expanded = false; onAddToExistingTemplate() })
+                    DropdownMenuItem(text = { Text("Add to new template") }, onClick = { expanded = false; onCreateTemplateFromExercise() })
+                    DropdownMenuItem(text = { Text("Exercise history") }, onClick = { expanded = false; onOpenExerciseHistory() })
+                    DropdownMenuItem(text = { Text("Videos") }, onClick = { expanded = false; onOpenExerciseVideos() })
+                    DropdownMenuItem(
+                        text = { Text(if (pick.exercise.favorite) "Unfavorite" else "Favorite") },
+                        onClick = { expanded = false; onToggleFavorite() },
                     )
                 }
-                IconButton(onClick = onToggleFavorite) {
-                    Icon(
-                        imageVector = if (pick.exercise.favorite) Icons.Rounded.Star else Icons.Rounded.StarOutline,
-                        contentDescription = if (pick.exercise.favorite) {
-                            "Unfavorite ${pick.exercise.name}"
-                        } else {
-                            "Favorite ${pick.exercise.name}"
-                        },
-                        tint = if (pick.exercise.favorite) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                Box {
-                    IconButton(onClick = { expanded = true }) {
-                        Text(
-                            "⋮",
-                            modifier = Modifier.semantics { contentDescription = "Exercise actions" },
-                            style = MaterialTheme.typography.titleLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                        DropdownMenuItem(text = { Text("Details") }, onClick = { expanded = false; onShowDetail() })
-                        DropdownMenuItem(text = { Text("Explore family") }, onClick = { expanded = false; onExploreFamily() })
-                        DropdownMenuItem(text = { Text("Add to builder") }, onClick = { expanded = false; onAddToBuilder() })
-                        DropdownMenuItem(text = { Text("Add to My Plan") }, onClick = { expanded = false; onAddToMyPlan() })
-                        DropdownMenuItem(text = { Text("Add to existing template") }, onClick = { expanded = false; onAddToExistingTemplate() })
-                        DropdownMenuItem(text = { Text("Add to new template") }, onClick = { expanded = false; onCreateTemplateFromExercise() })
-                        DropdownMenuItem(text = { Text("Exercise history") }, onClick = { expanded = false; onOpenExerciseHistory() })
-                        DropdownMenuItem(text = { Text("Videos") }, onClick = { expanded = false; onOpenExerciseVideos() })
-                        DropdownMenuItem(
-                            text = { Text(if (pick.exercise.favorite) "Unfavorite" else "Favorite") },
-                            onClick = { expanded = false; onToggleFavorite() },
-                        )
-                    }
-                }
+            }
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            IconButton(onClick = onAddToBuilder) {
+                Icon(
+                    imageVector = Icons.Rounded.FitnessCenter,
+                    contentDescription = "Add ${pick.exercise.name} to builder",
+                )
+            }
+            IconButton(onClick = onAddToMyPlan) {
+                Icon(
+                    imageVector = Icons.Rounded.AutoAwesome,
+                    contentDescription = "Add ${pick.exercise.name} to My Plan",
+                )
+            }
+            IconButton(onClick = onToggleFavorite) {
+                Icon(
+                    imageVector = if (pick.exercise.favorite) Icons.Rounded.Star else Icons.Rounded.StarOutline,
+                    contentDescription = if (pick.exercise.favorite) {
+                        "Unfavorite ${pick.exercise.name}"
+                    } else {
+                        "Favorite ${pick.exercise.name}"
+                    },
+                    tint = if (pick.exercise.favorite) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
 
@@ -15158,18 +15171,15 @@ private fun ActiveExercisePerformanceStatsRow(
     ) {
         MiniTag(
             text = "Max: ${formatExercisePerformanceWeight(stats.maxWeight)} x ${stats.maxWeightReps}",
-            accent = goldAccent.start.copy(alpha = 0.18f),
         )
         stats.averageWeightLastFiveSessions?.let { averageWeight ->
             MiniTag(
                 text = "Avg: ${formatExercisePerformanceWeight(averageWeight)}",
-                accent = surgeAccent.start.copy(alpha = 0.18f),
             )
         }
         if (hasPendingSets) {
             ClickableMiniTag(
                 text = "Try ${formatExercisePerformanceWeight(stats.maxWeight + SESSION_WEIGHT_JUMP_LB)}",
-                accent = MaterialTheme.colorScheme.primaryContainer,
                 onClick = onApplyBeatMaxWeight,
                 accessibilityLabel = "Set next incomplete set to ${formatExercisePerformanceWeight(stats.maxWeight + SESSION_WEIGHT_JUMP_LB)}",
             )
@@ -15180,10 +15190,11 @@ private fun ActiveExercisePerformanceStatsRow(
 @Composable
 private fun ClickableMiniTag(
     text: String,
-    accent: Color,
+    accent: Color = MaterialTheme.colorScheme.primary,
     onClick: () -> Unit,
     accessibilityLabel: String,
 ) {
+    val colors = toneChipColors(tint = accent)
     Surface(
         modifier = Modifier
             .clickable(onClick = onClick)
@@ -15192,8 +15203,8 @@ private fun ClickableMiniTag(
                 role = Role.Button
             },
         shape = RoundedCornerShape(999.dp),
-        color = accent,
-        contentColor = MaterialTheme.colorScheme.onSurface,
+        color = colors.container,
+        contentColor = colors.content,
     ) {
         Text(
             text,
