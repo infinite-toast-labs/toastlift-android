@@ -175,6 +175,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalFocusManager
@@ -3644,6 +3645,8 @@ private fun FreshnessReEntryCard(
         FreshnessReEntryMode.ReEntry -> "Re-entry mode"
         FreshnessReEntryMode.MaintenanceSave -> "Momentum save"
     }
+    val isDark = LocalToastLiftIsDarkTheme.current
+    val washShape = RoundedCornerShape(12.dp)
     FeatureCard(
         containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.98f),
         accentKey = "freshness reentry ${state.mode.name}",
@@ -3651,15 +3654,48 @@ private fun FreshnessReEntryCard(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
+                .clip(washShape)
                 .background(
                     Brush.verticalGradient(
                         colors = listOf(
-                            accent.glow.copy(alpha = 0.74f),
+                            accent.glow.copy(alpha = if (isDark) 0.44f else 0.22f),
+                            accent.glow.copy(alpha = if (isDark) 0.16f else 0.08f),
                             Color.Transparent,
                         ),
+                        endY = 720f,
                     ),
                 ),
         ) {
+            Canvas(modifier = Modifier.matchParentSize()) {
+                val upperGlowRadius = size.maxDimension * 0.62f
+                val upperGlowCenter = Offset(size.width * 0.14f, size.height * 0.04f)
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colors = listOf(
+                            accent.start.copy(alpha = if (isDark) 0.18f else 0.1f),
+                            Color.Transparent,
+                        ),
+                        center = upperGlowCenter,
+                        radius = upperGlowRadius,
+                    ),
+                    radius = upperGlowRadius,
+                    center = upperGlowCenter,
+                )
+                val sideGlowRadius = size.maxDimension * 0.54f
+                val sideGlowCenter = Offset(size.width * 1.02f, size.height * 0.42f)
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colors = listOf(
+                            accent.glow.copy(alpha = if (isDark) 0.16f else 0.08f),
+                            Color.Transparent,
+                        ),
+                        center = sideGlowCenter,
+                        radius = sideGlowRadius,
+                    ),
+                    radius = sideGlowRadius,
+                    center = sideGlowCenter,
+                )
+            }
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -6957,11 +6993,11 @@ private fun TokenBalanceOverviewCard(
     FeatureCard(
         modifier = modifier,
         containerColor = palette.shellBottom.copy(alpha = if (LocalToastLiftIsDarkTheme.current) 0.82f else 0.98f),
-        border = BorderStroke(1.dp, palette.shellStroke.copy(alpha = 0.34f)),
     ) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
                 .background(
                     brush = Brush.verticalGradient(
                         colors = listOf(
@@ -7116,11 +7152,11 @@ private fun TokenBalanceDetailScreen(
 
         FeatureCard(
             containerColor = palette.shellBottom.copy(alpha = if (LocalToastLiftIsDarkTheme.current) 0.82f else 0.98f),
-            border = BorderStroke(1.dp, palette.shellStroke.copy(alpha = 0.34f)),
         ) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
                     .background(
                         brush = Brush.verticalGradient(
                             colors = listOf(
@@ -18294,7 +18330,6 @@ private fun WeeklyMuscleTargetsOverviewCard(
                 contentDescription = "Open weekly muscle targets"
                 role = Role.Button
             },
-        border = BorderStroke(1.dp, goldAccent.start.copy(alpha = 0.22f)),
     ) {
         Row(
             modifier = Modifier.padding(16.dp),
