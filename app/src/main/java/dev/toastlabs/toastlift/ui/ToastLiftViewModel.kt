@@ -2132,6 +2132,7 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
         private set
 
     private var customExerciseNameLookupJob: Job? = null
+    private var customExerciseGenerationRequestId = 0L
     private var exerciseDiscoveryJob: Job? = null
     private var exerciseFamilyJob: Job? = null
     private var restTimerJob: Job? = null
@@ -4944,6 +4945,7 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
 
     fun closeCustomExerciseFlow() {
         customExerciseNameLookupJob?.cancel()
+        customExerciseGenerationRequestId++
         uiState = uiState.copy(
             customExerciseDraft = null,
             customExerciseDestination = null,
@@ -4955,15 +4957,27 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     fun updateCustomExerciseDraft(draft: CustomExerciseDraft) {
-        uiState = uiState.copy(customExerciseDraft = draft.copy(errorMessage = null))
+        if (uiState.customExerciseDraft?.isGenerating == true) {
+            customExerciseGenerationRequestId++
+        }
+        uiState = uiState.copy(
+            customExerciseDraft = draft.copy(
+                isGenerating = false,
+                errorMessage = null,
+            ),
+        )
     }
 
     fun updateCustomExerciseName(name: String) {
         val current = uiState.customExerciseDraft ?: return
         val trimmed = name.trimStart()
+        if (current.isGenerating) {
+            customExerciseGenerationRequestId++
+        }
         uiState = uiState.copy(
             customExerciseDraft = current.copy(
                 name = trimmed,
+                isGenerating = false,
                 generationReport = null,
                 errorMessage = null,
             ),
@@ -4989,19 +5003,24 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
             uiState = uiState.copy(customExerciseDraft = current.copy(errorMessage = "Enter an exercise name first."))
             return
         }
+        val requestId = ++customExerciseGenerationRequestId
         uiState = uiState.copy(customExerciseDraft = current.copy(isGenerating = true, errorMessage = null))
         viewModelScope.launch(Dispatchers.IO) {
             runCatching {
                 container.customExerciseRepository.generateDetails(current)
             }.onSuccess { updated ->
-                uiState = uiState.copy(customExerciseDraft = updated.copy(isGenerating = false))
+                if (requestId == customExerciseGenerationRequestId) {
+                    uiState = uiState.copy(customExerciseDraft = updated.copy(isGenerating = false))
+                }
             }.onFailure { error ->
-                uiState = uiState.copy(
-                    customExerciseDraft = current.copy(
-                        isGenerating = false,
-                        errorMessage = error.message ?: "Could not generate exercise details.",
-                    ),
-                )
+                if (requestId == customExerciseGenerationRequestId) {
+                    uiState = uiState.copy(
+                        customExerciseDraft = current.copy(
+                            isGenerating = false,
+                            errorMessage = error.message ?: "Could not generate exercise details.",
+                        ),
+                    )
+                }
             }
         }
     }
