@@ -11829,156 +11829,152 @@ private fun ActiveSessionScreen(
             }
         },
     ) { padding ->
-        Column(
+        LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
+                .statusBarsPadding()
                 .padding(horizontal = 12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            SessionMomentumHeader(
-                modifier = Modifier
-                    .statusBarsPadding()
-                    .padding(top = ACTIVE_SESSION_HEADER_TOP_PADDING),
-                elapsed = elapsed,
-                isPaused = session.isPaused,
-                focusMode = focusMode,
-                progressMetrics = progressMetrics,
-                completionFraction = completionFraction,
-                onTogglePause = onTogglePauseSession,
-                onToggleFocus = { focusMode = !focusMode },
-                onExitWorkout = { showDiscardDialog = true },
-                onOpenWorkoutDetails = { showWorkoutDetailsSheet = true },
-                equipmentFilterLabel = selectedEquipmentFilter,
-                bodyRegionFilterLabel = selectedBodyRegionFilterLabel,
-                muscleFilterLabel = selectedMuscleFilterLabel,
-                muscleTargetFilterLabel = selectedMuscleTargetLabel,
-                muscleTargetCueLabel = muscleTargetSummary.cueLabel,
-                onOpenFilters = { showExerciseFilterSheet = true },
-            )
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                val activeEquipmentFilter = selectedEquipmentFilter
-                val activeBodyRegionFilterLabel = selectedBodyRegionFilterLabel
-                val activeMuscleFilterLabel = selectedMuscleFilterLabel
-                val activeMuscleTargetFilterLabel = selectedMuscleTargetLabel
-                state.activeBounty?.let { bounty ->
-                    item {
-                        ActiveBountyCardStrip(bounty = bounty)
-                    }
+            item {
+                SessionMomentumHeader(
+                    modifier = Modifier.padding(top = ACTIVE_SESSION_HEADER_TOP_PADDING),
+                    elapsed = elapsed,
+                    isPaused = session.isPaused,
+                    focusMode = focusMode,
+                    progressMetrics = progressMetrics,
+                    completionFraction = completionFraction,
+                    onTogglePause = onTogglePauseSession,
+                    onToggleFocus = { focusMode = !focusMode },
+                    onExitWorkout = { showDiscardDialog = true },
+                    onOpenWorkoutDetails = { showWorkoutDetailsSheet = true },
+                    equipmentFilterLabel = selectedEquipmentFilter,
+                    bodyRegionFilterLabel = selectedBodyRegionFilterLabel,
+                    muscleFilterLabel = selectedMuscleFilterLabel,
+                    muscleTargetFilterLabel = selectedMuscleTargetLabel,
+                    muscleTargetCueLabel = muscleTargetSummary.cueLabel,
+                    onOpenFilters = { showExerciseFilterSheet = true },
+                )
+            }
+            val activeEquipmentFilter = selectedEquipmentFilter
+            val activeBodyRegionFilterLabel = selectedBodyRegionFilterLabel
+            val activeMuscleFilterLabel = selectedMuscleFilterLabel
+            val activeMuscleTargetFilterLabel = selectedMuscleTargetLabel
+            state.activeBounty?.let { bounty ->
+                item {
+                    ActiveBountyCardStrip(bounty = bounty)
                 }
-                if (activeEquipmentFilter != null || activeBodyRegionFilterLabel != null || activeMuscleFilterLabel != null || activeMuscleTargetFilterLabel != null) {
-                    item {
-                        ActiveSessionFilterBanner(
-                            equipment = activeEquipmentFilter,
-                            bodyRegion = activeBodyRegionFilterLabel,
-                            muscle = activeMuscleFilterLabel,
-                            muscleTarget = activeMuscleTargetFilterLabel,
-                            matchingExerciseCount = orderedExercises.size,
-                            onClearEquipment = { selectedEquipmentFilter = null },
-                            onClearBodyRegion = { selectedBodyRegionFilterKey = null },
-                            onClearMuscle = { selectedMuscleFilterKey = null },
-                            onClearMuscleTarget = {
-                                selectedMuscleTargetBucketKey = null
-                                selectedMuscleTargetSubcategoryKey = null
-                            },
-                            onClearAll = {
-                                selectedEquipmentFilter = null
-                                selectedBodyRegionFilterKey = null
-                                selectedMuscleFilterKey = null
-                                selectedMuscleTargetBucketKey = null
-                                selectedMuscleTargetSubcategoryKey = null
-                            },
-                        )
-                    }
-                }
-                if (!focusMode) {
-                    muscleTargetAction?.let { action ->
-                        item {
-                            ActiveWorkoutMuscleTargetActionStrip(
-                                action = action,
-                                onAction = {
-                                    when (action.type) {
-                                        ActiveWorkoutMuscleTargetActionType.OpenExercise -> {
-                                            action.exerciseIndex?.let(onOpenExercise)
-                                        }
-                                        ActiveWorkoutMuscleTargetActionType.OpenFilteredPicker -> {
-                                            onOpenMuscleTargetPicker(action.bucketKey, action.subcategoryKey)
-                                        }
-                                    }
-                                },
-                            )
-                        }
-                    }
-                    freshnessAction?.let { action ->
-                        item {
-                            ActiveWorkoutFreshnessActionStrip(
-                                action = action,
-                                onAction = {
-                                    when (action.type) {
-                                        ActiveWorkoutFreshnessActionType.OpenExercise -> {
-                                            action.exerciseIndex?.let(onOpenExercise)
-                                        }
-                                        ActiveWorkoutFreshnessActionType.OpenFilteredPicker -> {
-                                            onOpenFreshnessTargetPicker(action.muscleKey, action.muscleLabel)
-                                        }
-                                    }
-                                },
-                            )
-                        }
-                    }
-                }
-                if (orderedExercises.isEmpty() && (activeEquipmentFilter != null || activeBodyRegionFilterLabel != null || activeMuscleFilterLabel != null || activeMuscleTargetFilterLabel != null)) {
-                    item {
-                        FeatureCard(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f)) {
-                            Text(
-                                "No exercises match the current filters.",
-                                modifier = Modifier.padding(16.dp),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    }
-                }
-                items(
-                    items = orderedExercises,
-                    key = { orderedExercise -> "${orderedExercise.index}:${orderedExercise.value.exerciseId}" },
-                ) { orderedExercise ->
-                    val exerciseIndex = orderedExercise.index
-                    val exercise = orderedExercise.value
-                    SessionExerciseRow(
-                        exercise = exercise,
-                        fruitIconsEnabled = shouldShowFruitWorkoutBadges,
-                        recommendationBias = state.recommendationBiasByExerciseId[exercise.exerciseId] ?: RecommendationBias.Neutral,
-                        onOpen = { onOpenExercise(exerciseIndex) },
-                        onShowDetail = { onShowExerciseDetail(exercise.exerciseId) },
-                        onDelete = { pendingExerciseDeletionIndex = exerciseIndex },
+            }
+            if (activeEquipmentFilter != null || activeBodyRegionFilterLabel != null || activeMuscleFilterLabel != null || activeMuscleTargetFilterLabel != null) {
+                item {
+                    ActiveSessionFilterBanner(
+                        equipment = activeEquipmentFilter,
+                        bodyRegion = activeBodyRegionFilterLabel,
+                        muscle = activeMuscleFilterLabel,
+                        muscleTarget = activeMuscleTargetFilterLabel,
+                        matchingExerciseCount = orderedExercises.size,
+                        onClearEquipment = { selectedEquipmentFilter = null },
+                        onClearBodyRegion = { selectedBodyRegionFilterKey = null },
+                        onClearMuscle = { selectedMuscleFilterKey = null },
+                        onClearMuscleTarget = {
+                            selectedMuscleTargetBucketKey = null
+                            selectedMuscleTargetSubcategoryKey = null
+                        },
+                        onClearAll = {
+                            selectedEquipmentFilter = null
+                            selectedBodyRegionFilterKey = null
+                            selectedMuscleFilterKey = null
+                            selectedMuscleTargetBucketKey = null
+                            selectedMuscleTargetSubcategoryKey = null
+                        },
                     )
                 }
-                item {
-                    AddExerciseCallToAction(onAddExercise = onOpenAddExercise)
-                }
-                if (!focusMode && shouldShowPickNextExercise) {
+            }
+            if (!focusMode) {
+                muscleTargetAction?.let { action ->
                     item {
-                        PickNextExerciseCallToAction(
-                            untouchedExerciseCount = untouchedExerciseCount,
-                            smartTargetMuscle = state.profile?.smartPickerTargetMuscle,
-                            onPickNextExercise = {
-                                onPickNextExercise(
-                                    selectedEquipmentFilter,
-                                    selectedBodyRegionFilterKey,
-                                    selectedMuscleFilterKey,
-                                    selectedMuscleTargetBucketKey,
-                                    selectedMuscleTargetSubcategoryKey,
-                                )
+                        ActiveWorkoutMuscleTargetActionStrip(
+                            action = action,
+                            onAction = {
+                                when (action.type) {
+                                    ActiveWorkoutMuscleTargetActionType.OpenExercise -> {
+                                        action.exerciseIndex?.let(onOpenExercise)
+                                    }
+                                    ActiveWorkoutMuscleTargetActionType.OpenFilteredPicker -> {
+                                        onOpenMuscleTargetPicker(action.bucketKey, action.subcategoryKey)
+                                    }
+                                }
                             },
                         )
                     }
                 }
-                item { Spacer(modifier = Modifier.height(96.dp)) }
+                freshnessAction?.let { action ->
+                    item {
+                        ActiveWorkoutFreshnessActionStrip(
+                            action = action,
+                            onAction = {
+                                when (action.type) {
+                                    ActiveWorkoutFreshnessActionType.OpenExercise -> {
+                                        action.exerciseIndex?.let(onOpenExercise)
+                                    }
+                                    ActiveWorkoutFreshnessActionType.OpenFilteredPicker -> {
+                                        onOpenFreshnessTargetPicker(action.muscleKey, action.muscleLabel)
+                                    }
+                                }
+                            },
+                        )
+                    }
+                }
             }
+            if (orderedExercises.isEmpty() && (activeEquipmentFilter != null || activeBodyRegionFilterLabel != null || activeMuscleFilterLabel != null || activeMuscleTargetFilterLabel != null)) {
+                item {
+                    FeatureCard(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f)) {
+                        Text(
+                            "No exercises match the current filters.",
+                            modifier = Modifier.padding(16.dp),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+            items(
+                items = orderedExercises,
+                key = { orderedExercise -> "${orderedExercise.index}:${orderedExercise.value.exerciseId}" },
+            ) { orderedExercise ->
+                val exerciseIndex = orderedExercise.index
+                val exercise = orderedExercise.value
+                SessionExerciseRow(
+                    exercise = exercise,
+                    fruitIconsEnabled = shouldShowFruitWorkoutBadges,
+                    recommendationBias = state.recommendationBiasByExerciseId[exercise.exerciseId] ?: RecommendationBias.Neutral,
+                    onOpen = { onOpenExercise(exerciseIndex) },
+                    onShowDetail = { onShowExerciseDetail(exercise.exerciseId) },
+                    onDelete = { pendingExerciseDeletionIndex = exerciseIndex },
+                )
+            }
+            item {
+                AddExerciseCallToAction(onAddExercise = onOpenAddExercise)
+            }
+            if (!focusMode && shouldShowPickNextExercise) {
+                item {
+                    PickNextExerciseCallToAction(
+                        untouchedExerciseCount = untouchedExerciseCount,
+                        smartTargetMuscle = state.profile?.smartPickerTargetMuscle,
+                        onPickNextExercise = {
+                            onPickNextExercise(
+                                selectedEquipmentFilter,
+                                selectedBodyRegionFilterKey,
+                                selectedMuscleFilterKey,
+                                selectedMuscleTargetBucketKey,
+                                selectedMuscleTargetSubcategoryKey,
+                            )
+                        },
+                    )
+                }
+            }
+            item { Spacer(modifier = Modifier.height(96.dp)) }
         }
     }
 
