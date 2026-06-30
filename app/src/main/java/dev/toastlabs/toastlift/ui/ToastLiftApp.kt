@@ -112,7 +112,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Divider
 import androidx.compose.material3.DropdownMenu
@@ -125,8 +124,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -301,6 +298,8 @@ import dev.toastlabs.toastlift.data.muscleTargetSubcategoriesForBucket
 import dev.toastlabs.toastlift.data.normalizeExerciseVideoLinkLabel
 import dev.toastlabs.toastlift.data.normalizeExerciseVideoLinkUrl
 import dev.toastlabs.toastlift.data.resolveMuscleTargetContributions
+import dev.toastlabs.toastlift.R
+import androidx.compose.ui.res.painterResource
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
@@ -316,14 +315,141 @@ import java.time.format.DateTimeFormatter
 import java.time.temporal.TemporalAdjusters
 import java.util.Locale
 
-private val MainTab.icon
+// DESIGN.md §2: 3 nav tabs with custom VectorDrawable icons.
+private val MainTab.navIconRes: Int
     get() = when (this) {
-        MainTab.Today -> Icons.Rounded.Home
-        MainTab.Generate -> Icons.Rounded.AutoAwesome
-        MainTab.Library -> Icons.Rounded.LibraryBooks
-        MainTab.History -> Icons.Rounded.QueryStats
-        MainTab.Profile -> Icons.Rounded.AccountCircle
+        MainTab.Home -> R.drawable.ic_nav_home
+        MainTab.Explore -> R.drawable.ic_nav_explore
+        MainTab.You -> R.drawable.ic_nav_you
     }
+
+/**
+ * Custom floating bottom nav bar per DESIGN.md §5 "Bottom Bar (Custom, replaces NavigationBar)".
+ *
+ * - Floating pill shape: RoundedCornerShape(28.dp)
+ * - 16dp horizontal margin, 24dp bottom margin
+ * - 60dp height
+ * - surface color @ 90% alpha background
+ * - 3 items only, icon-only by default (label shown on selected tab)
+ * - Active item: accent color + 4dp top indicator line
+ * - Inactive item: muted (onSurfaceVariant) color
+ */
+@Composable
+private fun ToastLiftBottomBar(
+    selectedTab: MainTab,
+    onSelectTab: (MainTab) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val uiColors = LocalUiColors.current
+    val surface = MaterialTheme.colorScheme.surface
+    val accent = MaterialTheme.colorScheme.primary
+    val inactive = MaterialTheme.colorScheme.onSurfaceVariant
+    val barShape = RoundedCornerShape(28.dp)
+
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp)
+            .padding(bottom = 24.dp),
+        contentAlignment = Alignment.BottomCenter,
+    ) {
+        Surface(
+            shape = barShape,
+            color = surface.copy(alpha = 0.9f),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(60.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxSize(),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                MainTab.entries.forEach { tab ->
+                    val isSelected = selectedTab == tab
+                    val iconTint by animateColorAsState(
+                        targetValue = if (isSelected) accent else inactive,
+                        animationSpec = tween(180),
+                        label = "nav-icon-tint-${tab.label}",
+                    )
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                        modifier = Modifier
+                            .height(60.dp)
+                            .weight(1f)
+                            .clickable { onSelectTab(tab) }
+                            .padding(vertical = 8.dp),
+                    ) {
+                        // 4dp top indicator line on active item.
+                        Box(
+                            modifier = Modifier
+                                .width(28.dp)
+                                .height(4.dp)
+                                .clip(RoundedCornerShape(2.dp))
+                                .background(if (isSelected) accent else Color.Transparent),
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Icon(
+                            painter = painterResource(tab.navIconRes),
+                            contentDescription = tab.label,
+                            tint = iconTint,
+                            modifier = Modifier.size(22.dp),
+                        )
+                        // Label only on selected tab.
+                        if (isSelected) {
+                            Text(
+                                text = tab.label,
+                                color = iconTint,
+                                fontFamily = MonoFamily,
+                                fontSize = 9.sp,
+                                letterSpacing = 0.15.em,
+                                fontWeight = FontWeight.Medium,
+                                maxLines = 1,
+                            )
+                        } else {
+                            Spacer(modifier = Modifier.height(11.dp))
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Screen header per DESIGN.md §5 "Screen Header (Replaces TopAppBar)".
+ *
+ * - NOT a CenterAlignedTopAppBar. No app bar chrome/background.
+ * - Left-aligned Text using Display family (Bebas Neue) at 28sp
+ * - 20dp horizontal padding, 12dp top
+ * - Optional trailing IconButton on the right
+ */
+@Composable
+private fun ToastLiftScreenHeader(
+    title: String,
+    modifier: Modifier = Modifier,
+    trailing: (@Composable () -> Unit)? = null,
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 12.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = title,
+            color = MaterialTheme.colorScheme.onBackground,
+            fontFamily = DisplayFamily,
+            fontSize = 28.sp,
+            letterSpacing = 0.02.em,
+        )
+        if (trailing != null) {
+            trailing()
+        }
+    }
+}
 
 private data class GlowAccent(
     val color: Color,
@@ -951,40 +1077,14 @@ fun ToastLiftApp(
                         containerColor = Color.Transparent,
                         topBar = {
                             if (
-                                displayedTab != MainTab.Library &&
-                                !(displayedTab == MainTab.Generate && isGenerateFullscreenFlow) &&
-                                !(displayedTab == MainTab.Today && isTodayFullscreenFlow)
+                                !(displayedTab == MainTab.Home && isTodayFullscreenFlow)
                             ) {
-                                CenterAlignedTopAppBar(
-                                    title = {
-                                        if (displayedTab == MainTab.Generate) {
-                                            Box(
-                                                modifier = Modifier
-                                                    .heightIn(min = 48.dp)
-                                                    .clip(RoundedCornerShape(percent = 10))
-                                                    .clickable(onClick = viewModel::generateWorkout)
-                                                    .padding(horizontal = 12.dp),
-                                                contentAlignment = Alignment.Center,
-                                            ) {
-                                                Text(
-                                                    displayedTab.label.uppercase(),
-                                                    fontFamily = MonoFamily,
-                                                    fontSize = 12.sp,
-                                                    letterSpacing = 0.15.em,
-                                                    fontWeight = FontWeight.Medium,
-                                                )
-                                            }
-                                        } else {
-                                            Text(
-                                                displayedTab.label.uppercase(),
-                                                fontFamily = MonoFamily,
-                                                fontSize = 12.sp,
-                                                letterSpacing = 0.15.em,
-                                                fontWeight = FontWeight.Medium,
-                                            )
-                                        }
-                                    },
-                                    actions = {
+                                // DESIGN.md §5 Screen Header (replaces CenterAlignedTopAppBar):
+                                // left-aligned Display-family text, no app bar chrome,
+                                // optional trailing IconButton.
+                                ToastLiftScreenHeader(
+                                    title = displayedTab.label,
+                                    trailing = {
                                         var expanded by remember { mutableStateOf(false) }
                                         IconButton(onClick = { expanded = true }) {
                                             Text(
@@ -1005,7 +1105,7 @@ fun ToastLiftApp(
                                                 text = { Text("Open profile") },
                                                 onClick = {
                                                     expanded = false
-                                                    viewModel.selectTab(MainTab.Profile)
+                                                    viewModel.selectTab(MainTab.You)
                                                 },
                                             )
                                         }
@@ -1016,46 +1116,14 @@ fun ToastLiftApp(
                         snackbarHost = { SnackbarHost(snackbars) },
                         bottomBar = {
                             if (
-                                !(displayedTab == MainTab.Generate && isGenerateFullscreenFlow) &&
-                                !(displayedTab == MainTab.Today && isTodayFullscreenFlow)
+                                !(displayedTab == MainTab.Home && isTodayFullscreenFlow)
                             ) {
-                                val uiColors = LocalUiColors.current
-                                Column {
-                                    Divider(color = uiColors.chromeDivider, thickness = 1.dp)
-                                    NavigationBar(containerColor = MaterialTheme.colorScheme.background) {
-                                        MainTab.entries.forEach { tab ->
-                                            NavigationBarItem(
-                                                selected = displayedTab == tab,
-                                                onClick = { viewModel.selectTab(tab) },
-                                                icon = {
-                                                    Icon(
-                                                        imageVector = tab.icon,
-                                                        contentDescription = tab.label,
-                                                        modifier = Modifier.size(20.dp),
-                                                        tint = if (displayedTab == tab) {
-                                                            MaterialTheme.colorScheme.onBackground
-                                                        } else {
-                                                            uiColors.inactiveNavigation
-                                                        },
-                                                    )
-                                                },
-                                                label = {
-                                                    Text(
-                                                        tab.label.uppercase(),
-                                                        fontFamily = MonoFamily,
-                                                        fontSize = 9.sp,
-                                                        letterSpacing = 0.12.em,
-                                                        color = if (displayedTab == tab) {
-                                                            MaterialTheme.colorScheme.onBackground
-                                                        } else {
-                                                            uiColors.inactiveNavigation
-                                                        },
-                                                    )
-                                                },
-                                            )
-                                        }
-                                    }
-                                }
+                                // DESIGN.md §5 custom Bottom Bar (replaces NavigationBar):
+                                // floating pill, 3 tabs, label on selected only.
+                                ToastLiftBottomBar(
+                                    selectedTab = displayedTab,
+                                    onSelectTab = viewModel::selectTab,
+                                )
                             }
                         },
                     ) { padding ->
@@ -1080,10 +1148,11 @@ fun ToastLiftApp(
                                 label = "main-tab-transition",
                             ) { tab ->
                                 when (tab) {
-                                    MainTab.Today -> TodayScreen(
+                                    // DESIGN.md §2: Home merges old Today + Generate.
+                                    MainTab.Home -> TodayScreen(
                                         state = state,
                                         onGenerate = viewModel::generateWorkout,
-                                        onOpenGenerate = { viewModel.selectTab(MainTab.Generate) },
+                                        onOpenGenerate = { viewModel.generateWorkout() },
                                         onStartFreshnessReEntry = viewModel::startFreshnessReEntryWorkout,
                                         onStartTemplate = viewModel::startTemplate,
                                         onEditTemplate = viewModel::editTemplate,
@@ -1149,52 +1218,8 @@ fun ToastLiftApp(
                                         onOpenLibraryFreshnessMuscle = viewModel::openLibraryForFreshnessMuscle,
                                     )
 
-                                MainTab.Generate -> GenerateScreen(
-                                    state = state,
-                                    onGenerate = viewModel::generateWorkout,
-                                    onSwapGenerated = viewModel::swapGeneratedWorkoutToFocus,
-                                    onStartGenerated = viewModel::startGeneratedWorkout,
-                                    onSaveGenerated = viewModel::saveGeneratedTemplate,
-                                    onShowExerciseDetail = viewModel::showExerciseDetail,
-                                    onRemoveGeneratedExercise = viewModel::removeGeneratedExercise,
-                                    onAddExercisesToGeneratedWorkout = viewModel::addExercisesToGeneratedWorkout,
-                                    onOpenExerciseHistory = viewModel::openExerciseHistory,
-                                    onOpenExerciseVideos = viewModel::openExerciseVideos,
-                                    onLibraryQueryChange = viewModel::updateLibraryQuery,
-                                    onToggleLibrarySearch = viewModel::toggleLibrarySearch,
-                                    onToggleLibraryFavoritesOnly = viewModel::toggleLibraryFavoritesOnly,
-                                    onToggleLibraryEquipmentFilter = viewModel::toggleLibraryEquipmentFilter,
-                                    onToggleLibraryEquipmentLocationFilter = viewModel::toggleLibraryEquipmentLocationFilter,
-                                    onToggleLibraryTargetMuscleFilter = viewModel::toggleLibraryTargetMuscleFilter,
-                                    onToggleLibraryPrimeMoverFilter = viewModel::toggleLibraryPrimeMoverFilter,
-                                    onToggleLibraryFreshnessMuscleFilter = viewModel::toggleLibraryFreshnessMuscleFilter,
-                                    onToggleLibraryMuscleTargetBucketFilter = viewModel::toggleLibraryMuscleTargetBucketFilter,
-                                    onToggleLibraryMuscleTargetSubcategoryFilter = viewModel::toggleLibraryMuscleTargetSubcategoryFilter,
-                                    onToggleLibraryRecommendationBiasFilter = viewModel::toggleLibraryRecommendationBiasFilter,
-                                    onToggleLibraryLoggedHistoryFilter = viewModel::toggleLibraryLoggedHistoryFilter,
-                                    onClearLibraryFreshnessMuscleFilters = viewModel::clearLibraryFreshnessMuscleFilters,
-                                    onClearLibraryMuscleTargetFilters = viewModel::clearLibraryMuscleTargetFilters,
-                                    onClearLibraryFilters = viewModel::clearLibraryFilters,
-                                    onOpenCustomExerciseForGeneratedWorkout = viewModel::openCustomExerciseForGeneratedWorkout,
-                                    onOpenCustomExerciseForBuilder = viewModel::openCustomExerciseForBuilder,
-                                    onCloseCustomExercise = viewModel::closeCustomExerciseFlow,
-                                    onCustomExerciseDraftChange = viewModel::updateCustomExerciseDraft,
-                                    onCustomExerciseNameChange = viewModel::updateCustomExerciseName,
-                                    onGenerateCustomExercise = viewModel::generateCustomExerciseDetails,
-                                    onUseExistingExercise = viewModel::useExistingExerciseFromCustomFlow,
-                                    onSaveCustomExercise = viewModel::saveCustomExercise,
-                                    onPendingSelectionConsumed = viewModel::clearPendingAddExercisePickerSelection,
-                                    onAddExerciseToExistingTemplate = viewModel::addExerciseToExistingTemplate,
-                                    onCreateTemplateFromExercise = viewModel::createTemplateFromExercise,
-                                    onManualNameChange = viewModel::updateManualWorkoutName,
-                                    onRemoveManualExercise = viewModel::removeBuilderExercise,
-                                    onAddExercisesToBuilder = viewModel::addExercisesToBuilder,
-                                    onStartManualWorkout = viewModel::startManualWorkout,
-                                    onSaveManualTemplate = viewModel::saveManualTemplate,
-                                    onFullscreenFlowChange = { isGenerateFullscreenFlow = it },
-                                )
-
-                                    MainTab.Library -> LibraryScreen(
+                                    // DESIGN.md §2: Explore merges old Library + History.
+                                    MainTab.Explore -> LibraryScreen(
                                         state = state,
                                         onToggleSearch = viewModel::toggleLibrarySearch,
                                         onQueryChange = viewModel::updateLibraryQuery,
@@ -1230,26 +1255,8 @@ fun ToastLiftApp(
                                         onUseExistingExercise = viewModel::useExistingExerciseFromCustomFlow,
                                         onSaveCustomExercise = viewModel::saveCustomExercise,
                                     )
-
-                                    MainTab.History -> HistoryScreen(
-                                        navigationState = historyNavigationState,
-                                        profile = state.profile,
-                                        history = state.history,
-                                        bountyCards = state.bountyCards,
-                                        historyWorkoutMetrics = state.historyWorkoutMetrics,
-                                        tokenBalanceTrend = state.tokenBalanceTrend,
-                                        weeklyMuscleTargets = state.weeklyMuscleTargets,
-                                        topExercise = state.historyTopExercise,
-                                        topEquipment = state.historyTopEquipment,
-                                        strengthScore = state.historyStrengthScore,
-                                        historicalMuscleInsights = state.historicalMuscleInsights,
-                                        historicalMovementInsights = state.historicalMovementInsights,
-                                        onOpenWorkout = viewModel::openHistoryWorkout,
-                                        onShareWorkout = viewModel::prepareHistoryWorkoutShare,
-                                        onDeleteWorkout = viewModel::deleteHistoryWorkout,
-                                        onOpenLibraryMuscleTarget = viewModel::openLibraryForMuscleTarget,
-                                    )
-                                    MainTab.Profile -> ProfileScreen(state = state, viewModel = viewModel)
+                                    // DESIGN.md §2: You merges old Profile + onboarding.
+                                    MainTab.You -> ProfileScreen(state = state, viewModel = viewModel)
                                 }
                             }
                         }
@@ -17369,24 +17376,26 @@ private fun LeadingBadge(
 }
 
 @Composable
-private fun MiniTag(text: String, accent: Color = MaterialTheme.colorScheme.surfaceVariant) {
-    val colors = toneChipColors(accent)
-    Card(
-        shape = RoundedCornerShape(3.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = colors.container,
-            contentColor = colors.content,
-        ),
-        border = BorderStroke(1.dp, colors.border),
+private fun MiniTag(
+    text: String,
+    accent: Color = MaterialTheme.colorScheme.primary,
+) {
+    // DESIGN.md §5 MiniTag: pill shape, accent.color @ 0.15 alpha bg,
+    // Mono Label 9sp text in accent.color, 4dp vertical / 10dp horizontal padding.
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(50))
+            .background(accent.copy(alpha = 0.15f))
+            .padding(horizontal = 10.dp, vertical = 4.dp),
+        contentAlignment = Alignment.Center,
     ) {
         Text(
-            text.uppercase(),
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+            text = text.uppercase(),
+            color = accent,
             fontFamily = MonoFamily,
             fontSize = 9.sp,
-            letterSpacing = 0.12.em,
+            letterSpacing = 0.15.em,
             fontWeight = FontWeight.Medium,
-            color = colors.content,
             maxLines = 1,
             softWrap = false,
             overflow = TextOverflow.Ellipsis,
@@ -17426,6 +17435,23 @@ private fun SkeletonBlock(width: androidx.compose.ui.unit.Dp, height: androidx.c
     )
 }
 
+/**
+ * Card variant per DESIGN.md §5.
+ * - Flat: surface color, no border, no elevation, RoundedCornerShape(16.dp), 20dp padding
+ * - Tinted: surface + 8% accent color tint, no border
+ * - Hero: gradient background, 28dp padding, no border, larger
+ * - Outlined: 1dp outline in surfaceVariant color
+ *
+ * The 2dp top accent bar from the old Settings-style design is GONE.
+ * To indicate an accent, place a [MiniTag] pill in card content instead.
+ */
+enum class FeatureCardVariant {
+    Flat,
+    Tinted,
+    Hero,
+    Outlined,
+}
+
 @Composable
 private fun FeatureCard(
     modifier: Modifier = Modifier,
@@ -17436,40 +17462,68 @@ private fun FeatureCard(
     fullWidth: Boolean = true,
     accentKey: String? = null,
     showTopAccent: Boolean = true,
+    variant: FeatureCardVariant = FeatureCardVariant.Flat,
     content: @Composable () -> Unit,
 ) {
-    val uiColors = LocalUiColors.current
-    val resolvedContentColor = if (contentColor == Color.Unspecified) readableTextColorFor(containerColor) else contentColor
     val accent = if (accentKey != null) accentForKey(accentKey) else fallbackAccentForContainer(containerColor)
-    val topAccentColor = if (showTopAccent) {
-        topBorderAccentColor(accent)
+    val resolvedContentColor = if (contentColor == Color.Unspecified) {
+        readableTextColorFor(containerColor)
     } else {
-        Color.Transparent
+        contentColor
     }
-    val resolvedBorder = border ?: BorderStroke(
-        1.dp,
-        if (showTopAccent) topAccentColor.copy(alpha = 0.22f) else uiColors.chromeBorder,
-    )
-    Card(
+    val cardShape = RoundedCornerShape(16.dp)
+    val cardPadding = if (variant == FeatureCardVariant.Hero) 28.dp else 20.dp
+
+    // Resolve container color per variant.
+    val resolvedContainerColor = when (variant) {
+        FeatureCardVariant.Tinted -> accent.color.copy(alpha = 0.08f).compositeOver(containerColor)
+        else -> containerColor
+    }
+
+    // Resolve border per variant — the top accent bar is GONE.
+    val resolvedBorder: BorderStroke? = when {
+        border != null -> border
+        variant == FeatureCardVariant.Outlined -> BorderStroke(1.dp, MaterialTheme.colorScheme.surfaceVariant)
+        else -> null
+    }
+
+    // Hero variant gets a gradient background drawn beneath the surface.
+    val heroGradient = if (variant == FeatureCardVariant.Hero) {
+        Brush.linearGradient(
+            colors = if (LocalToastLiftIsDarkTheme.current) {
+                listOf(Color(0xFF0A0A0B), Color(0xFF1A1A0E))
+            } else {
+                listOf(Color(0xFFFAFAF8), Color(0xFFF1F1E8))
+            },
+        )
+    } else {
+        null
+    }
+
+    Box(
         modifier = if (fullWidth) modifier.fillMaxWidth() else modifier,
-        shape = RoundedCornerShape(10.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = containerColor,
-            contentColor = resolvedContentColor,
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = elevation),
-        border = resolvedBorder,
     ) {
-        Column {
-            if (showTopAccent) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(2.dp)
-                        .background(topAccentColor),
-                )
+        if (heroGradient != null) {
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .clip(cardShape)
+                    .background(heroGradient),
+            )
+        }
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = cardShape,
+            colors = CardDefaults.cardColors(
+                containerColor = if (heroGradient != null) Color.Transparent else resolvedContainerColor,
+                contentColor = resolvedContentColor,
+            ),
+            elevation = CardDefaults.cardElevation(defaultElevation = elevation),
+            border = resolvedBorder,
+        ) {
+            Box(modifier = Modifier.padding(cardPadding)) {
+                content()
             }
-            content()
         }
     }
 }

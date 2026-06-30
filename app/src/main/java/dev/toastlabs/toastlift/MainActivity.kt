@@ -106,8 +106,8 @@ class MainActivity : ComponentActivity() {
 
     private fun defaultTabForDebugSurface(surface: String): MainTab? {
         return when (surface.lowercase()) {
-            "completion_receipt", "today_receipt_recap" -> MainTab.Today
-            "history_receipt_replay" -> MainTab.History
+            "completion_receipt", "today_receipt_recap" -> MainTab.Home
+            "history_receipt_replay" -> MainTab.Explore
             else -> null
         }
     }

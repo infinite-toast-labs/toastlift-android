@@ -13,6 +13,7 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalView
@@ -20,6 +21,8 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
@@ -40,7 +43,46 @@ internal val MonoFamily = FontFamily(
 // Sans uses system default (matches Inter / Roboto on most devices)
 internal val SansFamily = FontFamily.Default
 
+// ── Spacing ────────────────────────────────────────────────────────────────────
+
+@Immutable
+object Spacing {
+    val screenPadding: Dp = 20.dp
+    val sectionGap: Dp = 24.dp
+    val itemGap: Dp = 12.dp
+    val cardPadding: Dp = 20.dp
+    val heroPadding: Dp = 28.dp
+    val minTouchTarget: Dp = 48.dp
+    val bottomBarHeight: Dp = 60.dp
+    val bottomBarMargin: Dp = 24.dp
+}
+
+internal val LocalSpacing = staticCompositionLocalOf { Spacing }
+
+// ── Gradient Tokens ────────────────────────────────────────────────────────────
+
+@Immutable
+data class Gradients(
+    val heroGradient: Brush,
+    val sessionGradient: Brush,
+)
+
+internal val LocalGradients = staticCompositionLocalOf<Gradients> {
+    error("Gradients not provided")
+}
+
+private val ToastLiftDarkGradients = Gradients(
+    heroGradient = Brush.linearGradient(listOf(Color(0xFF0A0A0B), Color(0xFF1A1A0E))),
+    sessionGradient = Brush.linearGradient(listOf(Color(0xFF1C1C1F), Color(0xFF0A0A0B))),
+)
+
+private val ToastLiftLightGradients = Gradients(
+    heroGradient = Brush.linearGradient(listOf(Color(0xFFFAFAF8), Color(0xFFEFEEE8))),
+    sessionGradient = Brush.linearGradient(listOf(Color(0xFFF5F5F3), Color(0xFFFAFAF8))),
+)
+
 // ── Status Accent Colors ───────────────────────────────────────────────────────
+// Ember (red), Orange, Gold (yellow), Surge (green), Amethyst (blue)
 
 @Immutable
 data class StatusColors(
@@ -54,20 +96,22 @@ data class StatusColors(
 internal val LocalStatusColors = staticCompositionLocalOf { StatusColors() }
 private val ToastLiftDarkStatusColors = StatusColors()
 private val ToastLiftLightStatusColors = StatusColors(
-    red = Color(0xFFDE3C39),
-    orange = Color(0xFFD85B00),
-    yellow = Color(0xFFAD7E00),
-    green = Color(0xFF009D51),
-    blue = Color(0xFF0081E6),
+    red = Color(0xFFD73433),
+    orange = Color(0xFFC14A00),
+    yellow = Color(0xFF9A6E00),
+    green = Color(0xFF008141),
+    blue = Color(0xFF1D76C8),
 )
 
 // ── Shared UI Recipe Colors ───────────────────────────────────────────────────
 
 @Immutable
 data class UiColors(
+    val surfaceHigh: Color = Color(0xFF1C1C1F),
+    val surfaceMax: Color = Color(0xFF242428),
     val inkOnLightSurface: Color = Color(0xFF10131A),
-    val chromeDivider: Color = Color(0xFF2A2A2A),
-    val chromeBorder: Color = Color(0xFF2A2A2A),
+    val chromeDivider: Color = Color(0xFF2A2A2E),
+    val chromeBorder: Color = Color(0xFF2A2A2E),
     val inactiveNavigation: Color = Color(0xFF666666),
     val progressTrack: Color = Color(0xFF333333),
     val highlight: Color = Color(0xFFFFFFFF),
@@ -84,8 +128,13 @@ data class UiColors(
 )
 
 internal val LocalUiColors = staticCompositionLocalOf { UiColors() }
-private val ToastLiftDarkUiColors = UiColors()
+private val ToastLiftDarkUiColors = UiColors(
+    surfaceHigh = Color(0xFF1C1C1F),
+    surfaceMax = Color(0xFF242428),
+)
 private val ToastLiftLightUiColors = UiColors(
+    surfaceHigh = Color(0xFFF5F5F3),
+    surfaceMax = Color(0xFFEFEFED),
     inkOnLightSurface = Color(0xFF13161B),
     chromeDivider = Color(0xFFC1CCD8),
     chromeBorder = Color(0xFFB2BFCE),
@@ -102,7 +151,7 @@ internal val LocalToastLiftIsDarkTheme = staticCompositionLocalOf { false }
 
 private val ToastLiftDarkColors = darkColorScheme(
     primary = Color(0xFFE8FF47),
-    onPrimary = Color(0xFF0E0E0E),
+    onPrimary = Color(0xFF0A0A0B),
     primaryContainer = Color(0xFF1A1C0E),
     onPrimaryContainer = Color(0xFFE8FF47),
     secondary = Color(0xFF3DFFA0),
@@ -113,13 +162,13 @@ private val ToastLiftDarkColors = darkColorScheme(
     onTertiary = Color(0xFF1A1400),
     tertiaryContainer = Color(0xFF2A2008),
     onTertiaryContainer = Color(0xFFFFC940),
-    background = Color(0xFF0E0E0E),
-    onBackground = Color(0xFFE8E8E8),
-    surface = Color(0xFF161616),
-    onSurface = Color(0xFFE8E8E8),
-    surfaceVariant = Color(0xFF1F2328),
-    onSurfaceVariant = Color(0xFFC2C7D0),
-    outline = Color(0xFF5B616B),
+    background = Color(0xFF0A0A0B),
+    onBackground = Color(0xFFECECEC),
+    surface = Color(0xFF141416),
+    onSurface = Color(0xFFECECEC),
+    surfaceVariant = Color(0xFF1C1C1F),
+    onSurfaceVariant = Color(0xFF9A9AA0),
+    outline = Color(0xFF2A2A2E),
     outlineVariant = Color(0xFF383E46),
     error = Color(0xFFFF3D3D),
     onError = Color(0xFF1A0505),
@@ -130,25 +179,25 @@ private val ToastLiftDarkColors = darkColorScheme(
 // ── Light Theme ────────────────────────────────────────────────────────────────
 
 private val ToastLiftLightColors = lightColorScheme(
-    primary = Color(0xFF3B7B1F),
+    primary = Color(0xFF2D7A1E),
     onPrimary = Color(0xFFFFFFFF),
     primaryContainer = Color(0xFFD1FEC3),
     onPrimaryContainer = Color(0xFF13250C),
-    secondary = Color(0xFF009550),
+    secondary = Color(0xFF00854E),
     onSecondary = Color(0xFF111318),
     secondaryContainer = Color(0xFFBDFFD6),
     onSecondaryContainer = Color(0xFF062615),
-    tertiary = Color(0xFFA57800),
+    tertiary = Color(0xFF9A6E00),
     onTertiary = Color(0xFF111318),
     tertiaryContainer = Color(0xFFFFE8A5),
     onTertiaryContainer = Color(0xFF2E1F00),
-    background = Color(0xFFFCFAF4),
-    onBackground = Color(0xFF17181C),
-    surface = Color(0xFFFFFDFA),
-    onSurface = Color(0xFF17181C),
-    surfaceVariant = Color(0xFFE7EAF0),
-    onSurfaceVariant = Color(0xFF4C5A69),
-    outline = Color(0xFF9CA6B1),
+    background = Color(0xFFFAFAF8),
+    onBackground = Color(0xFF1A1A1C),
+    surface = Color(0xFFFFFFFF),
+    onSurface = Color(0xFF1A1A1C),
+    surfaceVariant = Color(0xFFF5F5F3),
+    onSurfaceVariant = Color(0xFF6B6B72),
+    outline = Color(0xFFE0E0E2),
     outlineVariant = Color(0xFFC7CFD7),
     error = Color(0xFFD43030),
     onError = Color(0xFFFFFFFF),
@@ -157,6 +206,13 @@ private val ToastLiftLightColors = lightColorScheme(
 )
 
 // ── Typography ─────────────────────────────────────────────────────────────────
+
+internal val HeroTextStyle = TextStyle(
+    fontFamily = DisplayFamily,
+    fontSize = 64.sp,
+    fontWeight = FontWeight.Normal,
+    letterSpacing = 0.02.em,
+)
 
 private val ToastLiftTypography = Typography(
     displayLarge = TextStyle(
@@ -173,13 +229,13 @@ private val ToastLiftTypography = Typography(
     ),
     displaySmall = TextStyle(
         fontFamily = DisplayFamily,
-        fontSize = 32.sp,
+        fontSize = 28.sp,
         fontWeight = FontWeight.Normal,
         letterSpacing = 0.02.em,
     ),
     headlineLarge = TextStyle(
         fontFamily = SansFamily,
-        fontSize = 24.sp,
+        fontSize = 22.sp,
         fontWeight = FontWeight.Bold,
     ),
     headlineMedium = TextStyle(
@@ -194,8 +250,8 @@ private val ToastLiftTypography = Typography(
     ),
     titleLarge = TextStyle(
         fontFamily = SansFamily,
-        fontSize = 18.sp,
-        fontWeight = FontWeight.Medium,
+        fontSize = 16.sp,
+        fontWeight = FontWeight.SemiBold,
     ),
     titleMedium = TextStyle(
         fontFamily = SansFamily,
@@ -220,7 +276,7 @@ private val ToastLiftTypography = Typography(
     ),
     bodySmall = TextStyle(
         fontFamily = SansFamily,
-        fontSize = 11.sp,
+        fontSize = 12.sp,
         fontWeight = FontWeight.Normal,
     ),
     labelLarge = TextStyle(
@@ -237,9 +293,9 @@ private val ToastLiftTypography = Typography(
     ),
     labelSmall = TextStyle(
         fontFamily = MonoFamily,
-        fontSize = 8.sp,
+        fontSize = 9.sp,
         fontWeight = FontWeight.Normal,
-        letterSpacing = 0.18.em,
+        letterSpacing = 0.15.em,
     ),
 )
 
@@ -272,6 +328,8 @@ fun ToastLiftTheme(
         LocalToastLiftIsDarkTheme provides isDarkTheme,
         LocalStatusColors provides if (isDarkTheme) ToastLiftDarkStatusColors else ToastLiftLightStatusColors,
         LocalUiColors provides if (isDarkTheme) ToastLiftDarkUiColors else ToastLiftLightUiColors,
+        LocalSpacing provides Spacing,
+        LocalGradients provides if (isDarkTheme) ToastLiftDarkGradients else ToastLiftLightGradients,
     ) {
         MaterialTheme(
             colorScheme = if (isDarkTheme) ToastLiftDarkColors else ToastLiftLightColors,
