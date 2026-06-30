@@ -461,6 +461,41 @@ private data class GlowAccent(
     val glow: Color get() = color.copy(alpha = 0.12f)
 }
 
+/**
+ * Internal sub-sections within the Explore tab (DESIGN.md §2: Explore merges
+ * old Library + History). Toggled via [ExploreSectionToggle].
+ */
+private enum class ExploreSection(val label: String) {
+    Library("Library"),
+    History("History"),
+}
+
+/**
+ * DESIGN.md §2: Explore tab hosts Library + History. A compact FilterChip row
+ * toggles between them — keeps the canvas flat (no Material TabRow chrome).
+ */
+@Composable
+private fun ExploreSectionToggle(
+    selected: ExploreSection,
+    onSelect: (ExploreSection) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        ExploreSection.entries.forEach { section ->
+            FilterChip(
+                selected = selected == section,
+                onClick = { onSelect(section) },
+                label = { Text(section.label) },
+            )
+        }
+    }
+}
+
 private val DarkEmberAccent = GlowAccent(
     color = Color(0xFFFF3D3D),
 )
@@ -1077,7 +1112,7 @@ fun ToastLiftApp(
                         containerColor = Color.Transparent,
                         topBar = {
                             if (
-                                !(displayedTab == MainTab.Home && isTodayFullscreenFlow)
+                                !(displayedTab == MainTab.Home && (isTodayFullscreenFlow || isGenerateFullscreenFlow))
                             ) {
                                 // DESIGN.md §5 Screen Header (replaces CenterAlignedTopAppBar):
                                 // left-aligned Display-family text, no app bar chrome,
@@ -1116,7 +1151,7 @@ fun ToastLiftApp(
                         snackbarHost = { SnackbarHost(snackbars) },
                         bottomBar = {
                             if (
-                                !(displayedTab == MainTab.Home && isTodayFullscreenFlow)
+                                !(displayedTab == MainTab.Home && (isTodayFullscreenFlow || isGenerateFullscreenFlow))
                             ) {
                                 // DESIGN.md §5 custom Bottom Bar (replaces NavigationBar):
                                 // floating pill, 3 tabs, label on selected only.
@@ -1149,112 +1184,200 @@ fun ToastLiftApp(
                             ) { tab ->
                                 when (tab) {
                                     // DESIGN.md §2: Home merges old Today + Generate.
-                                    MainTab.Home -> TodayScreen(
-                                        state = state,
-                                        onGenerate = viewModel::generateWorkout,
-                                        onOpenGenerate = { viewModel.generateWorkout() },
-                                        onStartFreshnessReEntry = viewModel::startFreshnessReEntryWorkout,
-                                        onStartTemplate = viewModel::startTemplate,
-                                        onEditTemplate = viewModel::editTemplate,
-                                        onRenameTemplate = viewModel::renameTemplate,
-                                        onDeleteTemplate = viewModel::deleteTemplate,
-                                        onTemplateNameChange = viewModel::updateTodayTemplateName,
-                                        onRemoveTemplateExercise = viewModel::removeTodayTemplateExercise,
-                                        onAddExercisesToTemplate = viewModel::addExercisesToTodayTemplate,
-                                        onSaveTemplateEdits = viewModel::saveTodayTemplate,
-                                        onSaveFilteredTemplate = viewModel::saveTodayTemplateAs,
-                                        onStartEditedTemplate = viewModel::startTodayTemplateWorkout,
-                                        onStartFilteredTemplate = viewModel::startTodayTemplateViewWorkout,
-                                        onCloseTemplateEditor = viewModel::closeTodayTemplateEditor,
-                                        onLibraryQueryChange = viewModel::updateLibraryQuery,
-                                        onToggleLibrarySearch = viewModel::toggleLibrarySearch,
-                                        onToggleLibraryFavoritesOnly = viewModel::toggleLibraryFavoritesOnly,
-                                        onToggleLibraryEquipmentFilter = viewModel::toggleLibraryEquipmentFilter,
-                                        onToggleLibraryEquipmentLocationFilter = viewModel::toggleLibraryEquipmentLocationFilter,
-                                        onToggleLibraryTargetMuscleFilter = viewModel::toggleLibraryTargetMuscleFilter,
-                                        onToggleLibraryPrimeMoverFilter = viewModel::toggleLibraryPrimeMoverFilter,
-                                        onToggleLibraryFreshnessMuscleFilter = viewModel::toggleLibraryFreshnessMuscleFilter,
-                                        onToggleLibraryMuscleTargetBucketFilter = viewModel::toggleLibraryMuscleTargetBucketFilter,
-                                        onToggleLibraryMuscleTargetSubcategoryFilter = viewModel::toggleLibraryMuscleTargetSubcategoryFilter,
-                                        onToggleLibraryRecommendationBiasFilter = viewModel::toggleLibraryRecommendationBiasFilter,
-                                        onToggleLibraryLoggedHistoryFilter = viewModel::toggleLibraryLoggedHistoryFilter,
-                                        onClearLibraryFreshnessMuscleFilters = viewModel::clearLibraryFreshnessMuscleFilters,
-                                        onClearLibraryMuscleTargetFilters = viewModel::clearLibraryMuscleTargetFilters,
-                                        onClearLibraryFilters = viewModel::clearLibraryFilters,
-                                        onShowExerciseDetail = viewModel::showExerciseDetail,
-                                        onOpenCustomExercise = viewModel::openCustomExerciseForTodayTemplate,
-                                        onCloseCustomExercise = viewModel::closeCustomExerciseFlow,
-                                        onCustomExerciseDraftChange = viewModel::updateCustomExerciseDraft,
-                                        onCustomExerciseNameChange = viewModel::updateCustomExerciseName,
-                                        onGenerateCustomExercise = viewModel::generateCustomExerciseDetails,
-                                        onUseExistingExercise = viewModel::useExistingExerciseFromCustomFlow,
-                                        onSaveCustomExercise = viewModel::saveCustomExercise,
-                                        onPendingSelectionConsumed = viewModel::clearPendingAddExercisePickerSelection,
-                                        onAddExerciseToExistingTemplate = viewModel::addExerciseToExistingTemplate,
-                                        onCreateTemplateFromExercise = viewModel::createTemplateFromExercise,
-                                        onAddWorkoutExerciseToExistingTemplate = viewModel::addWorkoutExerciseToExistingTemplate,
-                                        onCreateTemplateFromWorkoutExercise = viewModel::createTemplateFromWorkoutExercise,
-                                        onAddTemplateExerciseToBuilder = viewModel::addWorkoutExerciseToBuilder,
-                                        onAddTemplateExerciseToMyPlan = viewModel::addWorkoutExerciseToGeneratedWorkout,
-                                        onOpenExerciseFamily = viewModel::openExerciseFamily,
-                                        onToggleFavorite = viewModel::toggleFavorite,
-                                        onOpenExerciseHistory = viewModel::openExerciseHistory,
-                                        onOpenExerciseVideos = viewModel::openExerciseVideos,
-                                        onOpenHistoryWorkout = viewModel::openHistoryWorkout,
-                                        onViewReceipt = viewModel::openHistoryReceipt,
-                                        onRestoreAbandonedWorkout = viewModel::restoreAbandonedWorkout,
-                                        onFullscreenFlowChange = { isTodayFullscreenFlow = it },
-                                        onShowProgramSetup = viewModel::showProgramSetup,
-                                        onRealizeSession = { viewModel.realizeNextSession(state.programReadiness) },
-                                        onSkipSession = { state.nextPlannedSession?.id?.let { viewModel.skipPlannedSession(it) } },
-                                        onUnskipSession = viewModel::unskipMostRecentSession,
-                                        onPauseProgram = viewModel::pauseProgram,
-                                        onResumeProgram = viewModel::resumeProgram,
-                                        onEndProgram = { state.activeProgram?.id?.let { viewModel.endProgram(it) } },
-                                        onUpdateReadiness = viewModel::updateReadiness,
-                                        onRunCheckpoint = viewModel::runPendingCheckpoint,
-                                        onTrainingFreshnessFilterChange = viewModel::setTrainingFreshnessFilter,
-                                        onTrainingFreshnessSortChange = viewModel::setTrainingFreshnessSort,
-                                        onOpenLibraryFreshnessMuscle = viewModel::openLibraryForFreshnessMuscle,
-                                    )
+                                    // GenerateScreen is shown as a fullscreen flow
+                                    // (DESIGN.md §6 motion: slide up) triggered from
+                                    // TodayScreen's "Generate" CTA via onOpenGenerate.
+                                    MainTab.Home -> {
+                                        if (isGenerateFullscreenFlow) {
+                                            BackHandler { isGenerateFullscreenFlow = false }
+                                            GenerateScreen(
+                                                state = state,
+                                                onGenerate = viewModel::generateWorkout,
+                                                onSwapGenerated = viewModel::swapGeneratedWorkoutToFocus,
+                                                onStartGenerated = viewModel::startGeneratedWorkout,
+                                                onSaveGenerated = viewModel::saveGeneratedTemplate,
+                                                onShowExerciseDetail = viewModel::showExerciseDetail,
+                                                onRemoveGeneratedExercise = viewModel::removeGeneratedExercise,
+                                                onAddExercisesToGeneratedWorkout = viewModel::addExercisesToGeneratedWorkout,
+                                                onOpenExerciseHistory = viewModel::openExerciseHistory,
+                                                onOpenExerciseVideos = viewModel::openExerciseVideos,
+                                                onLibraryQueryChange = viewModel::updateLibraryQuery,
+                                                onToggleLibrarySearch = viewModel::toggleLibrarySearch,
+                                                onToggleLibraryFavoritesOnly = viewModel::toggleLibraryFavoritesOnly,
+                                                onToggleLibraryEquipmentFilter = viewModel::toggleLibraryEquipmentFilter,
+                                                onToggleLibraryEquipmentLocationFilter = viewModel::toggleLibraryEquipmentLocationFilter,
+                                                onToggleLibraryTargetMuscleFilter = viewModel::toggleLibraryTargetMuscleFilter,
+                                                onToggleLibraryPrimeMoverFilter = viewModel::toggleLibraryPrimeMoverFilter,
+                                                onToggleLibraryFreshnessMuscleFilter = viewModel::toggleLibraryFreshnessMuscleFilter,
+                                                onToggleLibraryMuscleTargetBucketFilter = viewModel::toggleLibraryMuscleTargetBucketFilter,
+                                                onToggleLibraryMuscleTargetSubcategoryFilter = viewModel::toggleLibraryMuscleTargetSubcategoryFilter,
+                                                onToggleLibraryRecommendationBiasFilter = viewModel::toggleLibraryRecommendationBiasFilter,
+                                                onToggleLibraryLoggedHistoryFilter = viewModel::toggleLibraryLoggedHistoryFilter,
+                                                onClearLibraryFreshnessMuscleFilters = viewModel::clearLibraryFreshnessMuscleFilters,
+                                                onClearLibraryMuscleTargetFilters = viewModel::clearLibraryMuscleTargetFilters,
+                                                onClearLibraryFilters = viewModel::clearLibraryFilters,
+                                                onOpenCustomExerciseForGeneratedWorkout = viewModel::openCustomExerciseForGeneratedWorkout,
+                                                onOpenCustomExerciseForBuilder = viewModel::openCustomExerciseForBuilder,
+                                                onCloseCustomExercise = viewModel::closeCustomExerciseFlow,
+                                                onCustomExerciseDraftChange = viewModel::updateCustomExerciseDraft,
+                                                onCustomExerciseNameChange = viewModel::updateCustomExerciseName,
+                                                onGenerateCustomExercise = viewModel::generateCustomExerciseDetails,
+                                                onUseExistingExercise = viewModel::useExistingExerciseFromCustomFlow,
+                                                onSaveCustomExercise = viewModel::saveCustomExercise,
+                                                onPendingSelectionConsumed = viewModel::clearPendingAddExercisePickerSelection,
+                                                onAddExerciseToExistingTemplate = viewModel::addExerciseToExistingTemplate,
+                                                onCreateTemplateFromExercise = viewModel::createTemplateFromExercise,
+                                                onManualNameChange = viewModel::updateManualWorkoutName,
+                                                onRemoveManualExercise = viewModel::removeBuilderExercise,
+                                                onAddExercisesToBuilder = viewModel::addExercisesToBuilder,
+                                                onStartManualWorkout = viewModel::startManualWorkout,
+                                                onSaveManualTemplate = viewModel::saveManualTemplate,
+                                                onFullscreenFlowChange = { isGenerateFullscreenFlow = it },
+                                            )
+                                        } else {
+                                            TodayScreen(
+                                                state = state,
+                                                onGenerate = viewModel::generateWorkout,
+                                                onOpenGenerate = {
+                                                    isGenerateFullscreenFlow = true
+                                                    viewModel.generateWorkout()
+                                                },
+                                                onStartFreshnessReEntry = viewModel::startFreshnessReEntryWorkout,
+                                                onStartTemplate = viewModel::startTemplate,
+                                                onEditTemplate = viewModel::editTemplate,
+                                                onRenameTemplate = viewModel::renameTemplate,
+                                                onDeleteTemplate = viewModel::deleteTemplate,
+                                                onTemplateNameChange = viewModel::updateTodayTemplateName,
+                                                onRemoveTemplateExercise = viewModel::removeTodayTemplateExercise,
+                                                onAddExercisesToTemplate = viewModel::addExercisesToTodayTemplate,
+                                                onSaveTemplateEdits = viewModel::saveTodayTemplate,
+                                                onSaveFilteredTemplate = viewModel::saveTodayTemplateAs,
+                                                onStartEditedTemplate = viewModel::startTodayTemplateWorkout,
+                                                onStartFilteredTemplate = viewModel::startTodayTemplateViewWorkout,
+                                                onCloseTemplateEditor = viewModel::closeTodayTemplateEditor,
+                                                onLibraryQueryChange = viewModel::updateLibraryQuery,
+                                                onToggleLibrarySearch = viewModel::toggleLibrarySearch,
+                                                onToggleLibraryFavoritesOnly = viewModel::toggleLibraryFavoritesOnly,
+                                                onToggleLibraryEquipmentFilter = viewModel::toggleLibraryEquipmentFilter,
+                                                onToggleLibraryEquipmentLocationFilter = viewModel::toggleLibraryEquipmentLocationFilter,
+                                                onToggleLibraryTargetMuscleFilter = viewModel::toggleLibraryTargetMuscleFilter,
+                                                onToggleLibraryPrimeMoverFilter = viewModel::toggleLibraryPrimeMoverFilter,
+                                                onToggleLibraryFreshnessMuscleFilter = viewModel::toggleLibraryFreshnessMuscleFilter,
+                                                onToggleLibraryMuscleTargetBucketFilter = viewModel::toggleLibraryMuscleTargetBucketFilter,
+                                                onToggleLibraryMuscleTargetSubcategoryFilter = viewModel::toggleLibraryMuscleTargetSubcategoryFilter,
+                                                onToggleLibraryRecommendationBiasFilter = viewModel::toggleLibraryRecommendationBiasFilter,
+                                                onToggleLibraryLoggedHistoryFilter = viewModel::toggleLibraryLoggedHistoryFilter,
+                                                onClearLibraryFreshnessMuscleFilters = viewModel::clearLibraryFreshnessMuscleFilters,
+                                                onClearLibraryMuscleTargetFilters = viewModel::clearLibraryMuscleTargetFilters,
+                                                onClearLibraryFilters = viewModel::clearLibraryFilters,
+                                                onShowExerciseDetail = viewModel::showExerciseDetail,
+                                                onOpenCustomExercise = viewModel::openCustomExerciseForTodayTemplate,
+                                                onCloseCustomExercise = viewModel::closeCustomExerciseFlow,
+                                                onCustomExerciseDraftChange = viewModel::updateCustomExerciseDraft,
+                                                onCustomExerciseNameChange = viewModel::updateCustomExerciseName,
+                                                onGenerateCustomExercise = viewModel::generateCustomExerciseDetails,
+                                                onUseExistingExercise = viewModel::useExistingExerciseFromCustomFlow,
+                                                onSaveCustomExercise = viewModel::saveCustomExercise,
+                                                onPendingSelectionConsumed = viewModel::clearPendingAddExercisePickerSelection,
+                                                onAddExerciseToExistingTemplate = viewModel::addExerciseToExistingTemplate,
+                                                onCreateTemplateFromExercise = viewModel::createTemplateFromExercise,
+                                                onAddWorkoutExerciseToExistingTemplate = viewModel::addWorkoutExerciseToExistingTemplate,
+                                                onCreateTemplateFromWorkoutExercise = viewModel::createTemplateFromWorkoutExercise,
+                                                onAddTemplateExerciseToBuilder = viewModel::addWorkoutExerciseToBuilder,
+                                                onAddTemplateExerciseToMyPlan = viewModel::addWorkoutExerciseToGeneratedWorkout,
+                                                onOpenExerciseFamily = viewModel::openExerciseFamily,
+                                                onToggleFavorite = viewModel::toggleFavorite,
+                                                onOpenExerciseHistory = viewModel::openExerciseHistory,
+                                                onOpenExerciseVideos = viewModel::openExerciseVideos,
+                                                onOpenHistoryWorkout = viewModel::openHistoryWorkout,
+                                                onViewReceipt = viewModel::openHistoryReceipt,
+                                                onRestoreAbandonedWorkout = viewModel::restoreAbandonedWorkout,
+                                                onFullscreenFlowChange = { isTodayFullscreenFlow = it },
+                                                onShowProgramSetup = viewModel::showProgramSetup,
+                                                onRealizeSession = { viewModel.realizeNextSession(state.programReadiness) },
+                                                onSkipSession = { state.nextPlannedSession?.id?.let { viewModel.skipPlannedSession(it) } },
+                                                onUnskipSession = viewModel::unskipMostRecentSession,
+                                                onPauseProgram = viewModel::pauseProgram,
+                                                onResumeProgram = viewModel::resumeProgram,
+                                                onEndProgram = { state.activeProgram?.id?.let { viewModel.endProgram(it) } },
+                                                onUpdateReadiness = viewModel::updateReadiness,
+                                                onRunCheckpoint = viewModel::runPendingCheckpoint,
+                                                onTrainingFreshnessFilterChange = viewModel::setTrainingFreshnessFilter,
+                                                onTrainingFreshnessSortChange = viewModel::setTrainingFreshnessSort,
+                                                onOpenLibraryFreshnessMuscle = viewModel::openLibraryForFreshnessMuscle,
+                                            )
+                                        }
+                                    }
 
                                     // DESIGN.md §2: Explore merges old Library + History.
-                                    MainTab.Explore -> LibraryScreen(
-                                        state = state,
-                                        onToggleSearch = viewModel::toggleLibrarySearch,
-                                        onQueryChange = viewModel::updateLibraryQuery,
-                                        onToggleFavoritesOnly = viewModel::toggleLibraryFavoritesOnly,
-                                        onToggleEquipmentFilter = viewModel::toggleLibraryEquipmentFilter,
-                                        onToggleEquipmentLocationFilter = viewModel::toggleLibraryEquipmentLocationFilter,
-                                        onToggleTargetMuscleFilter = viewModel::toggleLibraryTargetMuscleFilter,
-                                        onTogglePrimeMoverFilter = viewModel::toggleLibraryPrimeMoverFilter,
-                                        onToggleFreshnessMuscleFilter = viewModel::toggleLibraryFreshnessMuscleFilter,
-                                        onToggleMuscleTargetBucketFilter = viewModel::toggleLibraryMuscleTargetBucketFilter,
-                                        onToggleMuscleTargetSubcategoryFilter = viewModel::toggleLibraryMuscleTargetSubcategoryFilter,
-                                        onToggleRecommendationBiasFilter = viewModel::toggleLibraryRecommendationBiasFilter,
-                                        onToggleLoggedHistoryFilter = viewModel::toggleLibraryLoggedHistoryFilter,
-                                        onClearFreshnessMuscleFilters = viewModel::clearLibraryFreshnessMuscleFilters,
-                                        onClearMuscleTargetFilters = viewModel::clearLibraryMuscleTargetFilters,
-                                        onClearFilters = viewModel::clearLibraryFilters,
-                                        onDiscoverExercises = viewModel::generateExerciseDiscovery,
-                                        onClearExerciseDiscovery = viewModel::clearExerciseDiscovery,
-                                        onShowDetail = viewModel::showExerciseDetail,
-                                        onAddToBuilder = viewModel::addExerciseToBuilder,
-                                        onAddToMyPlan = viewModel::addExerciseToGeneratedWorkout,
-                                        onExploreFamily = viewModel::openExerciseFamily,
-                                        onToggleFavorite = viewModel::toggleFavorite,
-                                        onOpenExerciseHistory = viewModel::openExerciseHistory,
-                                        onOpenExerciseVideos = viewModel::openExerciseVideos,
-                                        onAddExerciseToExistingTemplate = viewModel::addExerciseToExistingTemplate,
-                                        onCreateTemplateFromExercise = viewModel::createTemplateFromExercise,
-                                        onOpenCustomExercise = viewModel::openCustomExerciseForLibrary,
-                                        onCloseCustomExercise = viewModel::closeCustomExerciseFlow,
-                                        onCustomExerciseDraftChange = viewModel::updateCustomExerciseDraft,
-                                        onCustomExerciseNameChange = viewModel::updateCustomExerciseName,
-                                        onGenerateCustomExercise = viewModel::generateCustomExerciseDetails,
-                                        onUseExistingExercise = viewModel::useExistingExerciseFromCustomFlow,
-                                        onSaveCustomExercise = viewModel::saveCustomExercise,
-                                    )
+                                    // An internal sub-tab row toggles between the
+                                    // exercise Library and the History dashboard
+                                    // (stats, calendar, bounty cards, strength score).
+                                    MainTab.Explore -> {
+                                        var exploreSection by remember { mutableStateOf(ExploreSection.Library) }
+                                        Column(modifier = Modifier.fillMaxSize()) {
+                                            ExploreSectionToggle(
+                                                selected = exploreSection,
+                                                onSelect = { exploreSection = it },
+                                            )
+                                            when (exploreSection) {
+                                                ExploreSection.Library -> LibraryScreen(
+                                                    state = state,
+                                                    onToggleSearch = viewModel::toggleLibrarySearch,
+                                                    onQueryChange = viewModel::updateLibraryQuery,
+                                                    onToggleFavoritesOnly = viewModel::toggleLibraryFavoritesOnly,
+                                                    onToggleEquipmentFilter = viewModel::toggleLibraryEquipmentFilter,
+                                                    onToggleEquipmentLocationFilter = viewModel::toggleLibraryEquipmentLocationFilter,
+                                                    onToggleTargetMuscleFilter = viewModel::toggleLibraryTargetMuscleFilter,
+                                                    onTogglePrimeMoverFilter = viewModel::toggleLibraryPrimeMoverFilter,
+                                                    onToggleFreshnessMuscleFilter = viewModel::toggleLibraryFreshnessMuscleFilter,
+                                                    onToggleMuscleTargetBucketFilter = viewModel::toggleLibraryMuscleTargetBucketFilter,
+                                                    onToggleMuscleTargetSubcategoryFilter = viewModel::toggleLibraryMuscleTargetSubcategoryFilter,
+                                                    onToggleRecommendationBiasFilter = viewModel::toggleLibraryRecommendationBiasFilter,
+                                                    onToggleLoggedHistoryFilter = viewModel::toggleLibraryLoggedHistoryFilter,
+                                                    onClearFreshnessMuscleFilters = viewModel::clearLibraryFreshnessMuscleFilters,
+                                                    onClearMuscleTargetFilters = viewModel::clearLibraryMuscleTargetFilters,
+                                                    onClearFilters = viewModel::clearLibraryFilters,
+                                                    onDiscoverExercises = viewModel::generateExerciseDiscovery,
+                                                    onClearExerciseDiscovery = viewModel::clearExerciseDiscovery,
+                                                    onShowDetail = viewModel::showExerciseDetail,
+                                                    onAddToBuilder = viewModel::addExerciseToBuilder,
+                                                    onAddToMyPlan = viewModel::addExerciseToGeneratedWorkout,
+                                                    onExploreFamily = viewModel::openExerciseFamily,
+                                                    onToggleFavorite = viewModel::toggleFavorite,
+                                                    onOpenExerciseHistory = viewModel::openExerciseHistory,
+                                                    onOpenExerciseVideos = viewModel::openExerciseVideos,
+                                                    onAddExerciseToExistingTemplate = viewModel::addExerciseToExistingTemplate,
+                                                    onCreateTemplateFromExercise = viewModel::createTemplateFromExercise,
+                                                    onOpenCustomExercise = viewModel::openCustomExerciseForLibrary,
+                                                    onCloseCustomExercise = viewModel::closeCustomExerciseFlow,
+                                                    onCustomExerciseDraftChange = viewModel::updateCustomExerciseDraft,
+                                                    onCustomExerciseNameChange = viewModel::updateCustomExerciseName,
+                                                    onGenerateCustomExercise = viewModel::generateCustomExerciseDetails,
+                                                    onUseExistingExercise = viewModel::useExistingExerciseFromCustomFlow,
+                                                    onSaveCustomExercise = viewModel::saveCustomExercise,
+                                                )
+                                                ExploreSection.History -> HistoryScreen(
+                                                    navigationState = historyNavigationState,
+                                                    profile = state.profile,
+                                                    history = state.history,
+                                                    bountyCards = state.bountyCards,
+                                                    historyWorkoutMetrics = state.historyWorkoutMetrics,
+                                                    tokenBalanceTrend = state.tokenBalanceTrend,
+                                                    weeklyMuscleTargets = state.weeklyMuscleTargets,
+                                                    topExercise = state.historyTopExercise,
+                                                    topEquipment = state.historyTopEquipment,
+                                                    strengthScore = state.historyStrengthScore,
+                                                    historicalMuscleInsights = state.historicalMuscleInsights,
+                                                    historicalMovementInsights = state.historicalMovementInsights,
+                                                    onOpenWorkout = viewModel::openHistoryWorkout,
+                                                    onShareWorkout = viewModel::prepareHistoryWorkoutShare,
+                                                    onDeleteWorkout = viewModel::deleteHistoryWorkout,
+                                                    onOpenLibraryMuscleTarget = viewModel::openLibraryForMuscleTarget,
+                                                )
+                                            }
+                                        }
+                                    }
                                     // DESIGN.md §2: You merges old Profile + onboarding.
                                     MainTab.You -> ProfileScreen(state = state, viewModel = viewModel)
                                 }
