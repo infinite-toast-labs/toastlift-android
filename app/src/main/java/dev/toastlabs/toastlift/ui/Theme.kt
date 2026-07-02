@@ -77,8 +77,8 @@ private val ToastLiftDarkGradients = Gradients(
 )
 
 private val ToastLiftLightGradients = Gradients(
-    heroGradient = Brush.linearGradient(listOf(Color(0xFFFAFAF8), Color(0xFFEFEEE8))),
-    sessionGradient = Brush.linearGradient(listOf(Color(0xFFF5F5F3), Color(0xFFFAFAF8))),
+    heroGradient = Brush.linearGradient(listOf(Color(0xFFFAF8F5), Color(0xFFEFECE5))),
+    sessionGradient = Brush.linearGradient(listOf(Color(0xFFF5F3EF), Color(0xFFFAF8F5))),
 )
 
 // ── Status Accent Colors ───────────────────────────────────────────────────────
@@ -99,7 +99,7 @@ private val ToastLiftLightStatusColors = StatusColors(
     red = Color(0xFFD73433),
     orange = Color(0xFFC14A00),
     yellow = Color(0xFF9A6E00),
-    green = Color(0xFF008141),
+    green = Color(0xFF0E6E8C),
     blue = Color(0xFF1D76C8),
 )
 
@@ -133,15 +133,15 @@ private val ToastLiftDarkUiColors = UiColors(
     surfaceMax = Color(0xFF242428),
 )
 private val ToastLiftLightUiColors = UiColors(
-    surfaceHigh = Color(0xFFF5F5F3),
-    surfaceMax = Color(0xFFEFEFED),
+    surfaceHigh = Color(0xFFF5F3EF),
+    surfaceMax = Color(0xFFEFEEEA),
     inkOnLightSurface = Color(0xFF13161B),
-    chromeDivider = Color(0xFFC1CCD8),
-    chromeBorder = Color(0xFFB2BFCE),
-    inactiveNavigation = Color(0xFF6E7C8C),
-    progressTrack = Color(0xFFCDDDEF),
-    workoutDayFill = Color(0xFF219E61),
-    recommendationMoreOften = Color(0xFF219E61),
+    chromeDivider = Color(0xFFD8D2C8),
+    chromeBorder = Color(0xFFC9C2B6),
+    inactiveNavigation = Color(0xFF8A8478),
+    progressTrack = Color(0xFFE6E2D9),
+    workoutDayFill = Color(0xFF2A2D6E),
+    recommendationMoreOften = Color(0xFF0E6E8C),
     recommendationLessOften = Color(0xFFD97232),
 )
 
@@ -179,26 +179,26 @@ private val ToastLiftDarkColors = darkColorScheme(
 // ── Light Theme ────────────────────────────────────────────────────────────────
 
 private val ToastLiftLightColors = lightColorScheme(
-    primary = Color(0xFF2D7A1E),
+    primary = Color(0xFF2A2D6E),
     onPrimary = Color(0xFFFFFFFF),
-    primaryContainer = Color(0xFFD1FEC3),
-    onPrimaryContainer = Color(0xFF13250C),
-    secondary = Color(0xFF00854E),
+    primaryContainer = Color(0xFFE1E1F4),
+    onPrimaryContainer = Color(0xFF11143F),
+    secondary = Color(0xFF6E4F26),
     onSecondary = Color(0xFFFFFFFF),
-    secondaryContainer = Color(0xFFBDFFD6),
-    onSecondaryContainer = Color(0xFF062615),
+    secondaryContainer = Color(0xFFF2E5D2),
+    onSecondaryContainer = Color(0xFF2B1F0C),
     tertiary = Color(0xFF9A6E00),
     onTertiary = Color(0xFFFFFFFF),
     tertiaryContainer = Color(0xFFFFE8A5),
     onTertiaryContainer = Color(0xFF2E1F00),
-    background = Color(0xFFFAFAF8),
+    background = Color(0xFFFAF8F5),
     onBackground = Color(0xFF1A1A1C),
     surface = Color(0xFFFFFFFF),
     onSurface = Color(0xFF1A1A1C),
-    surfaceVariant = Color(0xFFF5F5F3),
-    onSurfaceVariant = Color(0xFF6B6B72),
-    outline = Color(0xFFE0E0E2),
-    outlineVariant = Color(0xFFC7CFD7),
+    surfaceVariant = Color(0xFFF0EFEA),
+    onSurfaceVariant = Color(0xFF5F5F66),
+    outline = Color(0xFFDFDCD5),
+    outlineVariant = Color(0xFFC9C2B6),
     error = Color(0xFFD43030),
     onError = Color(0xFFFFFFFF),
     errorContainer = Color(0xFFFFE3DE),

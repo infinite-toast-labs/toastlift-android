@@ -556,7 +556,7 @@ private val LightEmberAccent = GlowAccent(
 )
 
 private val LightSurgeAccent = GlowAccent(
-    color = Color(0xFF008141),
+    color = Color(0xFF0E6E8C),
     textOnAccent = Color(0xFFFFFFFF),
 )
 
