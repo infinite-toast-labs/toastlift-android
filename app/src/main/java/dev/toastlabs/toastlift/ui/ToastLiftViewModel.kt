@@ -35,6 +35,7 @@ import dev.toastlabs.toastlift.data.DailyCoachMessage
 import dev.toastlabs.toastlift.data.EquipmentConflictItem
 import dev.toastlabs.toastlift.data.AdherenceSessionSignal
 import dev.toastlabs.toastlift.data.ExerciseDetail
+import dev.toastlabs.toastlift.data.ExerciseAiSearchResult
 import dev.toastlabs.toastlift.data.ExerciseDiscoveryResult
 import dev.toastlabs.toastlift.data.ExerciseFamily
 import dev.toastlabs.toastlift.data.ExerciseHistoryDetail
@@ -367,6 +368,10 @@ internal data class AppUiState(
     val exerciseDiscoveryLoading: Boolean = false,
     val exerciseDiscoveryError: String? = null,
     val exerciseDiscoverySignature: String? = null,
+    val exerciseAiSearchResult: ExerciseAiSearchResult? = null,
+    val exerciseAiSearchLoading: Boolean = false,
+    val exerciseAiSearchError: String? = null,
+    val exerciseAiSearchQuery: String? = null,
     val selectedExerciseFamily: ExerciseFamily? = null,
     val exerciseFamilyLoadingSeed: ExerciseSummary? = null,
     val exerciseFamilyError: String? = null,
@@ -457,6 +462,14 @@ private fun AppUiState.withoutExerciseDiscovery(): AppUiState =
         exerciseDiscoveryLoading = false,
         exerciseDiscoveryError = null,
         exerciseDiscoverySignature = null,
+    )
+
+private fun AppUiState.withoutExerciseAiSearch(): AppUiState =
+    copy(
+        exerciseAiSearchResult = null,
+        exerciseAiSearchLoading = false,
+        exerciseAiSearchError = null,
+        exerciseAiSearchQuery = null,
     )
 
 private fun List<ExerciseSummary>.replaceLastFamilySeed(seed: ExerciseSummary): List<ExerciseSummary> {
@@ -2135,6 +2148,7 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
     private var customExerciseNameLookupJob: Job? = null
     private var customExerciseGenerationRequestId = 0L
     private var exerciseDiscoveryJob: Job? = null
+    private var exerciseAiSearchJob: Job? = null
     private var exerciseFamilyJob: Job? = null
     private var restTimerJob: Job? = null
     private var restTimerSoundJob: Job? = null
@@ -2847,9 +2861,94 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
         uiState = uiState.withoutExerciseDiscovery()
     }
 
+    fun runExerciseAiSearch() {
+        val query = uiState.libraryQuery.trim()
+        if (query.isBlank()) {
+            uiState = uiState.copy(message = "Type the full exercise name first, then run AI search.")
+            return
+        }
+        exerciseAiSearchJob?.cancel()
+        uiState = uiState.copy(
+            exerciseAiSearchResult = null,
+            exerciseAiSearchLoading = true,
+            exerciseAiSearchError = null,
+            exerciseAiSearchQuery = query,
+        )
+        exerciseAiSearchJob = viewModelScope.launch(Dispatchers.IO) {
+            val result = runCatching {
+                val catalog = container.catalogRepository.loadExerciseAiSearchCatalog()
+                val serviceResult = container.exerciseAiSearchService.search(query, catalog)
+                val summariesById = container.catalogRepository.getExerciseSummariesByIds(
+                    serviceResult.matches.map { it.exerciseId },
+                )
+                ExerciseAiSearchResult(
+                    query = serviceResult.query,
+                    generatedAtUtc = serviceResult.generatedAtUtc,
+                    matches = serviceResult.matches.mapNotNull { match ->
+                        summariesById[match.exerciseId]?.let { summary ->
+                            dev.toastlabs.toastlift.data.ExerciseAiSearchMatch(
+                                rank = match.rank,
+                                exercise = summary,
+                                matchType = match.matchType,
+                                confidence = match.confidence,
+                                explanation = match.explanation,
+                            )
+                        }
+                    },
+                    model = serviceResult.model,
+                    promptVersion = serviceResult.promptVersion,
+                )
+            }
+            if (uiState.exerciseAiSearchQuery != query) return@launch
+            uiState = result.fold(
+                onSuccess = { search ->
+                    uiState.copy(
+                        exerciseAiSearchResult = search,
+                        exerciseAiSearchLoading = false,
+                        exerciseAiSearchError = null,
+                    )
+                },
+                onFailure = {
+                    uiState.copy(
+                        exerciseAiSearchResult = null,
+                        exerciseAiSearchLoading = false,
+                        exerciseAiSearchError = "AI search failed. Check your connection and try again.",
+                    )
+                },
+            )
+        }
+    }
+
+    fun clearExerciseAiSearch() {
+        exerciseAiSearchJob?.cancel()
+        uiState = uiState.withoutExerciseAiSearch()
+    }
+
+    fun saveExerciseSynonym(exerciseId: Long, synonym: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val added = runCatching {
+                container.catalogRepository.addExerciseSynonym(exerciseId, synonym)
+            }.getOrDefault(false)
+            val refreshedDetail = if (added) container.catalogRepository.getExerciseDetail(exerciseId) else null
+            uiState = uiState.copy(
+                selectedExerciseDetail = if (added && uiState.selectedExerciseDetail?.summary?.id == exerciseId) {
+                    refreshedDetail ?: uiState.selectedExerciseDetail
+                } else {
+                    uiState.selectedExerciseDetail
+                },
+                message = if (added) {
+                    "Saved \"${synonym.trim()}\" as a synonym."
+                } else {
+                    "Could not save the synonym. It may already exist."
+                },
+            )
+        }
+    }
+
     private fun updateLibraryContext(transform: (AppUiState) -> AppUiState) {
         exerciseDiscoveryJob?.cancel()
-        uiState = transform(uiState).withoutExerciseDiscovery()
+        exerciseAiSearchJob?.cancel()
+        uiState = transform(uiState).withoutExerciseDiscovery().withoutExerciseAiSearch()
     }
 
     private fun exerciseDiscoverySignature(query: String, filters: LibraryFilters): String {

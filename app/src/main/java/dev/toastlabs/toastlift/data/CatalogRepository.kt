@@ -2,10 +2,22 @@ package dev.toastlabs.toastlift.data
 
 import android.database.sqlite.SQLiteDatabase
 import java.net.URI
+import java.text.Normalizer
 import java.time.Instant
+import java.util.Locale
 
 internal fun normalizeExerciseNote(rawValue: String): String? =
     rawValue.trim().takeIf { it.isNotEmpty() }
+
+internal fun normalizeExerciseSynonym(rawValue: String): String? =
+    rawValue.trim().replace(Regex("\\s+"), " ").takeIf { it.isNotEmpty() }
+
+internal fun normalizedExerciseSynonymKey(value: String): String =
+    Normalizer.normalize(value, Normalizer.Form.NFKD)
+        .replace(Regex("\\p{M}+"), "")
+        .lowercase(Locale.US)
+        .replace(Regex("[^a-z0-9]+"), " ")
+        .trim()
 
 internal fun normalizeExerciseDescription(rawValue: String?): String? =
     rawValue?.trim()?.takeIf { it.isNotEmpty() }
@@ -135,6 +147,121 @@ class CatalogRepository(private val database: ToastLiftDatabase) {
             results = searchExercises(query = query, filters = filters),
             facets = loadLibraryFacets(query = query, filters = filters),
         )
+    }
+
+    internal fun loadExerciseAiSearchCatalog(): List<ExerciseAiSearchCatalogEntry> {
+        val db = database.open()
+        val synonymsByExerciseId = mutableMapOf<Long, MutableList<String>>()
+        db.rawQuery(
+            "SELECT exercise_id, synonym_name FROM exercise_synonyms ORDER BY exercise_id, synonym_name",
+            emptyArray(),
+        ).use { cursor ->
+            while (cursor.moveToNext()) {
+                synonymsByExerciseId
+                    .getOrPut(cursor.getLong(0)) { mutableListOf() }
+                    .add(cursor.getString(1))
+            }
+        }
+        return db.rawQuery(
+            """
+            SELECT e.exercise_id, e.name
+            FROM exercises e
+            LEFT JOIN exercise_preferences p ON p.exercise_id = e.exercise_id
+            WHERE COALESCE(p.is_hidden, 0) = 0
+              AND COALESCE(p.is_banned, 0) = 0
+            ORDER BY e.name
+            """.trimIndent(),
+            emptyArray(),
+        ).use { cursor ->
+            buildList {
+                while (cursor.moveToNext()) {
+                    val exerciseId = cursor.getLong(0)
+                    add(
+                        ExerciseAiSearchCatalogEntry(
+                            id = exerciseId,
+                            name = cursor.getString(1),
+                            synonyms = synonymsByExerciseId[exerciseId].orEmpty(),
+                        ),
+                    )
+                }
+            }
+        }
+    }
+
+    fun getExerciseSummariesByIds(exerciseIds: List<Long>): Map<Long, ExerciseSummary> {
+        if (exerciseIds.isEmpty()) return emptyMap()
+        val db = database.open()
+        val placeholders = exerciseIds.joinToString(",") { "?" }
+        return db.rawQuery(
+            """
+            SELECT
+                e.exercise_id,
+                e.name,
+                e.difficulty_level,
+                e.body_region,
+                e.target_muscle_group,
+                COALESCE(e.primary_equipment, 'Bodyweight'),
+                e.secondary_equipment,
+                e.mechanics,
+                COALESCE(p.is_favorite, 0),
+                COALESCE(p.is_hidden, 0),
+                COALESCE(p.is_banned, 0),
+                COALESCE(p.preference_score_delta, 0),
+                COALESCE(logged_history.logged_session_count, 0)
+            FROM exercises e
+            LEFT JOIN exercise_preferences p ON p.exercise_id = e.exercise_id
+            ${loggedSessionCountJoin()}
+            WHERE e.exercise_id IN ($placeholders)
+            """.trimIndent(),
+            exerciseIds.map { it.toString() }.toTypedArray(),
+        ).use { cursor ->
+            buildMap {
+                while (cursor.moveToNext()) {
+                    val summary = ExerciseSummary(
+                        id = cursor.getLong(0),
+                        name = cursor.getString(1),
+                        difficulty = cursor.getString(2),
+                        bodyRegion = cursor.getString(3),
+                        targetMuscleGroup = cursor.getString(4),
+                        equipment = cursor.getString(5),
+                        secondaryEquipment = cursor.getStringOrNull(6),
+                        mechanics = cursor.getStringOrNull(7),
+                        favorite = cursor.getInt(8) == 1,
+                        hidden = cursor.getInt(9) == 1,
+                        banned = cursor.getInt(10) == 1,
+                        preferenceScoreDelta = cursor.getDouble(11),
+                        recommendationBias = RecommendationBias.fromScoreDelta(cursor.getDouble(11)),
+                        loggedSessionCount = cursor.getInt(12),
+                    )
+                    put(summary.id, summary)
+                }
+            }
+        }
+    }
+
+    /**
+     * Persists a user-confirmed synonym. Returns false when the synonym is blank
+     * or already exists for this exercise (matching the normalized unique key).
+     */
+    fun addExerciseSynonym(exerciseId: Long, synonym: String, source: String = "user_confirmed_ai_search"): Boolean {
+        val normalizedName = normalizeExerciseSynonym(synonym) ?: return false
+        val normalizedKey = normalizedExerciseSynonymKey(normalizedName)
+        if (normalizedKey.isBlank()) return false
+        val db = database.open()
+        val existing = db.rawQuery(
+            "SELECT 1 FROM exercise_synonyms WHERE exercise_id = ? AND synonym_name_normalized = ?",
+            arrayOf(exerciseId.toString(), normalizedKey),
+        ).use { cursor -> cursor.moveToFirst() }
+        if (existing) return false
+        db.execSQL(
+            """
+            INSERT OR IGNORE INTO exercise_synonyms
+                (exercise_id, synonym_name, synonym_name_normalized, synonym_type, source, confidence_score, created_at_utc)
+            VALUES (?, ?, ?, 'custom', ?, 1.0, ?)
+            """.trimIndent(),
+            arrayOf(exerciseId, normalizedName, normalizedKey, source, Instant.now().toString()),
+        )
+        return true
     }
 
     internal fun loadExerciseDiscoveryContext(query: String, filters: LibraryFilters): ExerciseDiscoveryContext {

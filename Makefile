@@ -5,6 +5,7 @@ MAIN_ACTIVITY := $(APP_ID)/.MainActivity
 DEBUG_APK := app/build/outputs/apk/debug/app-debug.apk
 RELEASE_APK := app/build/outputs/apk/release/app-release-unsigned.apk
 LIVE_AI_SMOKE_TEST_REPORT := app/build/test-results/testDebugUnitTest/TEST-dev.toastlabs.toastlift.data.ExerciseMetadataGeneratorTest.xml
+LIVE_AI_SEARCH_SMOKE_TEST_REPORT := app/build/test-results/testDebugUnitTest/TEST-dev.toastlabs.toastlift.data.ExerciseAiSearchServiceTest.xml
 
 ADB_HOST ?= host.docker.internal
 ADB_PORT ?= 5037
@@ -47,19 +48,26 @@ test:
 
 live-ai-smoke-test:
 	@set -euo pipefail; \
-	rm -f "$(LIVE_AI_SMOKE_TEST_REPORT)"; \
+	rm -f "$(LIVE_AI_SMOKE_TEST_REPORT)" "$(LIVE_AI_SEARCH_SMOKE_TEST_REPORT)"; \
 	status=0; \
 	RUN_LIVE_AI_SMOKE_TESTS=true $(GRADLE) testDebugUnitTest \
 		--tests dev.toastlabs.toastlift.data.ExerciseMetadataGeneratorTest.liveSmokeGeminiExerciseMetadataGenerator_returnsRealMetadata \
 		--tests dev.toastlabs.toastlift.data.ExerciseMetadataGeneratorTest.liveSmokeOpenCodeDeepSeekV4FlashExerciseMetadataGenerator_returnsRealMetadata \
 		--tests dev.toastlabs.toastlift.data.ExerciseMetadataGeneratorTest.liveSmokeOpenCodeGlm52ExerciseMetadataGenerator_returnsRealMetadata \
-		--tests dev.toastlabs.toastlift.data.ExerciseMetadataGeneratorTest.liveSmokeOpenRouterGlm52ExerciseMetadataGenerator_returnsRealMetadata || status=$$?; \
-	if [[ -f "$(LIVE_AI_SMOKE_TEST_REPORT)" ]]; then \
-		echo; \
-		echo "Live AI smoke test outputs:"; \
-		perl -0ne 'print $$1 if /<system-out><!\[CDATA\[(.*?)\]\]><\/system-out>/s' "$(LIVE_AI_SMOKE_TEST_REPORT)"; \
-	else \
-		echo "Live AI smoke test report was not created: $(LIVE_AI_SMOKE_TEST_REPORT)" >&2; \
+		--tests dev.toastlabs.toastlift.data.ExerciseMetadataGeneratorTest.liveSmokeOpenRouterGlm52ExerciseMetadataGenerator_returnsRealMetadata \
+		--tests dev.toastlabs.toastlift.data.ExerciseAiSearchServiceTest.liveSmokeGeminiExerciseAiSearch_findsReversePecDeckByAlias \
+		--tests dev.toastlabs.toastlift.data.ExerciseAiSearchServiceTest.liveSmokeGeminiExerciseAiSearch_returnsEmptyForMissingExercise || status=$$?; \
+	found=0; \
+	for report in "$(LIVE_AI_SMOKE_TEST_REPORT)" "$(LIVE_AI_SEARCH_SMOKE_TEST_REPORT)"; do \
+		if [[ -f "$$report" ]]; then \
+			found=1; \
+			echo; \
+			echo "Live AI smoke test outputs ($$report):"; \
+			perl -0ne 'print $$1 if /<system-out><!\[CDATA\[(.*?)\]\]><\/system-out>/s' "$$report"; \
+		fi; \
+	done; \
+	if [[ $$found -eq 0 ]]; then \
+		echo "No live AI smoke test reports were created." >&2; \
 	fi; \
 	exit $$status
 

@@ -15,6 +15,7 @@ class AppContainer(context: Context) {
         userRepository = userRepository,
     )
     internal val exerciseDiscoveryService = ExerciseDiscoveryService()
+    internal val exerciseAiSearchService = ExerciseAiSearchService()
     val experimentRepository = ExperimentRepository(toastLiftDatabase)
     val workoutRepository = WorkoutRepository(toastLiftDatabase, catalogRepository)
     val restTimerNotifier = RestTimerNotifier(context.applicationContext).also { it.ensureNotificationChannel() }

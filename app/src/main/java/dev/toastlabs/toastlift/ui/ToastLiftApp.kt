@@ -85,6 +85,7 @@ import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.AccountTree
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.CenterFocusStrong
 import androidx.compose.material.icons.rounded.CenterFocusWeak
 import androidx.compose.material.icons.rounded.Check
@@ -228,6 +229,9 @@ import dev.toastlabs.toastlift.data.AdherenceCurrencyTrendPoint
 import dev.toastlabs.toastlift.data.elapsedDurationSeconds
 import dev.toastlabs.toastlift.data.averageTimeBetweenSetCompletionsSeconds
 import dev.toastlabs.toastlift.data.HistoryShareFormat
+import dev.toastlabs.toastlift.data.ExerciseAiSearchMatch
+import dev.toastlabs.toastlift.data.ExerciseAiSearchResult
+import dev.toastlabs.toastlift.data.exerciseAiSearchMatchTypeLabel
 import dev.toastlabs.toastlift.data.ExerciseDiscoveryPick
 import dev.toastlabs.toastlift.data.ExerciseDiscoveryResult
 import dev.toastlabs.toastlift.data.ExerciseDiscoverySource
@@ -1094,6 +1098,8 @@ fun ToastLiftApp(
                     onClearAddExerciseFreshnessMuscleFilters = viewModel::clearLibraryFreshnessMuscleFilters,
                     onClearAddExerciseMuscleTargetFilters = viewModel::clearLibraryMuscleTargetFilters,
                     onShowAddExerciseDetail = viewModel::showExerciseDetail,
+                    onRunAiSearch = viewModel::runExerciseAiSearch,
+                    onClearAiSearch = viewModel::clearExerciseAiSearch,
                     onOpenCustomExercise = viewModel::openCustomExerciseFlow,
                     onCloseCustomExercise = viewModel::closeCustomExerciseFlow,
                     onCustomExerciseDraftChange = viewModel::updateCustomExerciseDraft,
@@ -1185,6 +1191,8 @@ fun ToastLiftApp(
                                                 onShowExerciseDetail = viewModel::showExerciseDetail,
                                                 onRemoveGeneratedExercise = viewModel::removeGeneratedExercise,
                                                 onAddExercisesToGeneratedWorkout = viewModel::addExercisesToGeneratedWorkout,
+                                                onRunAiSearch = viewModel::runExerciseAiSearch,
+                                                onClearAiSearch = viewModel::clearExerciseAiSearch,
                                                 onOpenExerciseHistory = viewModel::openExerciseHistory,
                                                 onOpenExerciseVideos = viewModel::openExerciseVideos,
                                                 onLibraryQueryChange = viewModel::updateLibraryQuery,
@@ -1239,6 +1247,8 @@ fun ToastLiftApp(
                                                 onTemplateNameChange = viewModel::updateTodayTemplateName,
                                                 onRemoveTemplateExercise = viewModel::removeTodayTemplateExercise,
                                                 onAddExercisesToTemplate = viewModel::addExercisesToTodayTemplate,
+                                                onRunAiSearch = viewModel::runExerciseAiSearch,
+                                                onClearAiSearch = viewModel::clearExerciseAiSearch,
                                                 onSaveTemplateEdits = viewModel::saveTodayTemplate,
                                                 onSaveFilteredTemplate = viewModel::saveTodayTemplateAs,
                                                 onStartEditedTemplate = viewModel::startTodayTemplateWorkout,
@@ -1308,6 +1318,8 @@ fun ToastLiftApp(
                                             onShowExerciseDetail = viewModel::showExerciseDetail,
                                             onRemoveGeneratedExercise = viewModel::removeGeneratedExercise,
                                             onAddExercisesToGeneratedWorkout = viewModel::addExercisesToGeneratedWorkout,
+                                            onRunAiSearch = viewModel::runExerciseAiSearch,
+                                            onClearAiSearch = viewModel::clearExerciseAiSearch,
                                             onOpenExerciseHistory = viewModel::openExerciseHistory,
                                             onOpenExerciseVideos = viewModel::openExerciseVideos,
                                             onLibraryQueryChange = viewModel::updateLibraryQuery,
@@ -1382,6 +1394,8 @@ fun ToastLiftApp(
                                                     onClearFilters = viewModel::clearLibraryFilters,
                                                     onDiscoverExercises = viewModel::generateExerciseDiscovery,
                                                     onClearExerciseDiscovery = viewModel::clearExerciseDiscovery,
+                                                    onRunAiSearch = viewModel::runExerciseAiSearch,
+                                                    onClearAiSearch = viewModel::clearExerciseAiSearch,
                                                     onShowDetail = viewModel::showExerciseDetail,
                                                     onAddToBuilder = viewModel::addExerciseToBuilder,
                                                     onAddToMyPlan = viewModel::addExerciseToGeneratedWorkout,
@@ -1465,6 +1479,10 @@ fun ToastLiftApp(
                     } else {
                         null
                     },
+                    aiSearchQueryToSave = state.exerciseAiSearchResult
+                        ?.takeIf { result -> result.matches.any { it.exercise.id == detail.summary.id } }
+                        ?.query,
+                    onSaveSynonym = { synonym -> viewModel.saveExerciseSynonym(detail.summary.id, synonym) },
                 )
             }
             if (
@@ -1950,6 +1968,8 @@ private fun TodayScreen(
     onTemplateNameChange: (String) -> Unit,
     onRemoveTemplateExercise: (Long) -> Unit,
     onAddExercisesToTemplate: (List<ExerciseSummary>) -> Unit,
+    onRunAiSearch: () -> Unit,
+    onClearAiSearch: () -> Unit,
     onSaveTemplateEdits: () -> Unit,
     onSaveFilteredTemplate: (String, List<WorkoutExercise>) -> Unit,
     onStartEditedTemplate: () -> Unit,
@@ -2059,6 +2079,8 @@ private fun TodayScreen(
             onSaveCustomExercise = onSaveCustomExercise,
             onAddExerciseToExistingTemplate = onAddExerciseToExistingTemplate,
             onCreateTemplateFromExercise = onCreateTemplateFromExercise,
+            onRunAiSearch = onRunAiSearch,
+            onClearAiSearch = onClearAiSearch,
         )
         return
     }
@@ -4351,6 +4373,8 @@ private fun GenerateScreen(
     onShowExerciseDetail: (Long) -> Unit,
     onRemoveGeneratedExercise: (Long) -> Unit,
     onAddExercisesToGeneratedWorkout: (List<ExerciseSummary>) -> Unit,
+    onRunAiSearch: () -> Unit,
+    onClearAiSearch: () -> Unit,
     onOpenExerciseHistory: (Long, String) -> Unit,
     onOpenExerciseVideos: (Long, String) -> Unit,
     onLibraryQueryChange: (String) -> Unit,
@@ -4444,6 +4468,8 @@ private fun GenerateScreen(
             onPendingSelectionConsumed = onPendingSelectionConsumed,
             onAddExerciseToExistingTemplate = onAddExerciseToExistingTemplate,
             onCreateTemplateFromExercise = onCreateTemplateFromExercise,
+            onRunAiSearch = onRunAiSearch,
+            onClearAiSearch = onClearAiSearch,
         )
         return
     }
@@ -4482,6 +4508,8 @@ private fun GenerateScreen(
             onPendingSelectionConsumed = onPendingSelectionConsumed,
             onAddExerciseToExistingTemplate = onAddExerciseToExistingTemplate,
             onCreateTemplateFromExercise = onCreateTemplateFromExercise,
+            onRunAiSearch = onRunAiSearch,
+            onClearAiSearch = onClearAiSearch,
         )
         return
     }
@@ -4702,6 +4730,8 @@ private fun LibraryScreen(
     onClearFilters: () -> Unit,
     onDiscoverExercises: () -> Unit,
     onClearExerciseDiscovery: () -> Unit,
+    onRunAiSearch: () -> Unit,
+    onClearAiSearch: () -> Unit,
     onShowDetail: (Long) -> Unit,
     onAddToBuilder: (ExerciseSummary) -> Unit,
     onAddToMyPlan: (ExerciseSummary) -> Unit,
@@ -4809,6 +4839,30 @@ private fun LibraryScreen(
                 contentPadding = PaddingValues(bottom = 132.dp),
                 modifier = Modifier.fillMaxSize(),
             ) {
+                if (state.librarySearchVisible) {
+                    item(key = "exercise-ai-search") {
+                        ExerciseAiSearchPanel(
+                            query = state.libraryQuery,
+                            result = state.exerciseAiSearchResult,
+                            isLoading = state.exerciseAiSearchLoading,
+                            errorMessage = state.exerciseAiSearchError,
+                            onSearch = onRunAiSearch,
+                            onClear = onClearAiSearch,
+                        ) { match ->
+                            ExerciseListCard(
+                                exercise = match.exercise,
+                                onDetails = { onShowDetail(match.exercise.id) },
+                                onAdd = { onAddToBuilder(match.exercise) },
+                                onExploreFamily = { onExploreFamily(match.exercise) },
+                                onToggleFavorite = { onToggleFavorite(match.exercise) },
+                                onOpenExerciseHistory = { onOpenExerciseHistory(match.exercise.id, match.exercise.name) },
+                                onOpenExerciseVideos = { onOpenExerciseVideos(match.exercise.id, match.exercise.name) },
+                                onAddToExistingTemplate = { existingTemplateTarget = match.exercise },
+                                onCreateTemplateFromExercise = { newTemplateTarget = match.exercise },
+                            )
+                        }
+                    }
+                }
                 item(key = "exercise-discovery") {
                     ExerciseDiscoveryPanel(
                         result = state.exerciseDiscoveryResult,
@@ -5606,6 +5660,152 @@ private fun exerciseDiscoveryAngleLabel(angle: String): String {
         "movement_pattern_gap" -> "Pattern gap"
         "low_exposure_rotation" -> "Low exposure"
         else -> "Discovery"
+    }
+}
+
+/**
+ * Explicit-trigger AI name matching for the search flows. Renders the trigger
+ * button, progress, errors, and matches. Match cards are supplied by the
+ * caller so each surface keeps its existing card style and tap targets.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ExerciseAiSearchPanel(
+    query: String,
+    result: ExerciseAiSearchResult?,
+    isLoading: Boolean,
+    errorMessage: String?,
+    onSearch: () -> Unit,
+    onClear: () -> Unit,
+    matchCard: @Composable (ExerciseAiSearchMatch) -> Unit,
+) {
+    val trimmedQuery = query.trim()
+    if (trimmedQuery.isBlank() && result == null && !isLoading && errorMessage == null) return
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        when {
+            isLoading -> {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.34f), RoundedCornerShape(8.dp))
+                        .padding(12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                    Text(
+                        "Matching \"${result?.query ?: trimmedQuery}\" against the full exercise catalog.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            errorMessage != null -> {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.34f), RoundedCornerShape(8.dp))
+                        .padding(12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        errorMessage,
+                        modifier = Modifier.weight(1f),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    OutlinedButton(onClick = onSearch) {
+                        Text("Retry")
+                    }
+                }
+            }
+            result == null -> {
+                OutlinedButton(
+                    onClick = onSearch,
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = trimmedQuery.isNotBlank(),
+                    shape = RoundedCornerShape(16.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.AutoAwesome,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("AI search: find \"$trimmedQuery\" by another name")
+                }
+            }
+            else -> {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(
+                            "AI matches for \"${result.query}\"",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            MiniTag(result.model?.let { "Gemini matched" } ?: "AI matched")
+                            MiniTag("${result.matches.size} match${if (result.matches.size == 1) "" else "es"}")
+                        }
+                    }
+                    IconButton(onClick = onSearch) {
+                        Icon(
+                            imageVector = Icons.Rounded.AutoAwesome,
+                            contentDescription = "Run AI search again",
+                        )
+                    }
+                    IconButton(onClick = onClear) {
+                        Icon(
+                            imageVector = Icons.Rounded.Close,
+                            contentDescription = "Clear AI search matches",
+                        )
+                    }
+                }
+                if (result.matches.isEmpty()) {
+                    Text(
+                        "Not in the library under any known name. Try a different description or add it as a custom exercise.",
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.34f), RoundedCornerShape(8.dp))
+                            .padding(12.dp),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else {
+                    result.matches.forEach { match ->
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            matchCard(match)
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 4.dp),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                MiniTag(exerciseAiSearchMatchTypeLabel(match.matchType))
+                                MiniTag("${(match.confidence * 100).roundToInt()}%")
+                                Text(
+                                    match.explanation,
+                                    modifier = Modifier.weight(1f),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -10347,6 +10547,8 @@ private fun AddExercisesFlowScreen(
     onPendingSelectionConsumed: () -> Unit,
     onAddExerciseToExistingTemplate: (Long, ExerciseSummary) -> Unit,
     onCreateTemplateFromExercise: (String, ExerciseSummary) -> Unit,
+    onRunAiSearch: () -> Unit,
+    onClearAiSearch: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val selectedExercises = remember { mutableStateMapOf<Long, ExerciseSummary>() }
@@ -10424,6 +10626,8 @@ private fun AddExercisesFlowScreen(
             onShowDetail = onShowDetail,
             onAddToExistingTemplate = { exercise -> existingTemplateTarget = exercise },
             onCreateTemplateFromExercise = { exercise -> newTemplateTarget = exercise },
+            onRunAiSearch = onRunAiSearch,
+            onClearAiSearch = onClearAiSearch,
             overflowActionLabel = "Add custom exercise",
             onOverflowActionClick = onOpenCustomExercise,
         )
@@ -10486,6 +10690,8 @@ private fun BuilderAddExercisesScreen(
     onShowDetail: (Long) -> Unit,
     onAddToExistingTemplate: (ExerciseSummary) -> Unit,
     onCreateTemplateFromExercise: (ExerciseSummary) -> Unit,
+    onRunAiSearch: () -> Unit,
+    onClearAiSearch: () -> Unit,
     overflowActionLabel: String? = null,
     onOverflowActionClick: (() -> Unit)? = null,
 ) {
@@ -10645,6 +10851,34 @@ private fun BuilderAddExercisesScreen(
             modifier = Modifier.fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
+            if (state.librarySearchVisible) {
+                item(key = "exercise-ai-search") {
+                    ExerciseAiSearchPanel(
+                        query = state.libraryQuery,
+                        result = state.exerciseAiSearchResult,
+                        isLoading = state.exerciseAiSearchLoading,
+                        errorMessage = state.exerciseAiSearchError,
+                        onSearch = onRunAiSearch,
+                        onClear = onClearAiSearch,
+                    ) { match ->
+                        val matchSelected = selectedExercises.containsKey(match.exercise.id)
+                        SelectableExerciseCard(
+                            exercise = match.exercise,
+                            selected = matchSelected,
+                            onToggleSelected = {
+                                if (matchSelected) {
+                                    selectedExercises.remove(match.exercise.id)
+                                } else {
+                                    selectedExercises[match.exercise.id] = match.exercise
+                                }
+                            },
+                            onShowDetail = { onShowDetail(match.exercise.id) },
+                            onAddToExistingTemplate = { onAddToExistingTemplate(match.exercise) },
+                            onCreateTemplateFromExercise = { onCreateTemplateFromExercise(match.exercise) },
+                        )
+                    }
+                }
+            }
             if (displayedExercises.isEmpty()) {
                 item {
                     AddExerciseLibraryEmptyState(
@@ -11466,6 +11700,8 @@ private fun ActiveSessionAddExerciseScreen(
     onPickAgainGeneratedExercise: () -> Unit,
     onPendingSelectionConsumed: () -> Unit,
     onShowDetail: (Long) -> Unit,
+    onRunAiSearch: () -> Unit,
+    onClearAiSearch: () -> Unit,
 ) {
     BackHandler(
         enabled = state.activeSessionAddExerciseMode == ActiveSessionAddExerciseMode.Choice,
@@ -11513,6 +11749,8 @@ private fun ActiveSessionAddExerciseScreen(
             onPendingSelectionConsumed = onPendingSelectionConsumed,
             onAddExerciseToExistingTemplate = onAddExerciseToExistingTemplate,
             onCreateTemplateFromExercise = onCreateTemplateFromExercise,
+            onRunAiSearch = onRunAiSearch,
+            onClearAiSearch = onClearAiSearch,
             modifier = Modifier
                 .fillMaxSize()
                 .statusBarsPadding(),
@@ -11567,6 +11805,8 @@ private fun ActiveSessionScreen(
     onClearAddExerciseFreshnessMuscleFilters: () -> Unit,
     onClearAddExerciseMuscleTargetFilters: () -> Unit,
     onShowAddExerciseDetail: (Long) -> Unit,
+    onRunAiSearch: () -> Unit,
+    onClearAiSearch: () -> Unit,
     onOpenCustomExercise: () -> Unit,
     onCloseCustomExercise: () -> Unit,
     onCustomExerciseDraftChange: (CustomExerciseDraft) -> Unit,
@@ -11680,6 +11920,8 @@ private fun ActiveSessionScreen(
             onPickAgainGeneratedExercise = onPickAgainGeneratedExercise,
             onPendingSelectionConsumed = onPendingSelectionConsumed,
             onShowDetail = onShowAddExerciseDetail,
+            onRunAiSearch = onRunAiSearch,
+            onClearAiSearch = onClearAiSearch,
         )
         return
     }
@@ -16131,6 +16373,118 @@ private fun openPreferredExternalLink(
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
+private fun ExerciseSynonymsCard(
+    exerciseId: Long,
+    synonyms: List<String>,
+    aiSearchQueryToSave: String?,
+    onSaveSynonym: (String) -> Unit,
+) {
+    val suggestedSynonym = aiSearchQueryToSave
+        ?.trim()
+        ?.takeIf { candidate ->
+            candidate.isNotBlank() && synonyms.none { it.equals(candidate, ignoreCase = true) }
+        }
+    var isEditingSynonym by rememberSaveable(exerciseId) { mutableStateOf(false) }
+    var synonymDraft by rememberSaveable(exerciseId, suggestedSynonym) { mutableStateOf(suggestedSynonym.orEmpty()) }
+    FeatureCard(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.82f)) {
+        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("Synonyms", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text(
+                "Alternative names that make this exercise findable in search.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            if (synonyms.isEmpty()) {
+                Text(
+                    "No synonyms saved yet.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            } else {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    synonyms.forEach { MiniTag(it) }
+                }
+            }
+            if (isEditingSynonym) {
+                OutlinedTextField(
+                    value = synonymDraft,
+                    onValueChange = { synonymDraft = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    label = { Text("New synonym") },
+                    placeholder = { Text("e.g. reverse pec deck") },
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.End),
+                ) {
+                    TextButton(
+                        onClick = {
+                            isEditingSynonym = false
+                            synonymDraft = suggestedSynonym.orEmpty()
+                        },
+                    ) {
+                        Text("Cancel")
+                    }
+                    Button(
+                        onClick = {
+                            onSaveSynonym(synonymDraft)
+                            isEditingSynonym = false
+                            synonymDraft = ""
+                        },
+                        enabled = synonymDraft.isNotBlank(),
+                    ) {
+                        Text("Save synonym")
+                    }
+                }
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    if (suggestedSynonym != null) {
+                        OutlinedButton(
+                            onClick = { onSaveSynonym(suggestedSynonym) },
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Add,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp),
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                "Add \"$suggestedSynonym\"",
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                        IconButton(onClick = { isEditingSynonym = true }) {
+                            Icon(
+                                imageVector = Icons.Rounded.Edit,
+                                contentDescription = "Edit synonym before saving",
+                            )
+                        }
+                    } else {
+                        TextButton(onClick = { isEditingSynonym = true }) {
+                            Icon(
+                                imageVector = Icons.Rounded.Add,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp),
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Add synonym")
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@Composable
 private fun ExerciseDetailSheet(
     detail: ExerciseDetail,
     profile: UserProfile?,
@@ -16148,6 +16502,8 @@ private fun ExerciseDetailSheet(
     onAddToBuilder: () -> Unit,
     onExploreFamily: () -> Unit,
     onAddToMyPlan: (() -> Unit)?,
+    aiSearchQueryToSave: String? = null,
+    onSaveSynonym: ((String) -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val showPersonalNoteCard = profile?.devExerciseDetailPersonalNoteVisible != false
@@ -16493,6 +16849,15 @@ private fun ExerciseDetailSheet(
                         onSelect = onSetRecommendationBias,
                     )
                 }
+            }
+
+            onSaveSynonym?.let { saveSynonym ->
+                ExerciseSynonymsCard(
+                    exerciseId = detail.summary.id,
+                    synonyms = detail.synonyms,
+                    aiSearchQueryToSave = aiSearchQueryToSave,
+                    onSaveSynonym = saveSynonym,
+                )
             }
 
             OutlinedButton(onClick = onAddToBuilder, modifier = Modifier.fillMaxWidth()) {
