@@ -82,6 +82,7 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.AccountTree
 import androidx.compose.material.icons.rounded.Add
@@ -6798,34 +6799,98 @@ private fun HistoryOverviewHeader(
     bountyCardCount: Int,
     onOpenBountyCards: (() -> Unit)?,
 ) {
+    val completedMilestones = data.milestoneProgress.sumOf { it.achievedCount }
+    val hasLoggedHistory = data.totalWorkouts > 0
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         FeatureCard(containerColor = MaterialTheme.colorScheme.surface) {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 Text("History", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Black)
+                Text(
+                    if (hasLoggedHistory) {
+                        "Review completed sessions, weekly momentum, streaks, milestones, and trends."
+                    } else {
+                        "Log your first workout to unlock weekly progress, streaks, milestones, and trend lines."
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.78f),
+                    fontWeight = FontWeight.Medium,
+                )
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
-                    HistoryStatTile("Workouts", data.totalWorkouts.toString(), onClick = onOpenWorkouts, modifier = Modifier.weight(1f))
-                    HistoryStatTile("Milestones", data.milestoneProgress.sumOf { it.achievedCount }.toString(), onClick = onOpenMilestones, modifier = Modifier.weight(1f))
+                    HistoryStatTile(
+                        title = "Workouts",
+                        value = data.totalWorkouts.toString(),
+                        supportingText = if (hasLoggedHistory) {
+                            "${data.totalMinutes} min • ${data.totalSets} sets"
+                        } else {
+                            "Completed sessions appear here."
+                        },
+                        onClick = onOpenWorkouts,
+                        modifier = Modifier.weight(1f),
+                    )
+                    HistoryStatTile(
+                        title = "Milestones",
+                        value = completedMilestones.toString(),
+                        supportingText = if (completedMilestones > 0) {
+                            "Unlocked strength markers."
+                        } else {
+                            "Earn badges from logged effort."
+                        },
+                        onClick = onOpenMilestones,
+                        modifier = Modifier.weight(1f),
+                    )
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
-                    HistoryStatTile("Weekly", "${data.currentWeekCount}/${data.weeklyGoal}", modifier = Modifier.weight(1f))
-                    HistoryStatTile("Streak", "${data.currentStreakWeeks} week${if (data.currentStreakWeeks == 1) "" else "s"}", onClick = onOpenStreak, modifier = Modifier.weight(1f))
+                    HistoryStatTile(
+                        title = "Weekly",
+                        value = "${data.currentWeekCount}/${data.weeklyGoal}",
+                        supportingText = if (data.currentWeekCount > 0) {
+                            "Sessions logged this week."
+                        } else {
+                            "Complete ${data.weeklyGoal} to hit goal."
+                        },
+                        modifier = Modifier.weight(1f),
+                    )
+                    HistoryStatTile(
+                        title = "Streak",
+                        value = "${data.currentStreakWeeks} week${if (data.currentStreakWeeks == 1) "" else "s"}",
+                        supportingText = if (data.currentStreakWeeks > 0) {
+                            "Best ${data.longestStreakWeeks} week${if (data.longestStreakWeeks == 1) "" else "s"}."
+                        } else {
+                            "Hit weekly goal to start one."
+                        },
+                        onClick = onOpenStreak,
+                        modifier = Modifier.weight(1f),
+                    )
                 }
                 onOpenBountyCards?.let { openCards ->
                     HistoryStatTile(
                         title = "Cards",
                         value = bountyCardCount.toString(),
+                        supportingText = if (bountyCardCount > 0) {
+                            "Open earned bounty cards."
+                        } else {
+                            "Challenge rewards land here."
+                        },
                         onClick = openCards,
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }
-                HistoryStatTile("Stats", "All / 7 / 30", onClick = onOpenStats, modifier = Modifier.fillMaxWidth())
+                HistoryStatTile(
+                    title = "Stats",
+                    value = "Range view",
+                    supportingText = "Compare all-time, 7-day, and 30-day trends.",
+                    onClick = onOpenStats,
+                    modifier = Modifier.fillMaxWidth(),
+                )
             }
         }
         data.strengthScore?.let { score ->
             StrengthScoreCard(summary = score)
         }
         FeatureCard(
-            modifier = Modifier.clickable(onClick = onOpenCalendar),
+            modifier = Modifier
+                .clickable(onClick = onOpenCalendar)
+                .semantics { role = Role.Button },
             containerColor = MaterialTheme.colorScheme.surface,
             accentKey = "calendar",
         ) {
@@ -6834,15 +6899,27 @@ private fun HistoryOverviewHeader(
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text("Calendar", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black)
                         Text(
-                            "Tap to browse weekly and monthly history",
+                            "Open weekly and monthly history",
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.74f),
+                            fontWeight = FontWeight.Medium,
                         )
                     }
-                    MiniTag(
-                        text = LocalDate.now().format(DateTimeFormatter.ofPattern("MMM")),
-                        accent = MaterialTheme.colorScheme.primaryContainer,
-                    )
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        MiniTag(
+                            text = LocalDate.now().format(DateTimeFormatter.ofPattern("MMM")),
+                            accent = MaterialTheme.colorScheme.primaryContainer,
+                        )
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
+                            modifier = Modifier.size(22.dp),
+                        )
+                    }
                 }
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     listOf("Su", "Mo", "Tu", "We", "Th", "Fr", "Sa").forEach { label ->
@@ -8146,6 +8223,7 @@ private fun StrengthScoreCard(summary: StrengthScoreSummary) {
 private fun HistoryStatTile(
     title: String,
     value: String,
+    supportingText: String,
     modifier: Modifier = Modifier,
     onClick: (() -> Unit)? = null,
 ) {
@@ -8153,6 +8231,7 @@ private fun HistoryStatTile(
     Surface(
         modifier = modifier
             .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            .then(if (onClick != null) Modifier.semantics { role = Role.Button } else Modifier)
             .heightIn(min = 116.dp),
         shape = RoundedCornerShape(16.dp),
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.46f),
@@ -8164,8 +8243,29 @@ private fun HistoryStatTile(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            MiniTag(text = title, accent = accent.color)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                MiniTag(text = title, accent = accent.color)
+                if (onClick != null) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
+            }
             Text(value, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black)
+            Text(
+                supportingText,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.74f),
+                fontWeight = FontWeight.Medium,
+                lineHeight = 16.sp,
+            )
         }
     }
 }
