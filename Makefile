@@ -11,6 +11,7 @@ ADB_HOST ?= host.docker.internal
 ADB_PORT ?= 5037
 ADB_SERIAL ?= emulator-5560
 DEVICE_SERIAL ?=
+MCP_PHONE_STARTUP_WAIT ?= 10
 export ANDROID_ADB_HOST := $(ADB_HOST)
 export ANDROID_ADB_PORT := $(ADB_PORT)
 export ANDROID_ADB_SERIAL := $(ADB_SERIAL)
@@ -22,7 +23,7 @@ EMULATOR_ADB := android-emulator-adb
 .PHONY: help clean test lint build-debug build-release assemble apk-paths devices \
 	check-emulator check-device install-debug install-debug-appreveal launch-debug install-device-debug \
 	install-device-debug-no-build sync-device-custom-exercises live-ai-smoke-test \
-	mcp-screens-regular mcp-screens-sheets mcp-screens-all
+	mcp-screens-regular mcp-screens-sheets mcp-screens-all mcp-phone-screens-all
 
 help:
 	@echo "Targets:"
@@ -38,6 +39,7 @@ help:
 	@echo "  make mcp-screens-regular         - Capture all non-bottom-sheet AppReveal screens from the configured emulator"
 	@echo "  make mcp-screens-sheets          - Capture all AppReveal bottom sheets from the configured emulator"
 	@echo "  make mcp-screens-all             - Capture regular screens and bottom sheets from the configured emulator"
+	@echo "  make mcp-phone-screens-all       - Capture regular screens and bottom sheets from \$$DEVICE_SERIAL or the first physical adb device"
 	@echo "  make install-device-debug         - Build and install debug APK on \$$DEVICE_SERIAL or the first physical adb device"
 	@echo "  make install-device-debug-no-build - Install existing debug APK on \$$DEVICE_SERIAL or the first physical adb device"
 	@echo "  make sync-device-custom-exercises - Sync post-install custom exercises from \$$DEVICE_SERIAL or the first physical adb device"
@@ -162,6 +164,20 @@ mcp-screens-all: install-debug-appreveal
 		--serial "$(ADB_SERIAL)" \
 		--app-id "$(APP_ID)" \
 		--activity "$(MAIN_ACTIVITY)"
+
+mcp-phone-screens-all: install-device-debug
+	@set -euo pipefail; \
+	serial="$(DEVICE_SERIAL)"; \
+	if [[ -z "$$serial" ]]; then \
+		serial="$$( $(ADB) devices | awk 'NR > 1 && $$2 == "device" && $$1 !~ /^emulator-/ { print $$1; exit }' )"; \
+	fi; \
+	scripts/capture_appreveal_mcp_screens.sh \
+		--group all \
+		--adb "$(ADB)" \
+		--serial "$$serial" \
+		--app-id "$(APP_ID)" \
+		--activity "$(MAIN_ACTIVITY)" \
+		--startup-wait "$(MCP_PHONE_STARTUP_WAIT)"
 
 install-device-debug: check-device build-debug
 	@set -euo pipefail; \
