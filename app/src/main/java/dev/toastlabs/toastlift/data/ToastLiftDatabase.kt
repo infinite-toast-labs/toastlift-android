@@ -7,7 +7,10 @@ import java.io.File
 import java.time.Instant
 import java.util.Locale
 
-class ToastLiftDatabase(private val context: Context) {
+class ToastLiftDatabase(
+    private val context: Context,
+    private val databaseFileOverride: File? = null,
+) {
     private val databaseName = "toastlift.db"
     private val assetName = "functional_fitness_workout_generator.sqlite"
     private val appVersion = 21
@@ -23,7 +26,7 @@ class ToastLiftDatabase(private val context: Context) {
             val secondCheck = database
             if (secondCheck != null && secondCheck.isOpen) return secondCheck
 
-            val dbFile = context.getDatabasePath(databaseName)
+            val dbFile = databaseFile()
             if (!dbFile.exists()) {
                 copyAssetDatabase(dbFile)
             }
@@ -49,6 +52,15 @@ class ToastLiftDatabase(private val context: Context) {
     fun ensureGeneratedSynonyms() {
         synchronized(this) {
             seedGeneratedSynonymsIfEmpty(open())
+        }
+    }
+
+    internal fun databaseFile(): File = databaseFileOverride ?: context.getDatabasePath(databaseName)
+
+    internal fun close() {
+        synchronized(this) {
+            database?.close()
+            database = null
         }
     }
 

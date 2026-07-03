@@ -34,11 +34,14 @@ import dev.toastlabs.toastlift.data.CustomExerciseDraft
 import dev.toastlabs.toastlift.data.DailyCoachMessage
 import dev.toastlabs.toastlift.data.EquipmentConflictItem
 import dev.toastlabs.toastlift.data.AdherenceSessionSignal
+import dev.toastlabs.toastlift.data.EvolutionSuggestion
 import dev.toastlabs.toastlift.data.ExerciseDetail
 import dev.toastlabs.toastlift.data.ExerciseAiSearchResult
 import dev.toastlabs.toastlift.data.ExerciseDiscoveryResult
 import dev.toastlabs.toastlift.data.ExerciseFamily
 import dev.toastlabs.toastlift.data.ExerciseHistoryDetail
+import dev.toastlabs.toastlift.data.ExerciseHistoryEntry
+import dev.toastlabs.toastlift.data.ExerciseHistorySet
 import dev.toastlabs.toastlift.data.ExercisePerformanceStats
 import dev.toastlabs.toastlift.data.ExerciseSummary
 import dev.toastlabs.toastlift.data.ExerciseVideoLinks
@@ -60,6 +63,7 @@ import dev.toastlabs.toastlift.data.HistoryShareFormat
 import dev.toastlabs.toastlift.data.HistoryReuseMode
 import dev.toastlabs.toastlift.data.HistorySummary
 import dev.toastlabs.toastlift.data.HistoryDetail
+import dev.toastlabs.toastlift.data.HistoryExerciseDetail
 import dev.toastlabs.toastlift.data.HistoryWorkoutMetric
 import dev.toastlabs.toastlift.data.LibraryFacets
 import dev.toastlabs.toastlift.data.LibraryEquipmentLocation
@@ -2322,7 +2326,11 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
             val effectiveActiveSessionExerciseIndex = uiState.activeSessionExerciseIndex ?: restoredActiveSession?.selectedExerciseIndex
             val bountyFeatureEnabled = profile?.devInSessionBountiesEnabled == true
             if (!bountyFeatureEnabled) {
-                container.workoutRepository.saveActiveBounty(null)
+                if (container.dataEnvironment.isDebugEphemeral) {
+                    runCatching { container.workoutRepository.saveActiveBounty(null) }
+                } else {
+                    container.workoutRepository.saveActiveBounty(null)
+                }
             }
             val activeBounty = if (bountyFeatureEnabled) {
                 container.workoutRepository.loadActiveBounty()
@@ -5844,6 +5852,311 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
             sessionStartedAtUtc = snapshot.createdAtUtc,
         )
     }
+
+    fun openDebugSheetSurface(surface: String?) {
+        if (!BuildConfig.DEBUG) return
+        when (surface?.lowercase()) {
+            "sheet.exercise_detail",
+            "sheet.exercise_description",
+            -> openDebugExerciseDetail()
+            "sheet.exercise_family" -> openDebugExerciseFamily()
+            "sheet.exercise_history" -> openDebugExerciseHistory()
+            "sheet.exercise_videos" -> openDebugExerciseVideos()
+            "sheet.history_detail" -> openDebugHistoryDetail()
+            "sheet.active_workout_details",
+            "sheet.active_session_filters",
+            -> ensureDebugActiveSession(selectFirstExercise = false)
+            "active.exercise_logging" -> ensureDebugActiveSession(selectFirstExercise = true)
+            "sheet.skipped_exercise_feedback" -> openDebugSkippedExerciseFeedback()
+            "sheet.sfr_debrief" -> openDebugSfrDebrief()
+            "sheet.checkpoint_review" -> openDebugCheckpointReview()
+            "sheet.generated_workout_swap" -> ensureDebugGeneratedWorkout()
+            "sheet.manual_builder" -> ensureDebugManualBuilder()
+        }
+    }
+
+    private fun openDebugExerciseDetail() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val exercise = debugCatalogExercise()
+            uiState = uiState.copy(selectedExerciseDetail = container.catalogRepository.getExerciseDetail(exercise.id))
+        }
+    }
+
+    private fun openDebugExerciseFamily() {
+        debugCatalogExerciseOrNull()?.let(::openExerciseFamily)
+    }
+
+    private fun openDebugExerciseHistory() {
+        val exercise = debugCatalogExerciseOrNull() ?: return
+        uiState = uiState.copy(selectedExerciseHistory = debugExerciseHistoryDetail(exercise))
+    }
+
+    private fun openDebugExerciseVideos() {
+        val exercise = debugCatalogExerciseOrNull() ?: return
+        openExerciseVideos(exercise.id, exercise.name)
+    }
+
+    private fun openDebugHistoryDetail() {
+        uiState = uiState.copy(selectedHistoryDetail = debugHistoryDetail())
+    }
+
+    private fun openDebugSkippedExerciseFeedback() {
+        val exercise = debugCatalogExerciseOrFallback()
+        uiState = uiState.copy(
+            skippedExerciseFeedbackPrompt = SkippedExerciseFeedbackPrompt(
+                exerciseId = exercise.id,
+                exerciseName = exercise.name,
+                workoutTitle = "Debug Workout",
+                workoutOrigin = "debug",
+                workoutFocusKey = "debug",
+                sessionStartedAtUtc = Instant.now().toString(),
+            ),
+        )
+    }
+
+    private fun openDebugSfrDebrief() {
+        val exercises = debugCatalogExercises(limit = 3)
+        uiState = uiState.copy(
+            showSfrDebrief = true,
+            sfrDebriefExercises = exercises.map { exercise ->
+                SfrDebriefExercise(
+                    exerciseId = exercise.id,
+                    exerciseName = exercise.name,
+                )
+            },
+        )
+    }
+
+    private fun openDebugCheckpointReview() {
+        val exercises = debugCatalogExercises(limit = 2)
+        uiState = uiState.copy(
+            showCheckpointReview = true,
+            checkpointResult = CheckpointResult(
+                action = CheckpointAction.PIVOT_EXERCISES,
+                newConfidenceScore = 0.58,
+                summaryText = "Debug checkpoint: adherence is good, but one slot is ready for an exercise evolution.",
+                exerciseEvolutionSuggestions = exercises.take(1).map { exercise ->
+                    EvolutionSuggestion(
+                        slotId = 1L,
+                        currentExerciseId = exercise.id,
+                        currentExerciseName = exercise.name,
+                        suggestedExerciseId = exercises.getOrNull(1)?.id ?: exercise.id,
+                        suggestedExerciseName = exercises.getOrNull(1)?.name ?: exercise.name,
+                        reason = "Debug fixture for visual review.",
+                    )
+                },
+                pivotRequired = false,
+            ),
+        )
+    }
+
+    private fun ensureDebugGeneratedWorkout() {
+        if (uiState.generatedWorkout != null) return
+        val exercises = debugCatalogExercises(limit = 3)
+        uiState = uiState.copy(
+            generatedWorkout = debugWorkoutPlan(exercises),
+            projectedMuscleInsights = exercises.mapIndexed { index, exercise ->
+                ProjectedMuscleInsight(
+                    muscle = exercise.targetMuscleGroup,
+                    contribution = 3.0 - index,
+                    share = (0.42 - index * 0.08).coerceAtLeast(0.12),
+                    exerciseCount = 1,
+                )
+            },
+            projectedMovementInsights = emptyList(),
+        )
+    }
+
+    private fun ensureDebugManualBuilder() {
+        if (uiState.manualWorkoutItems.isNotEmpty()) return
+        uiState = uiState.copy(
+            manualWorkoutName = "Debug Builder",
+            manualWorkoutItems = debugCatalogExercises(limit = 3).map(::debugWorkoutExercise),
+        )
+    }
+
+    private fun ensureDebugActiveSession(selectFirstExercise: Boolean) {
+        if (uiState.activeSession != null) {
+            if (selectFirstExercise) {
+                uiState = uiState.copy(activeSessionExerciseIndex = 0)
+            }
+            return
+        }
+        val exercises = debugCatalogExercises(limit = 2)
+        val session = debugActiveSession(exercises)
+        uiState = uiState.copy(
+            activeSession = session,
+            activeSessionExerciseDetailsById = loadActiveSessionExerciseDetails(session),
+            activeSessionExerciseIndex = if (selectFirstExercise) 0 else null,
+        )
+    }
+
+    private fun debugActiveSession(exercises: List<ExerciseSummary>): ActiveSession =
+        ActiveSession(
+            title = "Debug Workout",
+            origin = "appreveal_debug",
+            locationModeId = uiState.profile?.activeLocationModeId ?: 1L,
+            startedAtUtc = "2026-07-03T12:00:00Z",
+            focusKey = FORMULA_A_UPPER_PUSH_STRENGTH_FOCUS_KEY,
+            subtitle = "1/4 sets complete",
+            estimatedMinutes = 45,
+            sessionFormat = "Debug",
+            exercises = exercises.mapIndexed { exerciseIndex, exercise ->
+                val setCount = if (exerciseIndex == 0) 4 else 3
+                SessionExercise(
+                    exerciseId = exercise.id,
+                    name = exercise.name,
+                    bodyRegion = exercise.bodyRegion,
+                    targetMuscleGroup = exercise.targetMuscleGroup,
+                    equipment = exercise.equipment,
+                    restSeconds = 90,
+                    sets = (1..setCount).map { setNumber ->
+                        val completed = exerciseIndex == 0 && setNumber == 1
+                        SessionSet(
+                            setNumber = setNumber,
+                            targetReps = "8-10",
+                            recommendedReps = 8,
+                            recommendedWeight = "45",
+                            reps = if (completed) "8" else "",
+                            weight = if (completed) "45" else "",
+                            completed = completed,
+                            completedAtUtc = if (completed) "2026-07-03T12:08:00Z" else null,
+                        )
+                    },
+                    activitySequence = exerciseIndex + 1,
+                    notes = if (exerciseIndex == 0) "Debug fixture: one completed set." else "",
+                )
+            },
+        )
+
+    private fun debugHistoryDetail(): HistoryDetail {
+        val exercises = debugCatalogExercises(limit = 2)
+        val startedAt = "2026-07-03T11:00:00Z"
+        return HistoryDetail(
+            id = 9001L,
+            title = "Debug Completed Workout",
+            origin = "appreveal_debug",
+            focusKey = FORMULA_A_UPPER_PUSH_STRENGTH_FOCUS_KEY,
+            completedAtUtc = "2026-07-03T11:46:00Z",
+            startedAtUtc = startedAt,
+            durationSeconds = 46 * 60,
+            totalVolume = 4320.0,
+            exerciseCount = exercises.size,
+            exercises = exercises.mapIndexed { index, exercise ->
+                HistoryExerciseDetail(
+                    exerciseId = exercise.id,
+                    name = exercise.name,
+                    targetReps = if (index == 0) "8-10" else "10-12",
+                    loggedSets = if (index == 0) 4 else 3,
+                    totalSets = if (index == 0) 4 else 3,
+                    totalVolume = if (index == 0) 2480.0 else 1840.0,
+                    bestWeight = if (index == 0) 80.0 else 55.0,
+                    bestReps = if (index == 0) 10 else 12,
+                    lastSetRepsInReserve = if (index == 0) 2 else 1,
+                    lastSetRpe = if (index == 0) 8.0 else 8.5,
+                )
+            },
+            averageTimeBetweenSetCompletionsSeconds = 155,
+        )
+    }
+
+    private fun debugExerciseHistoryDetail(exercise: ExerciseSummary): ExerciseHistoryDetail =
+        ExerciseHistoryDetail(
+            exerciseId = exercise.id,
+            exerciseName = exercise.name,
+            entries = listOf(
+                ExerciseHistoryEntry(
+                    completedAtUtc = "2026-07-03T11:46:00Z",
+                    workoutTitle = "Debug Completed Workout",
+                    targetReps = "8-10",
+                    estimatedOneRepMax = 106.0,
+                    totalVolume = 2480.0,
+                    bestWeight = 80.0,
+                    lastSetRepsInReserve = 2,
+                    lastSetRpe = 8.0,
+                    workingSets = listOf(
+                        ExerciseHistorySet(1, reps = 10, weight = 70.0, isRepPr = false, isWeightPr = false, isVolumePr = false),
+                        ExerciseHistorySet(2, reps = 9, weight = 75.0, isRepPr = false, isWeightPr = true, isVolumePr = false),
+                        ExerciseHistorySet(3, reps = 8, weight = 80.0, isRepPr = false, isWeightPr = true, isVolumePr = true),
+                    ),
+                    hasPersonalRecord = true,
+                ),
+                ExerciseHistoryEntry(
+                    completedAtUtc = "2026-06-30T10:20:00Z",
+                    workoutTitle = "Previous Debug Session",
+                    targetReps = "8-10",
+                    estimatedOneRepMax = 96.0,
+                    totalVolume = 2100.0,
+                    bestWeight = 70.0,
+                    lastSetRepsInReserve = 3,
+                    lastSetRpe = 7.5,
+                    workingSets = listOf(
+                        ExerciseHistorySet(1, reps = 10, weight = 65.0, isRepPr = false, isWeightPr = false, isVolumePr = false),
+                        ExerciseHistorySet(2, reps = 10, weight = 70.0, isRepPr = false, isWeightPr = false, isVolumePr = false),
+                        ExerciseHistorySet(3, reps = 10, weight = 70.0, isRepPr = false, isWeightPr = false, isVolumePr = false),
+                    ),
+                    hasPersonalRecord = false,
+                ),
+            ),
+            isPrOnlyFilterEnabled = false,
+            totalEntries = 2,
+            prEntryCount = 1,
+        )
+
+    private fun debugWorkoutPlan(exercises: List<ExerciseSummary>): WorkoutPlan =
+        WorkoutPlan(
+            title = "Debug Generated Workout",
+            subtitle = "45 min • AppReveal fixture",
+            locationModeId = uiState.profile?.activeLocationModeId ?: 1L,
+            estimatedMinutes = 45,
+            origin = "generated",
+            focusKey = FORMULA_A_UPPER_PUSH_STRENGTH_FOCUS_KEY,
+            exercises = exercises.map(::debugWorkoutExercise),
+            sessionFormat = "Debug",
+            decisionSummary = listOf(
+                "Deterministic debug workout for bottom-sheet capture.",
+                "Uses local catalog exercises and does not call AI services.",
+            ),
+        )
+
+    private fun debugWorkoutExercise(exercise: ExerciseSummary): WorkoutExercise =
+        WorkoutExercise(
+            exerciseId = exercise.id,
+            name = exercise.name,
+            bodyRegion = exercise.bodyRegion,
+            targetMuscleGroup = exercise.targetMuscleGroup,
+            equipment = exercise.equipment,
+            sets = 3,
+            repRange = "8-10",
+            restSeconds = 90,
+            rationale = "Debug fixture exercise.",
+            suggestedWeight = 45.0,
+            overloadStrategy = "steady_progression",
+        )
+
+    private fun debugCatalogExercise(): ExerciseSummary =
+        debugCatalogExerciseOrFallback()
+
+    private fun debugCatalogExerciseOrNull(): ExerciseSummary? =
+        container.catalogRepository.searchExercises(query = "", limit = 1).firstOrNull()
+
+    private fun debugCatalogExerciseOrFallback(): ExerciseSummary =
+        debugCatalogExerciseOrNull()
+            ?: ExerciseSummary(
+                id = 1L,
+                name = "Goblet Squat",
+                difficulty = "Beginner",
+                bodyRegion = "Lower Body",
+                targetMuscleGroup = "Quadriceps",
+                equipment = "Dumbbell",
+                secondaryEquipment = null,
+                mechanics = null,
+                favorite = false,
+            )
+
+    private fun debugCatalogExercises(limit: Int): List<ExerciseSummary> =
+        container.catalogRepository.searchExercises(query = "", limit = limit)
+            .ifEmpty { listOf(debugCatalogExerciseOrFallback()) }
 
     private fun receiptOriginLabel(origin: String): String {
         return when {

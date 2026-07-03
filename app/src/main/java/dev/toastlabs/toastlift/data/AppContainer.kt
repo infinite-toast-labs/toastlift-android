@@ -2,8 +2,14 @@ package dev.toastlabs.toastlift.data
 
 import android.content.Context
 
-class AppContainer(context: Context) {
-    internal val toastLiftDatabase = ToastLiftDatabase(context.applicationContext)
+class AppContainer(
+    context: Context,
+    val dataEnvironment: DataEnvironment = DataEnvironment.real(),
+) {
+    internal val toastLiftDatabase = ToastLiftDatabase(
+        context = context.applicationContext,
+        databaseFileOverride = dataEnvironment.databaseFile,
+    )
 
     val catalogRepository = CatalogRepository(toastLiftDatabase)
     internal val exerciseDescriptionService = ExerciseDescriptionService(catalogRepository)

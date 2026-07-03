@@ -1,6 +1,7 @@
 package dev.toastlabs.toastlift.ui
 
 import android.content.ActivityNotFoundException
+import android.app.Activity
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -140,6 +141,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -533,7 +535,7 @@ private val DarkSurgeAccent = GlowAccent(
     textOnAccent = Color(0xFF082624),
 )
 
-private val DarkGoldAccent = GlowAccent(
+private val DarkMomentumAccent = GlowAccent(
     color = Color(0xFFFFC940),
     textOnAccent = Color(0xFF1A1400),
 )
@@ -541,37 +543,38 @@ private val DarkGoldAccent = GlowAccent(
 private val ACTIVE_SESSION_HEADER_TOP_PADDING = 5.dp
 private const val SESSION_SET_RENUMBER_DELAY_MS = 280L
 private const val SESSION_WEIGHT_JUMP_LB = 5.0
+private const val EXTRA_DEBUG_SURFACE = "dev.toastlabs.toastlift.extra.DEBUG_SURFACE"
 
 private val DarkAmethystAccent = GlowAccent(
     color = Color(0xFF3D9FFF),
 )
 
-private val DarkOrangeAccent = GlowAccent(
+private val DarkHeatAccent = GlowAccent(
     color = Color(0xFFFF7A1A),
 )
 
 private val LightEmberAccent = GlowAccent(
-    color = Color(0xFFD73433),
+    color = Color(0xFFBA3E47),
     textOnAccent = Color(0xFFFFFFFF),
 )
 
 private val LightSurgeAccent = GlowAccent(
-    color = Color(0xFF008141),
+    color = Color(0xFF4E5C9D),
     textOnAccent = Color(0xFFFFFFFF),
 )
 
-private val LightGoldAccent = GlowAccent(
-    color = Color(0xFF976D00),
+private val LightMomentumAccent = GlowAccent(
+    color = Color(0xFF695A91),
     textOnAccent = Color(0xFFFFFFFF),
 )
 
 private val LightAmethystAccent = GlowAccent(
-    color = Color(0xFF1D76C8),
+    color = Color(0xFF5B4FA3),
     textOnAccent = Color(0xFFFFFFFF),
 )
 
-private val LightOrangeAccent = GlowAccent(
-    color = Color(0xFFC14A00),
+private val LightHeatAccent = GlowAccent(
+    color = Color(0xFFA24F68),
     textOnAccent = Color(0xFFFFFFFF),
 )
 
@@ -581,21 +584,21 @@ private val emberAccent: GlowAccent
 private val surgeAccent: GlowAccent
     @Composable get() = if (LocalToastLiftIsDarkTheme.current) DarkSurgeAccent else LightSurgeAccent
 
-private val goldAccent: GlowAccent
-    @Composable get() = if (LocalToastLiftIsDarkTheme.current) DarkGoldAccent else LightGoldAccent
+private val momentumAccent: GlowAccent
+    @Composable get() = if (LocalToastLiftIsDarkTheme.current) DarkMomentumAccent else LightMomentumAccent
 
 private val amethystAccent: GlowAccent
     @Composable get() = if (LocalToastLiftIsDarkTheme.current) DarkAmethystAccent else LightAmethystAccent
 
-private val orangeAccent: GlowAccent
-    @Composable get() = if (LocalToastLiftIsDarkTheme.current) DarkOrangeAccent else LightOrangeAccent
+private val heatAccent: GlowAccent
+    @Composable get() = if (LocalToastLiftIsDarkTheme.current) DarkHeatAccent else LightHeatAccent
 
 @Composable
 private fun accentForKey(key: String): GlowAccent {
     val normalized = key.lowercase()
     return when {
         listOf("history", "streak", "calendar", "rest", "recovery", "readiness", "schedule").any(normalized::contains) -> surgeAccent
-        listOf("goal", "template", "volume", "milestone", "plan", "builder", "pr", "strength", "progress", "target", "muscle", "movement", "review").any(normalized::contains) -> goldAccent
+        listOf("goal", "template", "volume", "milestone", "plan", "builder", "pr", "strength", "progress", "target", "muscle", "movement", "review").any(normalized::contains) -> momentumAccent
         listOf("profile", "split", "generate", "adaptive", "equipment", "gym", "home", "smart", "appearance", "theme", "privacy", "workout", "session", "library").any(normalized::contains) -> amethystAccent
         else -> emberAccent
     }
@@ -607,7 +610,7 @@ private fun fallbackAccentForContainer(containerColor: Color): GlowAccent {
         containerColor.green > containerColor.red && containerColor.green > containerColor.blue -> surgeAccent
         containerColor.blue > containerColor.red && containerColor.blue >= containerColor.green -> amethystAccent
         containerColor.red > containerColor.green && containerColor.red > containerColor.blue -> emberAccent
-        containerColor.luminance() > 0.7f -> goldAccent
+        containerColor.luminance() > 0.7f -> momentumAccent
         else -> amethystAccent
     }
 }
@@ -622,8 +625,8 @@ private data class TokenWalletPalette(
     val shellBottom: Color,
     val shellStroke: Color,
     val glow: Color,
-    val gold: Color,
-    val goldSoft: Color,
+    val coin: Color,
+    val coinSoft: Color,
     val positive: Color,
     val negative: Color,
     val graphGrid: Color,
@@ -639,8 +642,8 @@ private fun rememberTokenWalletPalette(): TokenWalletPalette {
             shellBottom = Color(0xFF0E1418),
             shellStroke = Color(0xFF5D4A17),
             glow = Color(0x66FFD86B),
-            gold = Color(0xFFFFD15C),
-            goldSoft = Color(0xFFF7B733),
+            coin = Color(0xFFFFD15C),
+            coinSoft = Color(0xFFF7B733),
             positive = Color(0xFF45E08E),
             negative = Color(0xFFFF6B61),
             graphGrid = Color(0x33FFD15C),
@@ -648,15 +651,15 @@ private fun rememberTokenWalletPalette(): TokenWalletPalette {
         )
     } else {
         TokenWalletPalette(
-            shellTop = Color(0xFFFFF2CC),
-            shellBottom = Color(0xFFF6FBFF),
-            shellStroke = Color(0xFFD7B15A),
-            glow = Color(0x40E4B04D),
-            gold = Color(0xFFC98A11),
-            goldSoft = Color(0xFFE5A62F),
-            positive = Color(0xFF0D8B4E),
+            shellTop = Color(0xFFF7F4FA),
+            shellBottom = Color(0xFFEFEAF6),
+            shellStroke = Color(0xFFB6ADCB),
+            glow = Color(0x38695A91),
+            coin = Color(0xFF695A91),
+            coinSoft = Color(0xFF8476A5),
+            positive = Color(0xFF4E5C9D),
             negative = Color(0xFFC24B42),
-            graphGrid = Color(0x339F7B20),
+            graphGrid = Color(0x33695A91),
             graphLabel = onSurfaceVariant,
         )
     }
@@ -738,7 +741,7 @@ private fun tokenTrendDirection(delta: Int): ImageVector = when {
 private fun tokenTrendColor(delta: Int, palette: TokenWalletPalette): Color = when {
     delta > 0 -> palette.positive
     delta < 0 -> palette.negative
-    else -> palette.gold
+    else -> palette.coin
 }
 
 @Composable
@@ -871,9 +874,18 @@ internal fun programActionConfirmationContent(
 @Composable
 private fun ToastLiftModalBottomSheet(
     onDismissRequest: () -> Unit,
+    skipPartiallyExpanded: Boolean = false,
     content: @Composable ColumnScope.() -> Unit,
 ) {
+    val debugSurface = (LocalContext.current as? Activity)
+        ?.intent
+        ?.getStringExtra(EXTRA_DEBUG_SURFACE)
+    val forceExpandedForDebugSurface = debugSurface?.startsWith("sheet.", ignoreCase = true) == true
+    val sheetState = rememberModalBottomSheetState(
+        skipPartiallyExpanded = skipPartiallyExpanded || forceExpandedForDebugSurface,
+    )
     ModalBottomSheet(
+        sheetState = sheetState,
         onDismissRequest = onDismissRequest,
         containerColor = MaterialTheme.colorScheme.surface,
     ) {
@@ -940,6 +952,72 @@ internal fun snackbarDurationFor(message: String): SnackbarDuration = when (mess
 
 internal fun snackbarMessages(messages: Flow<String?>): Flow<String> = messages.filterNotNull()
 
+private fun String.isDebugProfileSurface(): Boolean =
+    equals("profile", ignoreCase = true) ||
+        equals("profile.main", ignoreCase = true) ||
+        isDebugDeleteDataSurface() ||
+        debugEquipmentSheetModeNameOrNull() != null
+
+private fun String?.historyDestinationOrNull(): String? {
+    return when (this?.lowercase()) {
+        "history", "history.dashboard" -> "dashboard"
+        "history.workouts" -> "workouts"
+        "history.stats" -> "stats"
+        "history.milestones" -> "milestones"
+        "history.streak" -> "streak"
+        "history.calendar" -> "calendar"
+        "history.weekly-muscles" -> "weekly-muscles"
+        "history.token-balance" -> "token-balance"
+        "history.bounty-cards" -> "bounty-cards"
+        else -> null
+    }
+}
+
+private fun String?.isDebugLibraryFilterSurface(): Boolean =
+    equals("sheet.library_filters", ignoreCase = true)
+
+private fun String?.isDebugActiveWorkoutDetailsSurface(): Boolean =
+    equals("sheet.active_workout_details", ignoreCase = true)
+
+private fun String?.isDebugActiveSessionFiltersSurface(): Boolean =
+    equals("sheet.active_session_filters", ignoreCase = true)
+
+private fun String?.isDebugExerciseDetailSurface(): Boolean =
+    equals("sheet.exercise_detail", ignoreCase = true)
+
+private fun String?.isDebugExerciseDescriptionSurface(): Boolean =
+    equals("sheet.exercise_description", ignoreCase = true)
+
+private fun String?.isDebugManualBuilderSurface(): Boolean =
+    equals("sheet.manual_builder", ignoreCase = true)
+
+private fun String?.isDebugGeneratedSwapSurface(): Boolean =
+    equals("sheet.generated_workout_swap", ignoreCase = true)
+
+private fun String?.isDebugDeleteDataSurface(): Boolean =
+    equals("sheet.profile_delete_data", ignoreCase = true)
+
+private fun String?.isDebugTopLevelSheetSurface(): Boolean =
+    when (this?.lowercase()) {
+        "sheet.exercise_family",
+        "sheet.exercise_history",
+        "sheet.exercise_videos",
+        "sheet.history_detail",
+        "sheet.skipped_exercise_feedback",
+        "sheet.program_setup",
+        "sheet.sfr_debrief",
+        "sheet.checkpoint_review",
+        -> true
+        else -> false
+    }
+
+private fun String?.debugEquipmentSheetModeNameOrNull(): String? =
+    when (this?.lowercase()) {
+        "sheet.profile_equipment_home" -> "home"
+        "sheet.profile_equipment_gym" -> "gym"
+        else -> null
+    }
+
 internal fun workoutDurationValidationMessage(input: String): String? {
     if (input.isBlank()) {
         return "Enter a duration from $MIN_WORKOUT_DURATION_MINUTES to $MAX_WORKOUT_DURATION_MINUTES minutes."
@@ -960,10 +1038,12 @@ fun ToastLiftApp(
     selectedTabOverride: MainTab? = null,
     themePreferenceOverride: ThemePreference? = null,
     completionReceiptDebugLaunch: CompletionReceiptDebugLaunch? = null,
+    debugSurfaceOverride: String? = null,
 ) {
     val state = viewModel.uiState
     val displayedTab = selectedTabOverride ?: state.selectedTab
     val effectiveThemePreference = themePreferenceOverride ?: state.themePreference
+    val debugHistoryDestination = debugSurfaceOverride.historyDestinationOrNull()
     val snackbars = remember { SnackbarHostState() }
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -1049,6 +1129,31 @@ fun ToastLiftApp(
         }
     }
 
+    LaunchedEffect(debugSurfaceOverride) {
+        debugSurfaceOverride?.let { surface ->
+            isProfileHiddenScreen = surface.isDebugProfileSurface()
+        }
+    }
+
+    LaunchedEffect(debugSurfaceOverride, state.libraryResults) {
+        if (
+            debugSurfaceOverride.isDebugExerciseDetailSurface() &&
+            state.selectedExerciseDetail == null &&
+            state.libraryResults.isNotEmpty()
+        ) {
+            viewModel.showExerciseDetail(state.libraryResults.first().id)
+        }
+    }
+
+    LaunchedEffect(debugSurfaceOverride, state.libraryResults, state.history) {
+        if (
+            debugSurfaceOverride?.startsWith("sheet.", ignoreCase = true) == true ||
+            debugSurfaceOverride.equals("active.exercise_logging", ignoreCase = true)
+        ) {
+            viewModel.openDebugSheetSurface(debugSurfaceOverride)
+        }
+    }
+
     ToastLiftTheme(themePreference = effectiveThemePreference) {
         Box(
             modifier = Modifier
@@ -1129,6 +1234,7 @@ fun ToastLiftApp(
                     onFinishExercise = viewModel::finishSessionExercise,
                     onCompleteSession = viewModel::completeSession,
                     onCancel = viewModel::cancelSession,
+                    debugSurfaceOverride = debugSurfaceOverride,
                 )
                 else -> {
                     Scaffold(
@@ -1173,9 +1279,13 @@ fun ToastLiftApp(
                                 },
                                 label = "main-tab-transition",
                             ) { tab ->
-                                if (isProfileHiddenScreen) {
-                                    BackHandler { isProfileHiddenScreen = false }
-                                    ProfileScreen(state = state, viewModel = viewModel)
+                                    if (isProfileHiddenScreen) {
+                                        BackHandler { isProfileHiddenScreen = false }
+                                    ProfileScreen(
+                                        state = state,
+                                        viewModel = viewModel,
+                                        debugSurfaceOverride = debugSurfaceOverride,
+                                    )
                                 } else when (tab) {
                                     // Home owns today's plan/program surface. Generate
                                     // now lives in its own main tab.
@@ -1354,6 +1464,7 @@ fun ToastLiftApp(
                                             onStartManualWorkout = viewModel::startManualWorkout,
                                             onSaveManualTemplate = viewModel::saveManualTemplate,
                                             onFullscreenFlowChange = { isGenerateFullscreenFlow = it },
+                                            debugSurfaceOverride = debugSurfaceOverride,
                                         )
                                     }
 
@@ -1362,11 +1473,25 @@ fun ToastLiftApp(
                                     // exercise Library and the History dashboard
                                     // (stats, calendar, bounty cards, strength score).
                                     MainTab.Explore -> {
-                                        var exploreSection by remember { mutableStateOf(ExploreSection.Library) }
+                                        var exploreSection by remember(debugSurfaceOverride) {
+                                            mutableStateOf(
+                                                if (debugHistoryDestination != null) {
+                                                    ExploreSection.History
+                                                } else {
+                                                    ExploreSection.Library
+                                                },
+                                            )
+                                        }
                                         LaunchedEffect(state.libraryNavigationRevision) {
                                             if (state.libraryNavigationRevision > 0L) {
                                                 exploreSection = ExploreSection.Library
                                                 historyNavigationState.destination = "dashboard"
+                                            }
+                                        }
+                                        LaunchedEffect(debugHistoryDestination) {
+                                            debugHistoryDestination?.let { destination ->
+                                                exploreSection = ExploreSection.History
+                                                historyNavigationState.destination = destination
                                             }
                                         }
                                         Column(modifier = Modifier.fillMaxSize()) {
@@ -1412,6 +1537,7 @@ fun ToastLiftApp(
                                                     onGenerateCustomExercise = viewModel::generateCustomExerciseDetails,
                                                     onUseExistingExercise = viewModel::useExistingExerciseFromCustomFlow,
                                                     onSaveCustomExercise = viewModel::saveCustomExercise,
+                                                    debugSurfaceOverride = debugSurfaceOverride,
                                                 )
                                                 ExploreSection.History -> HistoryScreen(
                                                     navigationState = historyNavigationState,
@@ -1454,6 +1580,9 @@ fun ToastLiftApp(
                     detail = detail,
                     profile = state.profile,
                     isGeneratingDescription = state.generatingExerciseDescriptionId == detail.summary.id,
+                    forceExpanded = debugSurfaceOverride.isDebugExerciseDetailSurface() ||
+                        debugSurfaceOverride.isDebugExerciseDescriptionSurface(),
+                    openDescriptionInitially = debugSurfaceOverride.isDebugExerciseDescriptionSurface(),
                     onDismiss = viewModel::dismissExerciseDetail,
                     onGenerateDescription = { viewModel.generateExerciseDescription(detail.summary.id) },
                     recommendationBias = state.recommendationBiasByExerciseId[detail.summary.id] ?: detail.summary.recommendationBias,
@@ -1905,8 +2034,8 @@ private fun bountyRarityAccent(rarity: BountyCardRarity): GlowAccent = when (rar
     // as "legendary" rather than a mid-workout danger signal.
     BountyCardRarity.CHALK -> amethystAccent
     BountyCardRarity.STEEL -> surgeAccent
-    BountyCardRarity.EMBER -> orangeAccent
-    BountyCardRarity.GOLD -> goldAccent
+    BountyCardRarity.EMBER -> heatAccent
+    BountyCardRarity.GOLD -> momentumAccent
     BountyCardRarity.PRISM -> emberAccent
 }
 
@@ -2973,7 +3102,7 @@ private fun TodayReceiptRecapCard(
                 }
                 MiniTag(
                     text = if (recap.workoutCountToday > 1) "${recap.workoutCountToday} today" else "Today",
-                    accent = goldAccent.start.copy(alpha = 0.18f),
+                    accent = momentumAccent.start.copy(alpha = 0.18f),
                 )
             }
             Row(
@@ -3318,7 +3447,7 @@ private fun CompletionReceiptHeroCard(
                         if ((snapshot.achievements?.prCount ?: 0) > 0) {
                             MiniTag(
                                 text = snapshot.achievements?.title.orEmpty(),
-                                accent = goldAccent.start.copy(alpha = 0.18f),
+                                accent = momentumAccent.start.copy(alpha = 0.18f),
                             )
                         }
                         snapshot.accounting?.tokenDelta?.let { tokenDelta ->
@@ -3410,7 +3539,7 @@ private fun CompletionReceiptAchievementsCard(
                 achievements.chips.take(6).forEach { chip ->
                     MiniTag(
                         text = chip,
-                        accent = goldAccent.start.copy(alpha = 0.18f),
+                        accent = momentumAccent.start.copy(alpha = 0.18f),
                     )
                 }
             }
@@ -3579,7 +3708,7 @@ private fun TodayDoneBadgeCard(model: TodayCompletionFeedbackModel) {
                 fontSize = 28.sp,
             )
             if (!model.statusLabel.equals(model.title, ignoreCase = true)) {
-                MiniTag(model.statusLabel, accent = goldAccent.start.copy(alpha = 0.18f))
+                MiniTag(model.statusLabel, accent = momentumAccent.start.copy(alpha = 0.18f))
             }
         }
     }
@@ -3587,7 +3716,7 @@ private fun TodayDoneBadgeCard(model: TodayCompletionFeedbackModel) {
 
 @Composable
 private fun TodayCompletionMeterCard(model: TodayCompletionFeedbackModel) {
-    val accent = if (model.progressFraction >= 1f) goldAccent else surgeAccent
+    val accent = if (model.progressFraction >= 1f) momentumAccent else surgeAccent
     val animatedProgress by animateFloatAsState(
         targetValue = model.progressFraction.coerceIn(0f, 1f),
         animationSpec = spring(
@@ -3661,7 +3790,7 @@ private fun FreshnessReEntryCard(
 ) {
     val accent = when (state.mode) {
         FreshnessReEntryMode.ReEntry -> emberAccent
-        FreshnessReEntryMode.MaintenanceSave -> goldAccent
+        FreshnessReEntryMode.MaintenanceSave -> momentumAccent
     }
     val label = when (state.mode) {
         FreshnessReEntryMode.ReEntry -> "Re-entry mode"
@@ -3680,8 +3809,8 @@ private fun FreshnessReEntryCard(
                 .background(
                     Brush.verticalGradient(
                         colors = listOf(
-                            accent.glow.copy(alpha = if (isDark) 0.44f else 0.22f),
-                            accent.glow.copy(alpha = if (isDark) 0.16f else 0.08f),
+                            accent.glow.copy(alpha = if (isDark) 0.44f else 0.18f),
+                            accent.glow.copy(alpha = if (isDark) 0.16f else 0.06f),
                             Color.Transparent,
                         ),
                         endY = 720f,
@@ -3694,7 +3823,7 @@ private fun FreshnessReEntryCard(
                 drawCircle(
                     brush = Brush.radialGradient(
                         colors = listOf(
-                            accent.start.copy(alpha = if (isDark) 0.18f else 0.1f),
+                            accent.start.copy(alpha = if (isDark) 0.18f else 0.08f),
                             Color.Transparent,
                         ),
                         center = upperGlowCenter,
@@ -3708,7 +3837,7 @@ private fun FreshnessReEntryCard(
                 drawCircle(
                     brush = Brush.radialGradient(
                         colors = listOf(
-                            accent.glow.copy(alpha = if (isDark) 0.16f else 0.08f),
+                            accent.glow.copy(alpha = if (isDark) 0.16f else 0.06f),
                             Color.Transparent,
                         ),
                         center = sideGlowCenter,
@@ -4112,7 +4241,7 @@ private fun trainingFreshnessCardLabel(mode: TrainingFreshnessCardMode): String 
 @Composable
 private fun trainingFreshnessAccent(status: TrainingFreshnessStatus): GlowAccent = when (status) {
     TrainingFreshnessStatus.Fresh -> surgeAccent
-    TrainingFreshnessStatus.DueSoon -> goldAccent
+    TrainingFreshnessStatus.DueSoon -> momentumAccent
     TrainingFreshnessStatus.Overdue -> emberAccent
     TrainingFreshnessStatus.Untracked -> amethystAccent
 }
@@ -4409,6 +4538,7 @@ private fun GenerateScreen(
     onStartManualWorkout: () -> Unit,
     onSaveManualTemplate: () -> Unit,
     onFullscreenFlowChange: (Boolean) -> Unit,
+    debugSurfaceOverride: String? = null,
 ) {
     var showBuilderSheet by remember { mutableStateOf(false) }
     var showSwapSheet by remember { mutableStateOf(false) }
@@ -4432,6 +4562,18 @@ private fun GenerateScreen(
 
     DisposableEffect(Unit) {
         onDispose { onFullscreenFlowChange(false) }
+    }
+
+    LaunchedEffect(debugSurfaceOverride, state.manualWorkoutItems) {
+        if (debugSurfaceOverride.isDebugManualBuilderSurface()) {
+            showBuilderSheet = true
+        }
+    }
+
+    LaunchedEffect(debugSurfaceOverride, generated) {
+        if (debugSurfaceOverride.isDebugGeneratedSwapSurface() && generated != null) {
+            showSwapSheet = true
+        }
     }
 
     if (showGeneratedAddScreen) {
@@ -4748,6 +4890,7 @@ private fun LibraryScreen(
     onGenerateCustomExercise: () -> Unit,
     onUseExistingExercise: (ExerciseSummary) -> Unit,
     onSaveCustomExercise: () -> Unit,
+    debugSurfaceOverride: String? = null,
 ) {
     if (state.customExerciseDraft != null && state.customExerciseDestination == CustomExerciseDestination.Library) {
         CustomExerciseEditorScreen(
@@ -4765,6 +4908,12 @@ private fun LibraryScreen(
     var showFilterSheet by remember { mutableStateOf(false) }
     var existingTemplateTarget by remember { mutableStateOf<ExerciseSummary?>(null) }
     var newTemplateTarget by remember { mutableStateOf<ExerciseSummary?>(null) }
+
+    LaunchedEffect(debugSurfaceOverride) {
+        if (debugSurfaceOverride.isDebugLibraryFilterSurface()) {
+            showFilterSheet = true
+        }
+    }
 
     CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onBackground) {
         Column(
@@ -4904,6 +5053,7 @@ private fun LibraryScreen(
         LibraryFilterSheet(
             facets = state.libraryFacets,
             filters = state.libraryFilters,
+            forceExpanded = debugSurfaceOverride.isDebugLibraryFilterSurface(),
             onDismiss = { showFilterSheet = false },
             onClearFilters = onClearFilters,
             onToggleEquipment = onToggleEquipmentFilter,
@@ -6562,7 +6712,7 @@ private fun milestoneRewardSpec(milestone: MilestoneProgress): RewardVisualSpec 
     return when (milestone.title) {
         "Volume" -> RewardVisualSpec(
             icon = Icons.Rounded.FitnessCenter,
-            accent = goldAccent,
+            accent = momentumAccent,
             token = if (achieved) "Iron Medal" else "Next Medal",
             message = if (achieved) {
                 "Lifetime load crossed this benchmark. Your volume work now carries real weight."
@@ -6610,7 +6760,7 @@ private fun milestoneRewardSpec(milestone: MilestoneProgress): RewardVisualSpec 
 private fun streakRewardSpec(currentStreakWeeks: Int): RewardVisualSpec = when {
     currentStreakWeeks >= 12 -> RewardVisualSpec(
         icon = Icons.Rounded.LocalFireDepartment,
-        accent = goldAccent,
+        accent = momentumAccent,
         token = "Gold Streak",
         message = "This run is deep enough to feel like a real training rhythm, not a hot start.",
     )
@@ -7236,7 +7386,7 @@ private fun TokenBalanceOverviewCard(
                     }
                     MiniTag(
                         text = if (trend != null) "Tap for breakdown" else "Starts after your first workout",
-                        accent = palette.gold.copy(alpha = 0.18f),
+                        accent = palette.coin.copy(alpha = 0.18f),
                     )
                 }
 
@@ -7287,7 +7437,7 @@ private fun TokenBalanceOverviewCard(
                                 )
                                 MiniTag(
                                     text = trend.snapshot.statusLabel,
-                                    accent = palette.gold.copy(alpha = 0.18f),
+                                    accent = palette.coin.copy(alpha = 0.18f),
                                 )
                             }
                             Text(
@@ -7386,7 +7536,7 @@ private fun TokenBalanceDetailScreen(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            MiniTag(text = "ToastLift wallet", accent = palette.gold.copy(alpha = 0.18f))
+                            MiniTag(text = "ToastLift wallet", accent = palette.coin.copy(alpha = 0.18f))
                             Text(
                                 trend.snapshot.displayValue,
                                 style = MaterialTheme.typography.displayLarge,
@@ -7409,7 +7559,7 @@ private fun TokenBalanceDetailScreen(
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        MiniTag(text = trend.snapshot.statusLabel, accent = palette.gold.copy(alpha = 0.18f))
+                        MiniTag(text = trend.snapshot.statusLabel, accent = palette.coin.copy(alpha = 0.18f))
                         MiniTag(
                             text = "Floor ${trend.snapshot.floor}",
                             accent = palette.negative.copy(alpha = 0.16f),
@@ -7580,8 +7730,8 @@ private fun TokenCoinBadge(
             drawCircle(
                 brush = Brush.radialGradient(
                     colors = listOf(
-                        palette.gold.copy(alpha = 0.98f),
-                        palette.goldSoft.copy(alpha = 0.94f),
+                        palette.coin.copy(alpha = 0.98f),
+                        palette.coinSoft.copy(alpha = 0.94f),
                     ),
                     center = center,
                     radius = radius,
@@ -7611,7 +7761,7 @@ private fun TokenCoinBadge(
             text = "TL",
             style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.Black,
-            color = readableTextColorFor(palette.gold),
+            color = if (palette.coin.luminance() < 0.34f) Color.White else LocalUiColors.current.inkOnLightSurface,
         )
     }
 }
@@ -7897,7 +8047,7 @@ private fun strengthScoreTrendAccent(summary: StrengthScoreSummary): GlowAccent 
     summary.previousScore == null -> amethystAccent
     summary.deltaFromPrevious > 0 -> surgeAccent
     summary.deltaFromPrevious < 0 -> emberAccent
-    else -> goldAccent
+    else -> momentumAccent
 }
 
 @Composable
@@ -8210,7 +8360,7 @@ private fun HistoryMilestonesScreen(
                 ) {
                     RewardMedallion(
                         icon = Icons.Rounded.WorkspacePremium,
-                        accent = goldAccent,
+                        accent = momentumAccent,
                         achieved = data.milestoneProgress.any { it.current >= it.target },
                         modifier = Modifier.size(76.dp),
                         iconSize = 28.dp,
@@ -8287,7 +8437,7 @@ private fun HistoryStreakScreen(
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                     data.streakWeeks.forEach { week ->
                         val hitGoal = week.workoutCount >= data.weeklyGoal
-                        val weekAccent = if (hitGoal) goldAccent else surgeAccent
+                        val weekAccent = if (hitGoal) momentumAccent else surgeAccent
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
@@ -9231,7 +9381,11 @@ private fun HistoryEntryCard(
 }
 
 @Composable
-private fun ProfileScreen(state: AppUiState, viewModel: ToastLiftViewModel) {
+private fun ProfileScreen(
+    state: AppUiState,
+    viewModel: ToastLiftViewModel,
+    debugSurfaceOverride: String? = null,
+) {
     val context = LocalContext.current
     ProfileEditor(
         title = "Profile",
@@ -9266,6 +9420,7 @@ private fun ProfileScreen(state: AppUiState, viewModel: ToastLiftViewModel) {
         onExportPersonalData = viewModel::preparePersonalDataExport,
         onDeletePersonalData = viewModel::deleteAllPersonalData,
         showAppearanceSettings = true,
+        debugSurfaceOverride = debugSurfaceOverride,
     )
 }
 
@@ -9317,9 +9472,23 @@ private fun ProfileEditor(
     onExportPersonalData: (() -> Unit)? = null,
     onDeletePersonalData: (() -> Unit)? = null,
     showAppearanceSettings: Boolean = false,
+    debugSurfaceOverride: String? = null,
 ) {
     var equipmentSheetMode by remember { mutableStateOf<LocationMode?>(null) }
     var showDeleteSheet by remember { mutableStateOf(false) }
+
+    LaunchedEffect(debugSurfaceOverride, locationModes) {
+        val requestedModeName = debugSurfaceOverride.debugEquipmentSheetModeNameOrNull() ?: return@LaunchedEffect
+        equipmentSheetMode = locationModes.firstOrNull { mode ->
+            mode.name.equals(requestedModeName, ignoreCase = true) ||
+                mode.displayName.equals(requestedModeName, ignoreCase = true)
+        }
+    }
+    LaunchedEffect(debugSurfaceOverride, onDeletePersonalData) {
+        if (debugSurfaceOverride.isDebugDeleteDataSurface() && onDeletePersonalData != null) {
+            showDeleteSheet = true
+        }
+    }
     val splitName = splitPrograms.firstOrNull { it.id == draft.splitProgramId }?.name ?: ""
     val activeLocationMode = profile?.let { activeProfile ->
         locationModes.firstOrNull { it.id == activeProfile.activeLocationModeId }
@@ -10981,8 +11150,8 @@ private fun MuscleTargetFilterBanner(
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(18.dp),
-        color = goldAccent.glow.copy(alpha = if (LocalToastLiftIsDarkTheme.current) 0.34f else 0.58f),
-        border = BorderStroke(1.dp, goldAccent.start.copy(alpha = 0.22f)),
+        color = momentumAccent.glow.copy(alpha = if (LocalToastLiftIsDarkTheme.current) 0.34f else 0.58f),
+        border = BorderStroke(1.dp, momentumAccent.start.copy(alpha = 0.22f)),
     ) {
         Row(
             modifier = Modifier
@@ -10993,12 +11162,12 @@ private fun MuscleTargetFilterBanner(
         ) {
             Surface(
                 shape = CircleShape,
-                color = goldAccent.start.copy(alpha = 0.14f),
+                color = momentumAccent.start.copy(alpha = 0.14f),
             ) {
                 Icon(
                     imageVector = Icons.Rounded.FitnessCenter,
                     contentDescription = null,
-                    tint = goldAccent.start,
+                    tint = momentumAccent.start,
                     modifier = Modifier
                         .padding(7.dp)
                         .size(18.dp),
@@ -11346,6 +11515,7 @@ private fun BuilderFilterScreen(
 private fun LibraryFilterSheet(
     facets: LibraryFacets,
     filters: LibraryFilters,
+    forceExpanded: Boolean = false,
     onDismiss: () -> Unit,
     onClearFilters: () -> Unit,
     onToggleEquipment: (String) -> Unit,
@@ -11360,7 +11530,10 @@ private fun LibraryFilterSheet(
     onClearFreshnessMuscleFilters: () -> Unit = onClearFilters,
     onClearMuscleTargetFilters: () -> Unit = onClearFilters,
 ) {
-    ToastLiftModalBottomSheet(onDismissRequest = onDismiss) {
+    ToastLiftModalBottomSheet(
+        onDismissRequest = onDismiss,
+        skipPartiallyExpanded = forceExpanded,
+    ) {
         LazyColumn(
             modifier = Modifier
                 .fillMaxWidth()
@@ -11836,6 +12009,7 @@ private fun ActiveSessionScreen(
     onFinishExercise: (Int) -> Unit,
     onCompleteSession: () -> Unit,
     onCancel: () -> Unit,
+    debugSurfaceOverride: String? = null,
 ) {
     var showDiscardDialog by remember { mutableStateOf(false) }
     var showFinishConfirmDialog by remember { mutableStateOf(false) }
@@ -11848,6 +12022,16 @@ private fun ActiveSessionScreen(
     var selectedMuscleFilterKey by rememberSaveable(session.startedAtUtc) { mutableStateOf<String?>(null) }
     var selectedMuscleTargetBucketKey by rememberSaveable(session.startedAtUtc) { mutableStateOf<String?>(null) }
     var selectedMuscleTargetSubcategoryKey by rememberSaveable(session.startedAtUtc) { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(debugSurfaceOverride, session.startedAtUtc) {
+        if (debugSurfaceOverride.isDebugActiveWorkoutDetailsSurface()) {
+            showWorkoutDetailsSheet = true
+        }
+        if (debugSurfaceOverride.isDebugActiveSessionFiltersSurface()) {
+            showExerciseFilterSheet = true
+        }
+    }
+
     val equipmentOptions = remember(session.exercises) { activeSessionEquipmentOptions(session) }
     val bodyRegionOptions = remember(session.exercises) { activeSessionBodyRegionFilterOptions(session) }
     val muscleFilterOptions = remember(session.exercises, exerciseDetailsById) {
@@ -12285,6 +12469,7 @@ private fun ActiveSessionScreen(
                 showWorkoutDetailsSheet = false
                 onOpenMuscleTargetPicker(bucketKey, subcategoryKey)
             },
+            forceExpanded = debugSurfaceOverride.isDebugActiveWorkoutDetailsSurface(),
             onDismiss = { showWorkoutDetailsSheet = false },
         )
     }
@@ -13499,6 +13684,7 @@ private fun ActiveWorkoutDetailsSheet(
     progressMetrics: ActiveWorkoutProgressMetrics,
     onOpenExercise: (Int) -> Unit,
     onOpenMuscleTargetPicker: (String?, String?) -> Unit,
+    forceExpanded: Boolean = false,
     onDismiss: () -> Unit,
 ) {
     val expectedVolume = activeSessionExpectedLoadVolume(session)
@@ -13520,7 +13706,10 @@ private fun ActiveWorkoutDetailsSheet(
     }.getOrElse {
         session.startedAtUtc.replace("T", " ").removeSuffix("Z")
     }
-    ToastLiftModalBottomSheet(onDismissRequest = onDismiss) {
+    ToastLiftModalBottomSheet(
+        onDismissRequest = onDismiss,
+        skipPartiallyExpanded = forceExpanded,
+    ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -13634,7 +13823,7 @@ private fun ActiveWorkoutMuscleTargetLiveCard(
             "${decimalString(spotlightRows.sumOf { it.plannedWeightedSets })} weighted sets planned here"
         else -> summary.cueLabel ?: summary.lens.label
     }
-    val headerAccent = spotlightBucketKeys.firstOrNull()?.let { bucketKey -> weeklyMuscleAccent(bucketKey) } ?: goldAccent
+    val headerAccent = spotlightBucketKeys.firstOrNull()?.let { bucketKey -> weeklyMuscleAccent(bucketKey) } ?: momentumAccent
     FeatureCard(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f)) {
         Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Row(
@@ -13711,7 +13900,7 @@ private fun ActiveWorkoutMuscleTargetOverviewCard(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                LeadingBadge(label = "MT", accent = goldAccent)
+                LeadingBadge(label = "MT", accent = momentumAccent)
                 Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     Text("Target Overview", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                     Text(
@@ -14654,7 +14843,7 @@ private fun ActiveWorkoutFreshnessShield(
 private fun activeWorkoutMuscleRefreshTrackColor(state: ActiveWorkoutMuscleRefreshState): Color {
     return when (state) {
         ActiveWorkoutMuscleRefreshState.NotTargeted -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.46f)
-        ActiveWorkoutMuscleRefreshState.Pending -> orangeAccent.glow.copy(alpha = 0.42f)
+        ActiveWorkoutMuscleRefreshState.Pending -> heatAccent.glow.copy(alpha = 0.42f)
         ActiveWorkoutMuscleRefreshState.Refreshed -> surgeAccent.glow.copy(alpha = 0.48f)
     }
 }
@@ -14663,7 +14852,7 @@ private fun activeWorkoutMuscleRefreshTrackColor(state: ActiveWorkoutMuscleRefre
 private fun activeWorkoutMuscleRefreshFillColor(state: ActiveWorkoutMuscleRefreshState): Color {
     return when (state) {
         ActiveWorkoutMuscleRefreshState.NotTargeted -> Color.Transparent
-        ActiveWorkoutMuscleRefreshState.Pending -> orangeAccent.start.copy(alpha = if (LocalToastLiftIsDarkTheme.current) 0.72f else 0.58f)
+        ActiveWorkoutMuscleRefreshState.Pending -> heatAccent.start.copy(alpha = if (LocalToastLiftIsDarkTheme.current) 0.72f else 0.58f)
         ActiveWorkoutMuscleRefreshState.Refreshed -> surgeAccent.start.copy(alpha = if (LocalToastLiftIsDarkTheme.current) 0.82f else 0.64f)
     }
 }
@@ -14672,7 +14861,7 @@ private fun activeWorkoutMuscleRefreshFillColor(state: ActiveWorkoutMuscleRefres
 private fun activeWorkoutMuscleRefreshBorderColor(state: ActiveWorkoutMuscleRefreshState): Color {
     return when (state) {
         ActiveWorkoutMuscleRefreshState.NotTargeted -> MaterialTheme.colorScheme.outline.copy(alpha = 0.24f)
-        ActiveWorkoutMuscleRefreshState.Pending -> orangeAccent.start.copy(alpha = 0.34f)
+        ActiveWorkoutMuscleRefreshState.Pending -> heatAccent.start.copy(alpha = 0.34f)
         ActiveWorkoutMuscleRefreshState.Refreshed -> surgeAccent.start.copy(alpha = 0.38f)
     }
 }
@@ -14878,7 +15067,7 @@ private fun SessionExerciseRow(
             exercise.sets.firstOrNull()?.displayedWeight()?.takeIf { it.isNotBlank() }?.let { " • $it lb" }.orEmpty()
     }
     val summaryColor = when {
-        progressFraction >= 1f -> goldAccent.start
+        progressFraction >= 1f -> momentumAccent.start
         completedSets > 0 -> surgeAccent.start
         else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
@@ -15640,13 +15829,36 @@ private fun DismissibleSessionSetRow(
     val actionWidthPx = with(LocalDensity.current) { actionWidth.toPx() }
     val focusManager = LocalFocusManager.current
     val isDarkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f
-    val rowAccent = if (set.completed) surgeAccent else emberAccent
-    val completedRowColor = MaterialTheme.colorScheme.secondaryContainer
-    val pendingRowColor = MaterialTheme.colorScheme.surfaceVariant
+    val rowAccent = if (set.completed) surgeAccent else heatAccent
+    val completedRowColor = if (isDarkTheme) {
+        MaterialTheme.colorScheme.secondaryContainer
+    } else {
+        MaterialTheme.colorScheme.primaryContainer
+    }
+    val pendingRowColor = if (isDarkTheme) {
+        MaterialTheme.colorScheme.surfaceVariant
+    } else {
+        MaterialTheme.colorScheme.surface
+    }
     val completedTextColor = if (set.completed) {
-        if (isDarkTheme) surgeAccent.start else MaterialTheme.colorScheme.onSecondaryContainer
+        if (isDarkTheme) surgeAccent.start else MaterialTheme.colorScheme.onPrimaryContainer
     } else {
         MaterialTheme.colorScheme.onSurface
+    }
+    val rowBorderColor = if (set.completed) {
+        rowAccent.start.copy(alpha = if (isDarkTheme) 0.5f else 0.42f)
+    } else {
+        MaterialTheme.colorScheme.outline.copy(alpha = if (isDarkTheme) 0.18f else 0.26f)
+    }
+    val rowBottomDepthColor = if (isDarkTheme) {
+        Color.Black.copy(alpha = if (set.completed) 0.32f else 0.22f)
+    } else {
+        Color.Black.copy(alpha = if (set.completed) 0.08f else 0.045f)
+    }
+    val rowTopDepthColor = if (set.completed) {
+        rowAccent.start.copy(alpha = if (isDarkTheme) 0.16f else 0.12f)
+    } else {
+        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (isDarkTheme) 0.14f else 0.72f)
     }
     var horizontalOffset by remember { mutableFloatStateOf(0f) }
     val rowScale = remember(set.id) { Animatable(1f) }
@@ -15715,8 +15927,8 @@ private fun DismissibleSessionSetRow(
                     modifier = Modifier
                         .width(actionWidth)
                         .fillMaxSize(),
-                    color = if (set.completed) goldAccent.start else surgeAccent.start,
-                    contentColor = if (set.completed) goldAccent.textOnAccent else surgeAccent.textOnAccent,
+                    color = if (set.completed) momentumAccent.start else surgeAccent.start,
+                    contentColor = if (set.completed) momentumAccent.textOnAccent else surgeAccent.textOnAccent,
                     shape = RoundedCornerShape(topStart = 18.dp, bottomStart = 18.dp),
                 ) {
                     Column(
@@ -15788,37 +16000,60 @@ private fun DismissibleSessionSetRow(
                             else -> 0f
                         }
                     },
-                ),
+            ),
             shape = RoundedCornerShape(10.dp),
             color = rowColor,
+            border = BorderStroke(1.dp, rowBorderColor),
+            tonalElevation = if (set.completed) 2.dp else 0.dp,
+            shadowElevation = if (set.completed) 2.dp else 0.5.dp,
         ) {
             Box(modifier = Modifier.fillMaxWidth()) {
-                val highlightAlpha = ((1f - completionBurst.value) * 0.34f).coerceIn(0f, 0.34f)
+                val highlightAlpha = ((1f - completionBurst.value) * 0.16f).coerceIn(0f, 0.16f)
                 if (highlightAlpha > 0f) {
-                    Canvas(modifier = Modifier.matchParentSize()) {
-                        val sweepCenter = size.width * (0.14f + (completionBurst.value * 1.05f))
-                        drawRoundRect(
-                            brush = Brush.horizontalGradient(
-                                colors = listOf(
-                                    Color.Transparent,
-                                    rowAccent.glow.copy(alpha = highlightAlpha),
-                                    Color.Transparent,
-                                ),
-                                startX = sweepCenter - (size.width * 0.22f),
-                                endX = sweepCenter + (size.width * 0.22f),
-                            ),
-                        )
-                    }
+                    Box(
+                        modifier = Modifier
+                            .matchParentSize()
+                            .background(rowAccent.start.copy(alpha = highlightAlpha)),
+                    )
                 }
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.CenterStart)
+                        .fillMaxHeight()
+                        .width(if (set.completed) 5.dp else 3.dp)
+                        .background(
+                            if (set.completed) {
+                                rowAccent.start.copy(alpha = if (isDarkTheme) 0.82f else 0.68f)
+                            } else {
+                                MaterialTheme.colorScheme.outline.copy(alpha = if (isDarkTheme) 0.16f else 0.18f)
+                            },
+                        ),
+                )
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .fillMaxWidth()
+                        .height(1.dp)
+                        .padding(horizontal = 1.dp)
+                        .background(rowTopDepthColor),
+                )
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .height(1.dp)
+                        .padding(horizontal = 1.dp)
+                        .background(rowBottomDepthColor),
+                )
                 Row(
                     modifier = Modifier.padding(start = 12.dp, end = 12.dp, top = 16.dp, bottom = 10.dp),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     LeadingBadge(
                         label = displaySetNumber.toString(),
                         accent = rowAccent,
-                        textColor = if (set.completed) rowAccent.textOnAccent else Color.Unspecified,
+                        textColor = rowAccent.textOnAccent,
                     )
                     Column(
                         modifier = Modifier.weight(1f),
@@ -15897,7 +16132,8 @@ private fun StrengthSessionSetFields(
                 value = set.displayedWeight(),
                 onValueChange = { value -> onValueChange(exerciseIndex, setIndex, value, true) },
                 modifier = Modifier.weight(1f),
-                label = "Weight (lb)",
+                label = "Weight",
+                suffixText = "lb",
                 textColor = completedTextColor,
                 keyboardOptions = KeyboardOptions(
                     keyboardType = KeyboardType.Decimal,
@@ -16074,13 +16310,25 @@ private fun SessionSetCompletionAction(
         ),
         label = "sessionSetCompletionProgress",
     )
-    val idleStart = MaterialTheme.colorScheme.surface.copy(alpha = if (isDarkTheme) 0.94f else 0.98f)
-    val idleEnd = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (isDarkTheme) 0.74f else 0.9f)
-    val activeStart = accent.start.copy(alpha = if (isDarkTheme) 0.34f else 0.22f)
-    val activeEnd = accent.end.copy(alpha = if (isDarkTheme) 0.24f else 0.16f)
+    val idleContainer = if (isDarkTheme) {
+        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.78f)
+    } else {
+        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.86f)
+    }
+    val activeContainer = if (isDarkTheme) {
+        accent.start.copy(alpha = 0.3f).compositeOver(MaterialTheme.colorScheme.surfaceVariant)
+    } else {
+        accent.start.copy(alpha = 0.2f).compositeOver(MaterialTheme.colorScheme.surface)
+    }
+    val buttonContainer = lerp(idleContainer, activeContainer, completionProgress)
+    val buttonDepthColor = if (isDarkTheme) {
+        Color.Black.copy(alpha = 0.28f + (completionProgress * 0.1f))
+    } else {
+        Color.Black.copy(alpha = 0.05f + (completionProgress * 0.03f))
+    }
     val borderColor = lerp(
         MaterialTheme.colorScheme.outline.copy(alpha = 0.22f),
-        accent.start.copy(alpha = 0.55f),
+        accent.start.copy(alpha = if (isDarkTheme) 0.55f else 0.68f),
         completionProgress,
     )
     val iconBackground = lerp(
@@ -16093,26 +16341,13 @@ private fun SessionSetCompletionAction(
         accent.textOnAccent,
         completionProgress,
     )
-    val labelColor = lerp(
-        MaterialTheme.colorScheme.onSurfaceVariant,
-        if (isDarkTheme) accent.start else MaterialTheme.colorScheme.onSecondaryContainer,
-        completionProgress,
-    )
     val shape = RoundedCornerShape(10.dp)
 
     Box(
         modifier = Modifier
-            .width(96.dp)
-            .height(54.dp)
+            .size(56.dp)
             .clip(shape)
-            .background(
-                brush = Brush.horizontalGradient(
-                    listOf(
-                        lerp(idleStart, activeStart, completionProgress),
-                        lerp(idleEnd, activeEnd, completionProgress),
-                    ),
-                ),
-            )
+            .background(buttonContainer)
             .border(BorderStroke(1.dp, borderColor), shape)
             .clickable(onClick = onClick)
             .semantics(mergeDescendants = true) {
@@ -16124,31 +16359,30 @@ private fun SessionSetCompletionAction(
         val shimmerAlpha = ((1f - burstProgress) * 0.42f).coerceIn(0f, 0.42f)
         val uiColors = LocalUiColors.current
         if (shimmerAlpha > 0f) {
-            Canvas(modifier = Modifier.matchParentSize()) {
-                val sweepCenter = size.width * (0.18f + (burstProgress * 0.96f))
-                drawRoundRect(
-                    brush = Brush.horizontalGradient(
-                        colors = listOf(
-                            Color.Transparent,
-                            uiColors.highlight.copy(alpha = shimmerAlpha),
-                            Color.Transparent,
-                        ),
-                        startX = sweepCenter - (size.width * 0.28f),
-                        endX = sweepCenter + (size.width * 0.12f),
-                    ),
-                )
-            }
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .background(uiColors.highlight.copy(alpha = shimmerAlpha * 0.2f)),
+            )
         }
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .height(1.dp)
+                .padding(horizontal = 1.dp)
+                .background(buttonDepthColor),
+        )
         Row(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+                .padding(8.dp),
+            horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
                 modifier = Modifier
-                    .size(28.dp)
+                    .size(36.dp)
                     .graphicsLayer {
                         val pulse = (1f - burstProgress).coerceIn(0f, 1f)
                         scaleX = 0.92f + (completionProgress * 0.08f) + (pulse * 0.12f)
@@ -16172,15 +16406,9 @@ private fun SessionSetCompletionAction(
                     imageVector = Icons.Rounded.Check,
                     contentDescription = null,
                     tint = iconTint,
-                    modifier = Modifier.size(18.dp),
+                    modifier = Modifier.size(24.dp),
                 )
             }
-            Text(
-                text = "Done",
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.Black,
-                color = labelColor,
-            )
         }
     }
 }
@@ -16192,6 +16420,7 @@ private fun PersistentLabelOutlinedTextField(
     onValueChange: (String) -> Unit,
     label: String,
     modifier: Modifier = Modifier,
+    suffixText: String? = null,
     textColor: Color = MaterialTheme.colorScheme.onSurface,
     keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
     enabled: Boolean = true,
@@ -16241,15 +16470,32 @@ private fun PersistentLabelOutlinedTextField(
                 visualTransformation = VisualTransformation.None,
                 interactionSource = interactionSource,
                 isError = false,
-                label = { Text(label, color = textColor) },
+                label = {
+                    Text(
+                        text = label,
+                        color = textColor,
+                        style = MaterialTheme.typography.labelMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                },
                 placeholder = null,
                 leadingIcon = null,
                 trailingIcon = null,
                 prefix = null,
-                suffix = null,
+                suffix = suffixText?.let { suffix ->
+                    {
+                        Text(
+                            text = suffix,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = textColor.copy(alpha = 0.72f),
+                            maxLines = 1,
+                        )
+                    }
+                },
                 supportingText = null,
                 colors = colors,
-                contentPadding = OutlinedTextFieldDefaults.contentPadding(),
+                contentPadding = PaddingValues(start = 16.dp, top = 12.dp, end = 16.dp, bottom = 8.dp),
                 container = {
                     OutlinedTextFieldDefaults.Container(
                         enabled = enabled,
@@ -16489,6 +16735,8 @@ private fun ExerciseDetailSheet(
     detail: ExerciseDetail,
     profile: UserProfile?,
     isGeneratingDescription: Boolean,
+    forceExpanded: Boolean = false,
+    openDescriptionInitially: Boolean = false,
     onDismiss: () -> Unit,
     onGenerateDescription: () -> Unit,
     recommendationBias: RecommendationBias,
@@ -16518,7 +16766,15 @@ private fun ExerciseDetailSheet(
     val encodedQuery = remember(detail.summary.name) {
         java.net.URLEncoder.encode("${detail.summary.name.trim()} exercise tutorial", Charsets.UTF_8.name())
     }
-    ToastLiftModalBottomSheet(onDismissRequest = onDismiss) {
+    LaunchedEffect(openDescriptionInitially, detail.summary.id) {
+        if (openDescriptionInitially) {
+            showDescriptionSheet = true
+        }
+    }
+    ToastLiftModalBottomSheet(
+        onDismissRequest = onDismiss,
+        skipPartiallyExpanded = forceExpanded,
+    ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -17481,8 +17737,10 @@ private fun RichHeroCard(
 @Composable
 private fun StatRail(items: List<Triple<String, String, String>>) {
     Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+        val metricLabelAccent = MaterialTheme.colorScheme.primary.copy(
+            alpha = if (LocalToastLiftIsDarkTheme.current) 0.28f else 0.18f,
+        )
         items.forEach { (label, value, suffix) ->
-            val accent = accentForKey(label)
             val cardContainer = MaterialTheme.colorScheme.surface
             val cardPrimary = readableTextColorFor(cardContainer)
             val cardSecondary = readableMutedTextColorFor(cardContainer)
@@ -17496,11 +17754,70 @@ private fun StatRail(items: List<Triple<String, String, String>>) {
                 elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
             ) {
                 Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    MiniTag(text = label, accent = accent.color)
+                    StatRailMetricTag(label = label, accent = metricLabelAccent)
                     Text(value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, maxLines = 1, color = cardPrimary)
                     Text(suffix, style = MaterialTheme.typography.bodySmall, color = cardSecondary, maxLines = 1)
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun StatRailMetricTag(
+    label: String,
+    accent: Color,
+) {
+    val colors = toneChipColors(tint = accent)
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(50))
+            .background(colors.container)
+            .padding(horizontal = 8.dp, vertical = 4.dp)
+            .semantics { contentDescription = label },
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = compactStatRailLabel(label).uppercase(),
+            color = colors.content,
+            fontFamily = MonoFamily,
+            fontSize = 8.sp,
+            lineHeight = 9.sp,
+            letterSpacing = 0.06.em,
+            fontWeight = FontWeight.Medium,
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Clip,
+        )
+    }
+}
+
+private fun compactStatRailLabel(label: String): String {
+    return when (label.lowercase(Locale.US)) {
+        "weekly target" -> "Target"
+        "recent work" -> "Recent"
+        "active days" -> "Active"
+        "weekly pace" -> "Pace"
+        "total workouts" -> "Workouts"
+        "total time" -> "Time"
+        "avg duration" -> "Avg dur."
+        "avg volume" -> "Avg vol."
+        "best volume" -> "Best vol."
+        "completed sets" -> "Sets"
+        "logged exercises" -> "Exercises"
+        "avg exercises" -> "Avg moves"
+        "busiest day" -> "Busiest"
+        "top exercise" -> "Top move"
+        "top equipment" -> "Equipment"
+        "last swing" -> "Swing"
+        else -> if (label.length <= 11) {
+            label
+        } else {
+            label.split(' ', '-', '/')
+                .firstOrNull { it.isNotBlank() }
+                ?.take(11)
+                ?: label.take(11)
         }
     }
 }
@@ -18327,7 +18644,7 @@ private fun FeatureCard(
             colors = if (LocalToastLiftIsDarkTheme.current) {
                 listOf(Color(0xFF0A0A0B), Color(0xFF1A1A0E))
             } else {
-                listOf(Color(0xFFFAFAF8), Color(0xFFF1F1E8))
+                listOf(Color(0xFFFAF8F5), Color(0xFFEFEAF6))
             },
         )
     } else {
@@ -18427,13 +18744,13 @@ private fun ProgramOverviewCard(
     val progress = if (overview.totalWeeks > 0) overview.weekNumber.toFloat() / overview.totalWeeks else 0f
     val confidenceColor = when (overview.confidenceLabel) {
         "Stable" -> surgeAccent.start
-        "Adjusting" -> goldAccent.start
+        "Adjusting" -> momentumAccent.start
         else -> emberAccent.start
     }
     val adherenceColor = when {
         (overview.adherenceSnapshot?.balance ?: 0) > 0 -> surgeAccent.start
         (overview.adherenceSnapshot?.balance ?: 0) < 0 -> emberAccent.start
-        else -> goldAccent.start
+        else -> momentumAccent.start
     }
     FeatureCard {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -18718,7 +19035,7 @@ private fun WeeklyMuscleTargetsOverviewCard(
             ) {
                 MiniTag(
                     text = "This Week",
-                    accent = goldAccent.start.copy(alpha = 0.18f),
+                    accent = momentumAccent.start.copy(alpha = 0.18f),
                 )
                 Text(
                     "Weekly Muscle Targets",
@@ -18774,7 +19091,7 @@ private fun WeeklyMuscleTargetHexagon(
     val outlineStrong = MaterialTheme.colorScheme.outline.copy(alpha = 0.18f)
     val outlineSoft = MaterialTheme.colorScheme.outline.copy(alpha = 0.12f)
     val progressGradientColors = listOf(
-        goldAccent.start.copy(alpha = 0.72f),
+        momentumAccent.start.copy(alpha = 0.72f),
         surgeAccent.start.copy(alpha = 0.58f),
         emberAccent.start.copy(alpha = 0.68f),
     )
@@ -18953,7 +19270,7 @@ private fun WeeklyMuscleTargetsCard(
                 }
                 MiniTag(
                     text = percentString(summary.overallCompletionRatio.coerceIn(0.0, 1.0)),
-                    accent = goldAccent.start.copy(alpha = 0.2f),
+                    accent = momentumAccent.start.copy(alpha = 0.2f),
                 )
             }
             Text(
@@ -18981,7 +19298,7 @@ private fun WeeklyMuscleTargetsCard(
                         .fillMaxWidth(progress)
                         .height(8.dp)
                         .background(
-                            goldAccent.color,
+                            momentumAccent.color,
                             shape = RoundedCornerShape(999.dp),
                         ),
                 )
@@ -19200,7 +19517,7 @@ private fun WeeklyMuscleTargetHistoryChip(
     summary: WeeklyMuscleTargetHistorySummary,
     isCurrentWeek: Boolean,
 ) {
-    val accent = if (isCurrentWeek) goldAccent else surgeAccent
+    val accent = if (isCurrentWeek) momentumAccent else surgeAccent
     FeatureCard(
         fullWidth = false,
         containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.78f),
@@ -19242,7 +19559,7 @@ private fun WeeklyMuscleTargetHistoryChip(
 
 @Composable
 private fun weeklyMuscleAccent(key: String): GlowAccent = when (key) {
-    "push" -> goldAccent
+    "push" -> momentumAccent
     "pull" -> emberAccent
     "legs" -> surgeAccent
     else -> amethystAccent
@@ -19305,7 +19622,7 @@ private fun ProgramProgressCard(summary: ProgramProgressSummary) {
                 ProgramProgressMetric(
                     label = "Weeks",
                     value = "${summary.completedWeeks}/${summary.totalWeeks}",
-                    accent = goldAccent,
+                    accent = momentumAccent,
                     modifier = Modifier.weight(1f),
                 )
                 ProgramProgressMetric(
@@ -19351,7 +19668,7 @@ private fun ProgramProgressWeekRow(week: ProgramWeekProgressSummary) {
     val closedSessions = week.sessionStatuses.count(::isClosedProgramSession)
     val statusAccent = when (week.statusLabel) {
         "Done", "Closed" -> surgeAccent.start.copy(alpha = 0.18f)
-        "Current" -> goldAccent.start.copy(alpha = 0.18f)
+        "Current" -> momentumAccent.start.copy(alpha = 0.18f)
         else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.9f)
     }
     val checkpointLabel = when (week.checkpointStatus) {
@@ -19362,7 +19679,7 @@ private fun ProgramProgressWeekRow(week: ProgramWeekProgressSummary) {
     }
     val checkpointAccent = when (week.checkpointStatus) {
         CheckpointStatus.COMPLETED -> amethystAccent.start.copy(alpha = 0.18f)
-        CheckpointStatus.PENDING -> goldAccent.start.copy(alpha = 0.18f)
+        CheckpointStatus.PENDING -> momentumAccent.start.copy(alpha = 0.18f)
         CheckpointStatus.SKIPPED -> emberAccent.start.copy(alpha = 0.18f)
         null -> Color.Transparent
     }
@@ -19436,9 +19753,9 @@ private fun ProgramProgressSessionStrip(week: ProgramWeekProgressSummary) {
                             SessionStatus.COMPLETED -> surgeAccent.start
                             SessionStatus.SKIPPED -> emberAccent.start
                             SessionStatus.MIGRATED -> amethystAccent.start.copy(alpha = 0.72f)
-                            SessionStatus.IN_PROGRESS -> goldAccent.end
+                            SessionStatus.IN_PROGRESS -> momentumAccent.end
                             SessionStatus.UPCOMING -> if (week.isCurrentWeek) {
-                                goldAccent.start.copy(alpha = 0.82f)
+                                momentumAccent.start.copy(alpha = 0.82f)
                             } else {
                                 MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.88f)
                             }

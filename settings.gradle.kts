@@ -15,4 +15,10 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "ToastLift"
+includeBuild("../appreveal-toastlift/Android") {
+    dependencySubstitution {
+        substitute(module("com.appreveal:appreveal")).using(project(":appreveal"))
+        substitute(module("com.appreveal:appreveal-noop")).using(project(":appreveal-noop"))
+    }
+}
 include(":app")

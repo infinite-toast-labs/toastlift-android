@@ -26,6 +26,7 @@ class MainActivity : ComponentActivity() {
     private var debugSelectedTab: MainTab? by mutableStateOf(null)
     private var debugThemePreference: ThemePreference? by mutableStateOf(null)
     private var debugReceiptLaunch: CompletionReceiptDebugLaunch? by mutableStateOf(null)
+    private var debugSurfaceOverride: String? by mutableStateOf(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -39,6 +40,7 @@ class MainActivity : ComponentActivity() {
                 selectedTabOverride = debugSelectedTab,
                 themePreferenceOverride = debugThemePreference,
                 completionReceiptDebugLaunch = debugReceiptLaunch,
+                debugSurfaceOverride = debugSurfaceOverride,
             )
         }
     }
@@ -47,6 +49,9 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         applyDebugLaunchOverrides(intent)
+        if (BuildConfig.DEBUG && intent.hasDebugLaunchOverride()) {
+            viewModel.refreshAll()
+        }
     }
 
     override fun onStart() {
@@ -59,17 +64,27 @@ class MainActivity : ComponentActivity() {
             debugSelectedTab = null
             debugThemePreference = null
             debugReceiptLaunch = null
+            debugSurfaceOverride = null
             return
         }
+        debugSurfaceOverride = launchIntent.getStringExtra(EXTRA_DEBUG_SURFACE)
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
         val parsedReceiptLaunch = parseReceiptDebugLaunch(
             surface = launchIntent.getStringExtra(EXTRA_DEBUG_SURFACE),
             scenario = launchIntent.getStringExtra(EXTRA_DEBUG_RECEIPT_SCENARIO),
         )
         debugReceiptLaunch = parsedReceiptLaunch
         debugSelectedTab = parseSelectedTabOverride(launchIntent.getStringExtra(EXTRA_DEBUG_TAB))
-            ?: parsedReceiptLaunch?.surface?.let(::defaultTabForDebugSurface)
+            ?: debugSurfaceOverride?.let(::defaultTabForDebugSurface)
         debugThemePreference = parseThemePreferenceOverride(launchIntent.getStringExtra(EXTRA_DEBUG_THEME))
     }
+
+    private fun Intent.hasDebugLaunchOverride(): Boolean =
+        hasExtra(EXTRA_DEBUG_TAB) ||
+            hasExtra(EXTRA_DEBUG_THEME) ||
+            hasExtra(EXTRA_DEBUG_SURFACE) ||
+            hasExtra(EXTRA_DEBUG_RECEIPT_SCENARIO)
 
     private fun parseSelectedTabOverride(rawValue: String?): MainTab? {
         return rawValue?.let { requestedTab ->
@@ -107,7 +122,39 @@ class MainActivity : ComponentActivity() {
     private fun defaultTabForDebugSurface(surface: String): MainTab? {
         return when (surface.lowercase()) {
             "completion_receipt", "today_receipt_recap" -> MainTab.Home
-            "history_receipt_replay" -> MainTab.Explore
+            "history_receipt_replay",
+            "history",
+            "history.dashboard",
+            "history.workouts",
+            "history.stats",
+            "history.milestones",
+            "history.streak",
+            "history.calendar",
+            "history.weekly-muscles",
+            "history.token-balance",
+            "history.bounty-cards",
+            "sheet.library_filters",
+            "sheet.exercise_detail",
+            "sheet.exercise_description",
+            "sheet.exercise_family",
+            "sheet.exercise_history",
+            "sheet.exercise_videos",
+            "sheet.history_detail",
+            -> MainTab.Explore
+            "sheet.generated_workout_swap",
+            "sheet.manual_builder",
+            -> MainTab.Generate
+            "profile",
+            "profile.main",
+            "sheet.profile_equipment_home",
+            "sheet.profile_equipment_gym",
+            "sheet.profile_delete_data",
+            "sheet.active_workout_details",
+            "sheet.active_session_filters",
+            "sheet.skipped_exercise_feedback",
+            "sheet.sfr_debrief",
+            "sheet.checkpoint_review",
+            -> MainTab.Home
             else -> null
         }
     }

@@ -20,8 +20,9 @@ ADB := android-adb
 EMULATOR_ADB := android-emulator-adb
 
 .PHONY: help clean test lint build-debug build-release assemble apk-paths devices \
-	check-emulator check-device install-debug launch-debug install-device-debug \
-	install-device-debug-no-build sync-device-custom-exercises live-ai-smoke-test
+	check-emulator check-device install-debug install-debug-appreveal launch-debug install-device-debug \
+	install-device-debug-no-build sync-device-custom-exercises live-ai-smoke-test \
+	mcp-screens-regular mcp-screens-sheets mcp-screens-all
 
 help:
 	@echo "Targets:"
@@ -32,7 +33,11 @@ help:
 	@echo "  make build-release                - Build unsigned release APK"
 	@echo "  make assemble                     - Build debug and release APKs"
 	@echo "  make install-debug                - Build and install debug APK on the configured emulator"
+	@echo "  make install-debug-appreveal      - Build and install debug APK on the configured emulator for AppReveal capture"
 	@echo "  make launch-debug                 - Launch the app on the configured emulator"
+	@echo "  make mcp-screens-regular         - Capture all non-bottom-sheet AppReveal screens from the configured emulator"
+	@echo "  make mcp-screens-sheets          - Capture all AppReveal bottom sheets from the configured emulator"
+	@echo "  make mcp-screens-all             - Capture regular screens and bottom sheets from the configured emulator"
 	@echo "  make install-device-debug         - Build and install debug APK on \$$DEVICE_SERIAL or the first physical adb device"
 	@echo "  make install-device-debug-no-build - Install existing debug APK on \$$DEVICE_SERIAL or the first physical adb device"
 	@echo "  make sync-device-custom-exercises - Sync post-install custom exercises from \$$DEVICE_SERIAL or the first physical adb device"
@@ -120,8 +125,43 @@ check-device:
 install-debug: check-emulator build-debug
 	$(EMULATOR_ADB) install -r $(DEBUG_APK)
 
+install-debug-appreveal: check-emulator build-debug
+	@set -euo pipefail; \
+	if ! output="$$( $(EMULATOR_ADB) install -r -d -g --no-incremental $(DEBUG_APK) 2>&1 )"; then \
+		echo "$$output" >&2; \
+		echo "Retrying after trimming emulator package caches." >&2; \
+		$(EMULATOR_ADB) shell pm trim-caches 999G >/dev/null || true; \
+		$(EMULATOR_ADB) install -r -d -g --no-incremental $(DEBUG_APK); \
+	else \
+		echo "$$output"; \
+	fi
+
 launch-debug: check-emulator
 	$(EMULATOR_ADB) shell am start -W -n $(MAIN_ACTIVITY)
+
+mcp-screens-regular: install-debug-appreveal
+	scripts/capture_appreveal_mcp_screens.sh \
+		--group regular \
+		--adb "$(EMULATOR_ADB)" \
+		--serial "$(ADB_SERIAL)" \
+		--app-id "$(APP_ID)" \
+		--activity "$(MAIN_ACTIVITY)"
+
+mcp-screens-sheets: install-debug-appreveal
+	scripts/capture_appreveal_mcp_screens.sh \
+		--group sheets \
+		--adb "$(EMULATOR_ADB)" \
+		--serial "$(ADB_SERIAL)" \
+		--app-id "$(APP_ID)" \
+		--activity "$(MAIN_ACTIVITY)"
+
+mcp-screens-all: install-debug-appreveal
+	scripts/capture_appreveal_mcp_screens.sh \
+		--group all \
+		--adb "$(EMULATOR_ADB)" \
+		--serial "$(ADB_SERIAL)" \
+		--app-id "$(APP_ID)" \
+		--activity "$(MAIN_ACTIVITY)"
 
 install-device-debug: check-device build-debug
 	@set -euo pipefail; \

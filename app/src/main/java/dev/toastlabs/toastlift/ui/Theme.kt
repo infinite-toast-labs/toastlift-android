@@ -77,30 +77,30 @@ private val ToastLiftDarkGradients = Gradients(
 )
 
 private val ToastLiftLightGradients = Gradients(
-    heroGradient = Brush.linearGradient(listOf(Color(0xFFFAFAF8), Color(0xFFEFEEE8))),
-    sessionGradient = Brush.linearGradient(listOf(Color(0xFFF5F5F3), Color(0xFFFAFAF8))),
+    heroGradient = Brush.linearGradient(listOf(Color(0xFFFAF8F5), Color(0xFFEFEAF6))),
+    sessionGradient = Brush.linearGradient(listOf(Color(0xFFF2F0F5), Color(0xFFFAF8F5))),
 )
 
 // ── Status Accent Colors ───────────────────────────────────────────────────────
-// Ember (red), Orange, Gold (yellow), Surge (green), Amethyst (blue)
+// Ember, Heat, Momentum, Surge, Amethyst
 
 @Immutable
 data class StatusColors(
-    val red: Color = Color(0xFFFF3D3D),
-    val orange: Color = Color(0xFFFF7A1A),
-    val yellow: Color = Color(0xFFFFC940),
-    val green: Color = Color(0xFF3DFFA0),
-    val blue: Color = Color(0xFF3D9FFF),
+    val ember: Color = Color(0xFFFF3D3D),
+    val heat: Color = Color(0xFFFF7A1A),
+    val momentum: Color = Color(0xFFFFC940),
+    val surge: Color = Color(0xFF3DFFA0),
+    val amethyst: Color = Color(0xFF3D9FFF),
 )
 
 internal val LocalStatusColors = staticCompositionLocalOf { StatusColors() }
 private val ToastLiftDarkStatusColors = StatusColors()
 private val ToastLiftLightStatusColors = StatusColors(
-    red = Color(0xFFD73433),
-    orange = Color(0xFFC14A00),
-    yellow = Color(0xFF9A6E00),
-    green = Color(0xFF008141),
-    blue = Color(0xFF1D76C8),
+    ember = Color(0xFFBA3E47),
+    heat = Color(0xFFA24F68),
+    momentum = Color(0xFF695A91),
+    surge = Color(0xFF4E5C9D),
+    amethyst = Color(0xFF3E63A8),
 )
 
 // ── Shared UI Recipe Colors ───────────────────────────────────────────────────
@@ -133,16 +133,16 @@ private val ToastLiftDarkUiColors = UiColors(
     surfaceMax = Color(0xFF242428),
 )
 private val ToastLiftLightUiColors = UiColors(
-    surfaceHigh = Color(0xFFF5F5F3),
-    surfaceMax = Color(0xFFEFEFED),
-    inkOnLightSurface = Color(0xFF13161B),
-    chromeDivider = Color(0xFFC1CCD8),
-    chromeBorder = Color(0xFFB2BFCE),
-    inactiveNavigation = Color(0xFF6E7C8C),
-    progressTrack = Color(0xFFCDDDEF),
-    workoutDayFill = Color(0xFF219E61),
-    recommendationMoreOften = Color(0xFF219E61),
-    recommendationLessOften = Color(0xFFD97232),
+    surfaceHigh = Color(0xFFF2F0F5),
+    surfaceMax = Color(0xFFE9E6EE),
+    inkOnLightSurface = Color(0xFF18171D),
+    chromeDivider = Color(0xFFCBC7D2),
+    chromeBorder = Color(0xFFBBB5C5),
+    inactiveNavigation = Color(0xFF716D7B),
+    progressTrack = Color(0xFFDDD8E3),
+    workoutDayFill = Color(0xFF4E5C9D),
+    recommendationMoreOften = Color(0xFF4E5C9D),
+    recommendationLessOften = Color(0xFFA24F68),
 )
 
 // ── Dark Theme ─────────────────────────────────────────────────────────────────
@@ -179,30 +179,30 @@ private val ToastLiftDarkColors = darkColorScheme(
 // ── Light Theme ────────────────────────────────────────────────────────────────
 
 private val ToastLiftLightColors = lightColorScheme(
-    primary = Color(0xFF2D7A1E),
+    primary = Color(0xFF4058A4),
     onPrimary = Color(0xFFFFFFFF),
-    primaryContainer = Color(0xFFD1FEC3),
-    onPrimaryContainer = Color(0xFF13250C),
-    secondary = Color(0xFF00854E),
+    primaryContainer = Color(0xFFE2E7FF),
+    onPrimaryContainer = Color(0xFF141B4D),
+    secondary = Color(0xFF7C4D63),
     onSecondary = Color(0xFFFFFFFF),
-    secondaryContainer = Color(0xFFBDFFD6),
-    onSecondaryContainer = Color(0xFF062615),
-    tertiary = Color(0xFF9A6E00),
+    secondaryContainer = Color(0xFFF1E1E8),
+    onSecondaryContainer = Color(0xFF341423),
+    tertiary = Color(0xFF695A91),
     onTertiary = Color(0xFFFFFFFF),
-    tertiaryContainer = Color(0xFFFFE8A5),
-    onTertiaryContainer = Color(0xFF2E1F00),
-    background = Color(0xFFFAFAF8),
-    onBackground = Color(0xFF1A1A1C),
+    tertiaryContainer = Color(0xFFEAE6F4),
+    onTertiaryContainer = Color(0xFF251D3E),
+    background = Color(0xFFFAF8F5),
+    onBackground = Color(0xFF1C1A20),
     surface = Color(0xFFFFFFFF),
-    onSurface = Color(0xFF1A1A1C),
-    surfaceVariant = Color(0xFFF5F5F3),
-    onSurfaceVariant = Color(0xFF6B6B72),
-    outline = Color(0xFFE0E0E2),
-    outlineVariant = Color(0xFFC7CFD7),
-    error = Color(0xFFD43030),
+    onSurface = Color(0xFF1C1A20),
+    surfaceVariant = Color(0xFFF2F0F5),
+    onSurfaceVariant = Color(0xFF625D6B),
+    outline = Color(0xFFD8D3DE),
+    outlineVariant = Color(0xFFC6C0CE),
+    error = Color(0xFFB93434),
     onError = Color(0xFFFFFFFF),
-    errorContainer = Color(0xFFFFE3DE),
-    onErrorContainer = Color(0xFF461210),
+    errorContainer = Color(0xFFFFE1DD),
+    onErrorContainer = Color(0xFF421012),
 )
 
 // ── Typography ─────────────────────────────────────────────────────────────────

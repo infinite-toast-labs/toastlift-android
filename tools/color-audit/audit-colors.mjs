@@ -171,20 +171,20 @@ const schemes = {
 };
 
 const accents = {
-  dark: {
-    ember: extractAccent("DarkEmberAccent"),
-    surge: extractAccent("DarkSurgeAccent"),
-    gold: extractAccent("DarkGoldAccent"),
-    amethyst: extractAccent("DarkAmethystAccent"),
-    orange: extractAccent("DarkOrangeAccent"),
-  },
-  light: {
-    ember: extractAccent("LightEmberAccent"),
-    surge: extractAccent("LightSurgeAccent"),
-    gold: extractAccent("LightGoldAccent"),
-    amethyst: extractAccent("LightAmethystAccent"),
-    orange: extractAccent("LightOrangeAccent"),
-  },
+    dark: {
+      ember: extractAccent("DarkEmberAccent"),
+      surge: extractAccent("DarkSurgeAccent"),
+      momentum: extractAccent("DarkMomentumAccent"),
+      amethyst: extractAccent("DarkAmethystAccent"),
+      heat: extractAccent("DarkHeatAccent"),
+    },
+    light: {
+      ember: extractAccent("LightEmberAccent"),
+      surge: extractAccent("LightSurgeAccent"),
+      momentum: extractAccent("LightMomentumAccent"),
+      amethyst: extractAccent("LightAmethystAccent"),
+      heat: extractAccent("LightHeatAccent"),
+    },
 };
 
 const pairMap = [
