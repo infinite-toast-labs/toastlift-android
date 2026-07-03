@@ -8893,11 +8893,24 @@ private fun ProgressPill(current: Int, target: Int, label: String, accent: GlowA
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(label, fontWeight = FontWeight.SemiBold)
-            Text("${(progress * 100).roundToInt()}%", color = resolvedAccent.color, fontWeight = FontWeight.Bold)
+            Text(
+                label,
+                modifier = Modifier.weight(1f),
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                "${(progress * 100).roundToInt()}%",
+                modifier = Modifier.widthIn(min = 52.dp),
+                color = resolvedAccent.color,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                softWrap = false,
+            )
         }
         Box(
             modifier = Modifier

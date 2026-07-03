@@ -11,6 +11,7 @@ Options:
   --app-id APP_ID        Android app id. Default: dev.toastlabs.toastlift
   --activity COMPONENT   Launch component. Default: dev.toastlabs.toastlift/.MainActivity
   --out-root DIR         Artifact root. Default: android-e2e
+  --startup-wait N       Delay after AppReveal starts before debug_begin. Default: 0
   --wait-seconds N       Delay after opening each screen. Default: 2
 EOF
 }
@@ -21,6 +22,7 @@ serial="${ADB_SERIAL:-emulator-5560}"
 app_id="${APP_ID:-dev.toastlabs.toastlift}"
 activity="${MAIN_ACTIVITY:-dev.toastlabs.toastlift/.MainActivity}"
 out_root="${MCP_SCREEN_OUTPUT_ROOT:-android-e2e}"
+startup_wait_seconds="${MCP_SCREEN_STARTUP_WAIT_SECONDS:-0}"
 wait_seconds="${MCP_SCREEN_WAIT_SECONDS:-2}"
 
 while [[ $# -gt 0 ]]; do
@@ -47,6 +49,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --out-root)
       out_root="${2:-}"
+      shift 2
+      ;;
+    --startup-wait)
+      startup_wait_seconds="${2:-}"
       shift 2
       ;;
     --wait-seconds)
@@ -118,6 +124,10 @@ token="$(sed -E 's#.*appreveal_session_token=([^&[:space:]]+).*#\1#' <<< "$sessi
 if [[ -z "$port" || -z "$token" || "$port" == "$session_url" || "$token" == "$session_url" ]]; then
   echo "Could not parse AppReveal port/token from: $session_url" >&2
   exit 1
+fi
+
+if [[ "$startup_wait_seconds" != "0" ]]; then
+  sleep "$startup_wait_seconds"
 fi
 
 request_id=0
