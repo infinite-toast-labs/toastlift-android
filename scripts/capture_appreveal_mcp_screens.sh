@@ -13,6 +13,10 @@ Options:
   --out-root DIR         Artifact root. Default: android-e2e
   --startup-wait N       Delay after AppReveal starts before debug_begin. Default: 0
   --wait-seconds N       Delay after opening each screen. Default: 2
+  --capture-mode MODE    Capture mode: single or full. Default: single
+  --screen-key KEY       Capture only one registered AppReveal screen/sheet key
+  --scroll-max-pages N   Maximum scroll pages after the first capture. Default: 120
+  --scroll-settle-ms N   Delay after each scroll before capture. Default: 40
 EOF
 }
 
@@ -24,6 +28,11 @@ activity="${MAIN_ACTIVITY:-dev.toastlabs.toastlift/.MainActivity}"
 out_root="${MCP_SCREEN_OUTPUT_ROOT:-android-e2e}"
 startup_wait_seconds="${MCP_SCREEN_STARTUP_WAIT_SECONDS:-0}"
 wait_seconds="${MCP_SCREEN_WAIT_SECONDS:-2}"
+capture_mode="${MCP_CAPTURE_MODE:-single}"
+screen_key="${MCP_SCREEN_KEY:-}"
+scroll_max_pages="${MCP_SCROLL_MAX_PAGES:-120}"
+scroll_settle_ms="${MCP_SCROLL_SETTLE_MS:-40}"
+contact_sheet_max_images="${MCP_CONTACT_SHEET_MAX_IMAGES:-40}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -59,6 +68,22 @@ while [[ $# -gt 0 ]]; do
       wait_seconds="${2:-}"
       shift 2
       ;;
+    --capture-mode)
+      capture_mode="${2:-}"
+      shift 2
+      ;;
+    --screen-key)
+      screen_key="${2:-}"
+      shift 2
+      ;;
+    --scroll-max-pages)
+      scroll_max_pages="${2:-}"
+      shift 2
+      ;;
+    --scroll-settle-ms)
+      scroll_settle_ms="${2:-}"
+      shift 2
+      ;;
     -h|--help)
       usage
       exit 0
@@ -75,6 +100,15 @@ case "$group" in
   regular|sheets|all) ;;
   *)
     echo "--group must be regular, sheets, or all." >&2
+    usage >&2
+    exit 2
+    ;;
+esac
+
+case "$capture_mode" in
+  single|full) ;;
+  *)
+    echo "--capture-mode must be single or full." >&2
     usage >&2
     exit 2
     ;;
@@ -98,6 +132,13 @@ case "$group" in
   sheets) slug="bottom-sheets-mcp" ;;
   all) slug="all-screens-and-sheets-mcp" ;;
 esac
+if [[ "$capture_mode" == "full" ]]; then
+  slug="full-scroll-$slug"
+fi
+if [[ -n "$screen_key" ]]; then
+  safe_screen_slug="$(sed -E 's/[^A-Za-z0-9._-]+/-/g; s/[.]+/_/g' <<< "$screen_key")"
+  slug="$slug-$safe_screen_slug"
+fi
 out_dir="$out_root/${timestamp}-${slug}"
 mkdir -p "$out_dir"
 
@@ -181,12 +222,26 @@ case "$group" in
 esac
 mapfile -t routes < <(jq -r "$jq_filter" "$out_dir/list_screens.json")
 
+if [[ -n "$screen_key" ]]; then
+  if ! jq -e --arg screen_key "$screen_key" '.screens[] | select(.key == $screen_key)' "$out_dir/list_screens.json" >/dev/null; then
+    echo "No registered AppReveal screen matched --screen-key: $screen_key" >&2
+    echo "Known keys:" >&2
+    jq -r '.screens[] | .key' "$out_dir/list_screens.json" >&2
+    exit 1
+  fi
+  if ! printf '%s\n' "${routes[@]}" | grep -Fxq "$screen_key"; then
+    echo "Registered AppReveal screen does not match --group $group: $screen_key" >&2
+    exit 1
+  fi
+  routes=("$screen_key")
+fi
+
 if [[ ${#routes[@]} -eq 0 ]]; then
   echo "No AppReveal routes matched group: $group" >&2
   exit 1
 fi
 
-printf 'route\tstatus\timage\n' > "$out_dir/results.tsv"
+printf 'route\tstatus\tpage_count\timages\tstop_reason\thost_total_ms\tapp_total_ms\tapp_capture_ms\tapp_scroll_ms\tapp_settle_ms\n' > "$out_dir/results.tsv"
 
 finish_debug_session() {
   local end_args end_rpc
@@ -207,38 +262,103 @@ for route in "${routes[@]}"; do
   printf '%s\n' "$open_rpc" > "$out_dir/$safe_route.open.rpc.json"
 
   if ! printf '%s\n' "$open_rpc" | decode_tool_json > "$out_dir/$safe_route.open.json" 2>"$out_dir/$safe_route.open.decode.err"; then
-    printf '%s\topen_failed\t\n' "$route" >> "$out_dir/results.tsv"
+    printf '%s\topen_failed\t0\t\t\t\t\t\t\t\n' "$route" >> "$out_dir/results.tsv"
     continue
   fi
 
   if [[ "$(jq -r '.opened' "$out_dir/$safe_route.open.json")" != "true" ]]; then
-    printf '%s\topen_false\t\n' "$route" >> "$out_dir/results.tsv"
+    printf '%s\topen_false\t0\t\t\t\t\t\t\t\n' "$route" >> "$out_dir/results.tsv"
     continue
   fi
 
   sleep "$wait_seconds"
-  screenshot_rpc="$(mcp_call screenshot '{}' || true)"
-  printf '%s\n' "$screenshot_rpc" > "$out_dir/$safe_route.screenshot.rpc.json"
-  if ! printf '%s\n' "$screenshot_rpc" | decode_tool_json > "$out_dir/$safe_route.screenshot.json" 2>"$out_dir/$safe_route.screenshot.decode.err"; then
-    printf '%s\tscreenshot_failed\t\n' "$route" >> "$out_dir/results.tsv"
+  if [[ "$capture_mode" == "single" ]]; then
+    capture_started_ms="$(date +%s%3N)"
+    screenshot_rpc="$(mcp_call screenshot '{}' || true)"
+    host_total_ms=$(( $(date +%s%3N) - capture_started_ms ))
+    printf '%s\n' "$screenshot_rpc" > "$out_dir/$safe_route.screenshot.rpc.json"
+    if ! printf '%s\n' "$screenshot_rpc" | decode_tool_json > "$out_dir/$safe_route.screenshot.json" 2>"$out_dir/$safe_route.screenshot.decode.err"; then
+      printf '%s\tscreenshot_failed\t0\t\t\t%s\t\t\t\t\n' "$route" "$host_total_ms" >> "$out_dir/results.tsv"
+      continue
+    fi
+
+    image_name="$safe_route.png"
+    jq -r '.image' "$out_dir/$safe_route.screenshot.json" | base64 -d > "$out_dir/$image_name"
+    printf '%s\tok\t1\t%s\tsingle_screenshot\t%s\t\t\t\t\n' \
+      "$route" \
+      "$image_name" \
+      "$host_total_ms" >> "$out_dir/results.tsv"
     continue
   fi
 
-  jq -r '.image' "$out_dir/$safe_route.screenshot.json" | base64 -d > "$out_dir/$safe_route.png"
-  printf '%s\tok\t%s.png\n' "$route" "$safe_route" >> "$out_dir/results.tsv"
+  capture_args="$(jq -cn \
+    --argjson max_pages "$scroll_max_pages" \
+    --argjson settle_ms "$scroll_settle_ms" \
+    '{direction:"down", format:"png", max_pages:$max_pages, settle_ms:$settle_ms}')"
+  capture_started_ms="$(date +%s%3N)"
+  capture_rpc="$(mcp_call capture_scrollable_region "$capture_args" || true)"
+  host_total_ms=$(( $(date +%s%3N) - capture_started_ms ))
+  printf '%s\n' "$capture_rpc" > "$out_dir/$safe_route.capture_scrollable_region.rpc.json"
+  if ! printf '%s\n' "$capture_rpc" | decode_tool_json > "$out_dir/$safe_route.capture_scrollable_region.json" 2>"$out_dir/$safe_route.capture_scrollable_region.decode.err"; then
+    printf '%s\tcapture_failed\t0\t\t\t%s\t\t\t\t\n' "$route" "$host_total_ms" >> "$out_dir/results.tsv"
+    continue
+  fi
+
+  page_count="$(jq -r '.pageCount // (.pages | length)' "$out_dir/$safe_route.capture_scrollable_region.json")"
+  if [[ "$page_count" == "0" ]]; then
+    printf '%s\tcapture_empty\t0\t\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+      "$route" \
+      "$(jq -r '.stopReason // empty' "$out_dir/$safe_route.capture_scrollable_region.json")" \
+      "$host_total_ms" \
+      "$(jq -r '.timing.totalMs // empty' "$out_dir/$safe_route.capture_scrollable_region.json")" \
+      "$(jq -r '.timing.captureMs // empty' "$out_dir/$safe_route.capture_scrollable_region.json")" \
+      "$(jq -r '.timing.scrollMs // empty' "$out_dir/$safe_route.capture_scrollable_region.json")" \
+      "$(jq -r '.timing.settleMs // empty' "$out_dir/$safe_route.capture_scrollable_region.json")" >> "$out_dir/results.tsv"
+    continue
+  fi
+
+  image_names=()
+  for ((page_index=0; page_index<page_count; page_index++)); do
+    page_number=$((page_index + 1))
+    image_name="${safe_route}__${page_number}-of-${page_count}.png"
+    jq -r ".pages[$page_index].image" "$out_dir/$safe_route.capture_scrollable_region.json" | base64 -d > "$out_dir/$image_name"
+    image_names+=("$image_name")
+  done
+  images="$(IFS=,; echo "${image_names[*]}")"
+  stop_reason="$(jq -r '.stopReason // empty' "$out_dir/$safe_route.capture_scrollable_region.json")"
+  status="ok"
+  if [[ "$stop_reason" == "max_pages" ]]; then
+    status="max_pages"
+  fi
+  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+    "$route" \
+    "$status" \
+    "$page_count" \
+    "$images" \
+    "$stop_reason" \
+    "$host_total_ms" \
+    "$(jq -r '.timing.totalMs // empty' "$out_dir/$safe_route.capture_scrollable_region.json")" \
+    "$(jq -r '.timing.captureMs // empty' "$out_dir/$safe_route.capture_scrollable_region.json")" \
+    "$(jq -r '.timing.scrollMs // empty' "$out_dir/$safe_route.capture_scrollable_region.json")" \
+    "$(jq -r '.timing.settleMs // empty' "$out_dir/$safe_route.capture_scrollable_region.json")" >> "$out_dir/results.tsv"
 done
 
 if command -v montage >/dev/null 2>&1 && compgen -G "$out_dir/*.png" >/dev/null; then
-  montage "$out_dir"/*.png \
-    -thumbnail 240x520 \
-    -tile 4x \
-    -geometry +8+24 \
-    -background '#101010' \
-    -fill white \
-    -font DejaVu-Sans \
-    -pointsize 18 \
-    -set label '%t' \
-    "$out_dir/contact-sheet.png" || true
+  mapfile -t png_files < <(find "$out_dir" -maxdepth 1 -type f -name '*.png' | sort)
+  if [[ ${#png_files[@]} -le "$contact_sheet_max_images" ]]; then
+    montage "${png_files[@]}" \
+      -thumbnail 240x520 \
+      -tile 4x \
+      -geometry +8+24 \
+      -background '#101010' \
+      -fill white \
+      -font DejaVu-Sans \
+      -pointsize 18 \
+      -set label '%t' \
+      "$out_dir/contact-sheet.png" || true
+  else
+    echo "Skipping contact-sheet.png: ${#png_files[@]} screenshots exceed the montage safety limit of $contact_sheet_max_images." >&2
+  fi
 fi
 
 trap - EXIT

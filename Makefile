@@ -11,6 +11,7 @@ ADB_HOST ?= host.docker.internal
 ADB_PORT ?= 5037
 ADB_SERIAL ?= emulator-5560
 DEVICE_SERIAL ?=
+SCREEN_KEY ?=
 MCP_PHONE_STARTUP_WAIT ?= 10
 export ANDROID_ADB_HOST := $(ADB_HOST)
 export ANDROID_ADB_PORT := $(ADB_PORT)
@@ -23,7 +24,9 @@ EMULATOR_ADB := android-emulator-adb
 .PHONY: help clean test lint build-debug build-release assemble apk-paths devices \
 	check-emulator check-device install-debug install-debug-appreveal launch-debug install-device-debug \
 	install-device-debug-no-build sync-device-custom-exercises live-ai-smoke-test \
-	mcp-screens-regular mcp-screens-sheets mcp-screens-all mcp-phone-screens-all
+	mcp-screens-regular mcp-screens-sheets mcp-screens-all mcp-phone-screens-all \
+	mcp-full-scroll-regular mcp-full-scroll-sheets mcp-full-scroll-all mcp-full-scroll-screen \
+	mcp-phone-full-scroll-all mcp-phone-full-scroll-screen
 
 help:
 	@echo "Targets:"
@@ -36,10 +39,16 @@ help:
 	@echo "  make install-debug                - Build and install debug APK on the configured emulator"
 	@echo "  make install-debug-appreveal      - Build and install debug APK on the configured emulator for AppReveal capture"
 	@echo "  make launch-debug                 - Launch the app on the configured emulator"
-	@echo "  make mcp-screens-regular         - Capture all non-bottom-sheet AppReveal screens from the configured emulator"
-	@echo "  make mcp-screens-sheets          - Capture all AppReveal bottom sheets from the configured emulator"
-	@echo "  make mcp-screens-all             - Capture regular screens and bottom sheets from the configured emulator"
+	@echo "  make mcp-screens-regular         - Single-shot capture all non-bottom-sheet AppReveal screens from the configured emulator"
+	@echo "  make mcp-screens-sheets          - Single-shot capture all AppReveal bottom sheets from the configured emulator"
+	@echo "  make mcp-screens-all             - Single-shot capture regular screens and bottom sheets from the configured emulator"
+	@echo "  make mcp-full-scroll-regular     - Full-scroll capture all non-bottom-sheet AppReveal screens from the configured emulator"
+	@echo "  make mcp-full-scroll-sheets      - Full-scroll capture all AppReveal bottom sheets from the configured emulator"
+	@echo "  make mcp-full-scroll-all         - Full-scroll capture regular screens and bottom sheets from the configured emulator"
+	@echo "  make mcp-full-scroll-screen SCREEN_KEY=<key> - Full-scroll capture one AppReveal screen or bottom sheet from the configured emulator"
 	@echo "  make mcp-phone-screens-all       - Capture regular screens and bottom sheets from \$$DEVICE_SERIAL or the first physical adb device"
+	@echo "  make mcp-phone-full-scroll-all   - Full-scroll capture regular screens and bottom sheets from \$$DEVICE_SERIAL or the first physical adb device"
+	@echo "  make mcp-phone-full-scroll-screen SCREEN_KEY=<key> - Full-scroll capture one AppReveal screen or bottom sheet from \$$DEVICE_SERIAL or the first physical adb device"
 	@echo "  make install-device-debug         - Build and install debug APK on \$$DEVICE_SERIAL or the first physical adb device"
 	@echo "  make install-device-debug-no-build - Install existing debug APK on \$$DEVICE_SERIAL or the first physical adb device"
 	@echo "  make sync-device-custom-exercises - Sync post-install custom exercises from \$$DEVICE_SERIAL or the first physical adb device"
@@ -165,6 +174,48 @@ mcp-screens-all: install-debug-appreveal
 		--app-id "$(APP_ID)" \
 		--activity "$(MAIN_ACTIVITY)"
 
+mcp-full-scroll-regular: install-debug-appreveal
+	scripts/capture_appreveal_mcp_screens.sh \
+		--group regular \
+		--capture-mode full \
+		--adb "$(EMULATOR_ADB)" \
+		--serial "$(ADB_SERIAL)" \
+		--app-id "$(APP_ID)" \
+		--activity "$(MAIN_ACTIVITY)"
+
+mcp-full-scroll-sheets: install-debug-appreveal
+	scripts/capture_appreveal_mcp_screens.sh \
+		--group sheets \
+		--capture-mode full \
+		--adb "$(EMULATOR_ADB)" \
+		--serial "$(ADB_SERIAL)" \
+		--app-id "$(APP_ID)" \
+		--activity "$(MAIN_ACTIVITY)"
+
+mcp-full-scroll-all: install-debug-appreveal
+	scripts/capture_appreveal_mcp_screens.sh \
+		--group all \
+		--capture-mode full \
+		--adb "$(EMULATOR_ADB)" \
+		--serial "$(ADB_SERIAL)" \
+		--app-id "$(APP_ID)" \
+		--activity "$(MAIN_ACTIVITY)"
+
+mcp-full-scroll-screen: install-debug-appreveal
+	@set -euo pipefail; \
+	if [[ -z "$(SCREEN_KEY)" ]]; then \
+		echo "Set SCREEN_KEY=<appreveal key>, for example: make mcp-full-scroll-screen SCREEN_KEY=sheet.exercise_history" >&2; \
+		exit 2; \
+	fi; \
+	scripts/capture_appreveal_mcp_screens.sh \
+		--group all \
+		--capture-mode full \
+		--screen-key "$(SCREEN_KEY)" \
+		--adb "$(EMULATOR_ADB)" \
+		--serial "$(ADB_SERIAL)" \
+		--app-id "$(APP_ID)" \
+		--activity "$(MAIN_ACTIVITY)"
+
 mcp-phone-screens-all: install-device-debug
 	@set -euo pipefail; \
 	serial="$(DEVICE_SERIAL)"; \
@@ -173,6 +224,41 @@ mcp-phone-screens-all: install-device-debug
 	fi; \
 	scripts/capture_appreveal_mcp_screens.sh \
 		--group all \
+		--adb "$(ADB)" \
+		--serial "$$serial" \
+		--app-id "$(APP_ID)" \
+		--activity "$(MAIN_ACTIVITY)" \
+		--startup-wait "$(MCP_PHONE_STARTUP_WAIT)"
+
+mcp-phone-full-scroll-all: install-device-debug
+	@set -euo pipefail; \
+	serial="$(DEVICE_SERIAL)"; \
+	if [[ -z "$$serial" ]]; then \
+		serial="$$( $(ADB) devices | awk 'NR > 1 && $$2 == "device" && $$1 !~ /^emulator-/ { print $$1; exit }' )"; \
+	fi; \
+	scripts/capture_appreveal_mcp_screens.sh \
+		--group all \
+		--capture-mode full \
+		--adb "$(ADB)" \
+		--serial "$$serial" \
+		--app-id "$(APP_ID)" \
+		--activity "$(MAIN_ACTIVITY)" \
+		--startup-wait "$(MCP_PHONE_STARTUP_WAIT)"
+
+mcp-phone-full-scroll-screen: install-device-debug
+	@set -euo pipefail; \
+	if [[ -z "$(SCREEN_KEY)" ]]; then \
+		echo "Set SCREEN_KEY=<appreveal key>, for example: make mcp-phone-full-scroll-screen SCREEN_KEY=sheet.exercise_history" >&2; \
+		exit 2; \
+	fi; \
+	serial="$(DEVICE_SERIAL)"; \
+	if [[ -z "$$serial" ]]; then \
+		serial="$$( $(ADB) devices | awk 'NR > 1 && $$2 == "device" && $$1 !~ /^emulator-/ { print $$1; exit }' )"; \
+	fi; \
+	scripts/capture_appreveal_mcp_screens.sh \
+		--group all \
+		--capture-mode full \
+		--screen-key "$(SCREEN_KEY)" \
 		--adb "$(ADB)" \
 		--serial "$$serial" \
 		--app-id "$(APP_ID)" \

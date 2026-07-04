@@ -6999,7 +6999,10 @@ private fun HistoryCalendarDetailScreen(
             containerColor = MaterialTheme.colorScheme.surface,
             accentKey = "history calendar detail",
         ) {
-            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
                 Text("Browse completed training blocks", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black)
                 Text(
                     "Swipe horizontally to move between periods, or use the arrows to jump one page at a time.",
@@ -7383,36 +7386,35 @@ private fun HistoryCalendarWorkoutsCard(
     onShareWorkout: (Long, HistoryShareFormat) -> Unit,
     onDeleteWorkout: (Long) -> Unit,
 ) {
-    FeatureCard(
-        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f),
-        accentKey = "$title $subtitle",
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                Text(
-                    subtitle,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            if (workouts.isEmpty()) {
-                Text(
-                    "No completed workouts in this period yet.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            } else {
-                buildHistoryDateSections(workouts).forEach { section ->
-                    HistoryDateSeparator(section.label)
-                    section.entries.forEach { workout ->
-                        HistoryEntryCard(
-                            entry = workout,
-                            onOpen = { onOpenWorkout(workout.id) },
-                            onShare = { onShareWorkout(workout.id, HistoryShareFormat.FormattedText) },
-                            onDelete = { onDeleteWorkout(workout.id) },
-                        )
-                    }
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Text(
+                subtitle,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        if (workouts.isEmpty()) {
+            Text(
+                "No completed workouts in this period yet.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        } else {
+            buildHistoryDateSections(workouts).forEach { section ->
+                HistoryDateSeparator(section.label)
+                section.entries.forEach { workout ->
+                    HistoryEntryCard(
+                        entry = workout,
+                        onOpen = { onOpenWorkout(workout.id) },
+                        onShare = { onShareWorkout(workout.id, HistoryShareFormat.FormattedText) },
+                        onDelete = { onDeleteWorkout(workout.id) },
+                        embedded = true,
+                    )
                 }
             }
         }
@@ -9411,13 +9413,13 @@ private fun HistoryEntryCard(
     onOpen: () -> Unit,
     onShare: () -> Unit,
     onDelete: () -> Unit,
+    embedded: Boolean = false,
 ) {
     var expanded by remember { mutableStateOf(false) }
-    FeatureCard(
-        modifier = Modifier.clickable(onClick = onOpen),
-        containerColor = MaterialTheme.colorScheme.surface,
-    ) {
-        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+
+    @Composable
+    fun HistoryEntryContent(modifier: Modifier) {
+        Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -9489,6 +9491,22 @@ private fun HistoryEntryCard(
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+        }
+    }
+
+    if (embedded) {
+        HistoryEntryContent(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onOpen)
+                .padding(vertical = 12.dp),
+        )
+    } else {
+        FeatureCard(
+            modifier = Modifier.clickable(onClick = onOpen),
+            containerColor = MaterialTheme.colorScheme.surface,
+        ) {
+            HistoryEntryContent(modifier = Modifier.padding(16.dp))
         }
     }
 }
@@ -17657,26 +17675,34 @@ private fun ExerciseHistorySheet(
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            Text(detail.exerciseName, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-            Row(
+            Text(detail.exerciseName, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
+            Column(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalAlignment = Alignment.CenterVertically,
+                verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("Results", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold)
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("Results", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Medium)
                     Text(
                         exerciseHistorySummary(detail),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.bodyMedium,
                     )
                 }
-                ToastLiftFilterChip(
-                    selected = detail.isPrOnlyFilterEnabled,
-                    onClick = { onTogglePrOnly(!detail.isPrOnlyFilterEnabled) },
-                    enabled = detail.totalEntries > 0,
-                    label = { Text("PRs only") },
-                )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        "Filter",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.78f),
+                    )
+                    ExerciseHistoryPrFilter(
+                        selected = detail.isPrOnlyFilterEnabled,
+                        onClick = { onTogglePrOnly(!detail.isPrOnlyFilterEnabled) },
+                        enabled = detail.totalEntries > 0,
+                    )
+                }
             }
             Divider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.18f))
             if (emptyState != null) {
@@ -17695,6 +17721,50 @@ private fun ExerciseHistorySheet(
             }
             Spacer(modifier = Modifier.height(24.dp))
         }
+    }
+}
+
+@Composable
+private fun ExerciseHistoryPrFilter(
+    selected: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    val surface = MaterialTheme.colorScheme.surface
+    val accent = MaterialTheme.colorScheme.primary
+    val container = if (selected) {
+        accent.copy(alpha = 0.1f).compositeOver(surface)
+    } else {
+        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.36f).compositeOver(surface)
+    }
+    val content = if (selected) {
+        accent
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant
+    }.copy(alpha = if (enabled) 1f else 0.48f)
+    val border = if (selected) accent.copy(alpha = 0.28f) else MaterialTheme.colorScheme.outline.copy(alpha = 0.18f)
+
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(50))
+            .background(container)
+            .border(BorderStroke(1.dp, border), RoundedCornerShape(50))
+            .clickable(enabled = enabled, role = Role.Checkbox, onClick = onClick)
+            .semantics {
+                contentDescription = "PRs only"
+                stateDescription = if (selected) "On" else "Off"
+            }
+            .heightIn(min = 28.dp)
+            .padding(horizontal = 10.dp, vertical = 4.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = "PRs only",
+            style = MaterialTheme.typography.bodySmall,
+            fontWeight = FontWeight.Normal,
+            color = content,
+            maxLines = 1,
+        )
     }
 }
 
@@ -17754,16 +17824,20 @@ private fun ExerciseVideosSheet(detail: ExerciseVideoLinks, onDismiss: () -> Uni
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ExerciseHistoryEntryCard(entry: dev.toastlabs.toastlift.data.ExerciseHistoryEntry) {
     FeatureCard(containerColor = MaterialTheme.colorScheme.surface) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text(formatEntryDate(entry.completedAtUtc), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black)
+            Text(formatEntryDate(entry.completedAtUtc), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             val prCount = entry.workingSets.sumOf { set ->
                 listOf(set.isRepPr, set.isWeightPr, set.isVolumePr).count { it }
             }
             if (prCount > 0 || entry.lastSetRepsInReserve != null) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
                     if (prCount > 0) {
                         MiniTag("$prCount personal record${if (prCount == 1) "" else "s"}", accent = MaterialTheme.colorScheme.tertiaryContainer)
                     }
@@ -17775,36 +17849,44 @@ private fun ExerciseHistoryEntryCard(entry: dev.toastlabs.toastlift.data.Exercis
                     }
                 }
             }
-            Text("Working sets", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text("Working sets", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
             entry.workingSets.forEach { set ->
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Top) {
                     LeadingBadge(label = set.setNumber.toString())
-                    Text(
-                        buildString {
-                            append(set.reps?.toString() ?: "--")
-                            append(" reps")
-                            set.weight?.takeIf { it > 0 }?.let {
-                                append(" x ")
-                                append(it.toLong())
-                                append(" lb")
-                            }
-                        },
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                    )
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        if (set.isRepPr) MiniTag("Rep PR", accent = MaterialTheme.colorScheme.primaryContainer)
-                        if (set.isWeightPr) MiniTag("Weight PR", accent = MaterialTheme.colorScheme.primaryContainer)
-                        if (set.isVolumePr) MiniTag("Volume PR", accent = MaterialTheme.colorScheme.primaryContainer)
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Text(
+                            buildString {
+                                append(set.reps?.toString() ?: "--")
+                                append(" reps")
+                                set.weight?.takeIf { it > 0 }?.let {
+                                    append(" x ")
+                                    append(it.toLong())
+                                    append(" lb")
+                                }
+                            },
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium,
+                        )
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            if (set.isRepPr) MiniTag("Rep PR", accent = MaterialTheme.colorScheme.primaryContainer)
+                            if (set.isWeightPr) MiniTag("Weight PR", accent = MaterialTheme.colorScheme.primaryContainer)
+                            if (set.isVolumePr) MiniTag("Volume PR", accent = MaterialTheme.colorScheme.primaryContainer)
+                        }
                     }
                 }
             }
             if (entry.estimatedOneRepMax != null) {
-                Text("Est. 1RM", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                Text("Est. 1RM", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
                 Text(
                     "${entry.estimatedOneRepMax.toLong()} lb",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.Medium,
                 )
             }
             StatRail(
@@ -17813,6 +17895,8 @@ private fun ExerciseHistoryEntryCard(entry: dev.toastlabs.toastlift.data.Exercis
                     Triple("Volume", formatCompactNumber(entry.totalVolume), "lb"),
                     Triple("Sets", entry.workingSets.size.toString(), "logged"),
                 ),
+                valueFontWeight = FontWeight.Medium,
+                compactValues = true,
             )
         }
     }
@@ -17848,7 +17932,12 @@ private fun RichHeroCard(
 }
 
 @Composable
-private fun StatRail(items: List<Triple<String, String, String>>) {
+private fun StatRail(
+    items: List<Triple<String, String, String>>,
+    valueFontWeight: FontWeight = FontWeight.Bold,
+    compactValues: Boolean = false,
+) {
+    val valueStyle = if (compactValues) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleLarge
     Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
         val metricLabelAccent = MaterialTheme.colorScheme.primary.copy(
             alpha = if (LocalToastLiftIsDarkTheme.current) 0.28f else 0.18f,
@@ -17868,7 +17957,7 @@ private fun StatRail(items: List<Triple<String, String, String>>) {
             ) {
                 Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     StatRailMetricTag(label = label, accent = metricLabelAccent)
-                    Text(value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, maxLines = 1, color = cardPrimary)
+                    Text(value, style = valueStyle, fontWeight = valueFontWeight, maxLines = 1, color = cardPrimary)
                     Text(suffix, style = MaterialTheme.typography.bodySmall, color = cardSecondary, maxLines = 1)
                 }
             }
