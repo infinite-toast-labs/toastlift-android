@@ -13,12 +13,32 @@ Use the Make targets as the stable interface:
 make mcp-screens-all
 make mcp-screens-regular
 make mcp-screens-sheets
+make mcp-full-scroll-all
+make mcp-full-scroll-screen SCREEN_KEY=sheet.exercise_history
 ```
 
 Default to `make mcp-screens-all` when asked to audit or capture all screens. The
 target builds and installs a fresh debug APK, launches the app, discovers the
 AppReveal session URL/token, calls MCP tools, and saves artifacts under
 `android-e2e/<timestamp>-...`.
+
+For iterative visual fixes after a specific screenshot has been identified, use
+the single-route full-scroll target instead of recapturing every screen. It
+accepts both regular screen keys and bottom-sheet keys:
+
+```bash
+make mcp-full-scroll-screen SCREEN_KEY=<appreveal-key>
+```
+
+For explicit physical-phone capture, use the phone variants. Do not hardcode a
+serial; set `DEVICE_SERIAL=<serial>` only when needed, otherwise the target picks
+the first non-emulator ADB device:
+
+```bash
+make mcp-phone-screens-all
+make mcp-phone-full-scroll-all
+make mcp-phone-full-scroll-screen SCREEN_KEY=<appreveal-key>
+```
 
 Do not replace this with raw `adb screencap` when the request is specifically for
 the MCP/AppReveal workflow.
