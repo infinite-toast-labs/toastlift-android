@@ -577,14 +577,60 @@ private fun SessionExercise.isNotStartedInActiveWorkout(): Boolean {
     return sets.none(SessionSet::completed)
 }
 
+private fun SessionExercise.isLoggedButIncompleteInActiveWorkout(): Boolean {
+    return hasLoggedSetInActiveWorkout() && !isFullyCompletedInActiveWorkout()
+}
+
+private fun SessionExercise.latestCompletedSetAtUtc(): String {
+    return sets
+        .asSequence()
+        .filter(SessionSet::completed)
+        .mapNotNull(SessionSet::completedAtUtc)
+        .maxOrNull()
+        .orEmpty()
+}
+
+private fun activeSessionExerciseStatusSortBucket(exercise: SessionExercise): Int {
+    return when {
+        exercise.isLoggedButIncompleteInActiveWorkout() -> 0
+        exercise.isFullyCompletedInActiveWorkout() -> 1
+        else -> 2
+    }
+}
+
 internal fun orderedSessionExercises(session: ActiveSession): List<IndexedValue<SessionExercise>> {
     return session.exercises
         .withIndex()
         .sortedWith(
-            compareByDescending<IndexedValue<SessionExercise>> { it.value.activitySequence ?: Int.MIN_VALUE }
-                .thenByDescending { it.value.hasLoggedSetInActiveWorkout() }
-                .thenByDescending { it.value.isFullyCompletedInActiveWorkout() }
-                .thenByDescending { it.value.completionSequence ?: Int.MIN_VALUE }
+            compareBy<IndexedValue<SessionExercise>> { activeSessionExerciseStatusSortBucket(it.value) }
+                .thenByDescending {
+                    if (it.value.isLoggedButIncompleteInActiveWorkout()) {
+                        it.value.latestCompletedSetAtUtc()
+                    } else {
+                        ""
+                    }
+                }
+                .thenByDescending {
+                    if (it.value.isLoggedButIncompleteInActiveWorkout()) {
+                        it.value.activitySequence ?: Int.MIN_VALUE
+                    } else {
+                        Int.MIN_VALUE
+                    }
+                }
+                .thenByDescending {
+                    if (it.value.isFullyCompletedInActiveWorkout()) {
+                        it.value.latestCompletedSetAtUtc()
+                    } else {
+                        ""
+                    }
+                }
+                .thenByDescending {
+                    if (it.value.isFullyCompletedInActiveWorkout()) {
+                        it.value.completionSequence ?: Int.MIN_VALUE
+                    } else {
+                        Int.MIN_VALUE
+                    }
+                }
                 .thenBy { it.index },
         )
 }
