@@ -1,0 +1,362 @@
+{
+  "schemaVersion": 1,
+  "screenKey": "active.workout_overview",
+  "appVersion": "1.0",
+  "appVersionCode": 1,
+  "deviceProfile": {},
+  "featureFlags": {},
+  "scrollHint": {},
+  "capturedAt": "2026-07-09T09:12:13.089633Z",
+  "inputs": {
+    "debugSessionId": "phone-live-state",
+    "hasActiveSession": true,
+    "selectedExerciseIndex": 0,
+    "session": {
+      "title": "Gym Lower Day 2",
+      "origin": "generated",
+      "locationModeId": 2,
+      "startedAtUtc": "2026-07-09T08:46:43.835276Z",
+      "focusKey": "lower_body_2",
+      "subtitle": "Upper/Lower • Hypertrophy • 55 min • Straight Sets",
+      "estimatedMinutes": 55,
+      "sessionFormat": "Straight Sets",
+      "isPaused": false,
+      "accumulatedPausedSeconds": 0,
+      "exercises": [
+        {
+          "exerciseId": 9087296715358646,
+          "name": "prone leg curl",
+          "bodyRegion": "Lower Body",
+          "targetMuscleGroup": "Hamstrings",
+          "equipment": "Machine",
+          "restSeconds": 105,
+          "sets": [
+            {
+              "id": 1,
+              "setNumber": 1,
+              "targetReps": "6-10",
+              "recommendedReps": 6,
+              "recommendedWeight": "60",
+              "reps": "6",
+              "weight": "60",
+              "workUnitValues": {},
+              "recommendationSource": "GENERATED_PLAN",
+              "recommendationConfidence": 0.92,
+              "completed": true,
+              "completedAtUtc": "2026-07-09T08:46:48.983382Z"
+            },
+            {
+              "id": 2,
+              "setNumber": 2,
+              "targetReps": "6-10",
+              "recommendedReps": 6,
+              "recommendedWeight": "60",
+              "reps": "6",
+              "weight": "60",
+              "workUnitValues": {},
+              "recommendationSource": "GENERATED_PLAN",
+              "recommendationConfidence": 0.92,
+              "completed": true,
+              "completedAtUtc": "2026-07-09T08:46:49.579882Z"
+            },
+            {
+              "id": 3,
+              "setNumber": 3,
+              "targetReps": "6-10",
+              "recommendedReps": 6,
+              "recommendedWeight": "60",
+              "reps": "6",
+              "weight": "60",
+              "workUnitValues": {},
+              "recommendationSource": "GENERATED_PLAN",
+              "recommendationConfidence": 0.92,
+              "completed": true,
+              "completedAtUtc": "2026-07-09T08:46:51.025955Z"
+            },
+            {
+              "id": 4,
+              "setNumber": 4,
+              "targetReps": "6-10",
+              "recommendedReps": 6,
+              "recommendedWeight": "60",
+              "reps": "6",
+              "weight": "60",
+              "workUnitValues": {},
+              "recommendationSource": "GENERATED_PLAN",
+              "recommendationConfidence": 0.92,
+              "completed": true,
+              "completedAtUtc": "2026-07-09T08:46:51.421113Z"
+            }
+          ],
+          "workUnits": [],
+          "completionSequence": 1,
+          "lastSetRepsInReserve": 3,
+          "notes": "",
+          "fruitIcon": "🍎"
+        },
+        {
+          "exerciseId": 3248,
+          "name": "Calf Press On The Leg Press Machine",
+          "bodyRegion": "Lower Body",
+          "targetMuscleGroup": "Calves",
+          "equipment": "Machine",
+          "restSeconds": 90,
+          "sets": [
+            {
+              "id": 5,
+              "setNumber": 1,
+              "targetReps": "8-12",
+              "recommendedReps": 8,
+              "recommendedWeight": "170",
+              "reps": "8",
+              "weight": "170",
+              "workUnitValues": {},
+              "recommendationSource": "GENERATED_PLAN",
+              "recommendationConfidence": 0.92,
+              "completed": true,
+              "completedAtUtc": "2026-07-09T08:46:56.428985Z"
+            },
+            {
+              "id": 6,
+              "setNumber": 2,
+              "targetReps": "8-12",
+              "recommendedReps": 8,
+              "recommendedWeight": "170",
+              "reps": "8",
+              "weight": "170",
+              "workUnitValues": {},
+              "recommendationSource": "GENERATED_PLAN",
+              "recommendationConfidence": 0.92,
+              "completed": true,
+              "completedAtUtc": "2026-07-09T08:46:57.028533Z"
+            },
+            {
+              "id": 7,
+              "setNumber": 3,
+              "targetReps": "8-12",
+              "recommendedReps": 8,
+              "recommendedWeight": "170",
+              "reps": "8",
+              "weight": "170",
+              "workUnitValues": {},
+              "recommendationSource": "GENERATED_PLAN",
+              "recommendationConfidence": 0.92,
+              "completed": false
+            }
+          ],
+          "workUnits": [],
+          "notes": "",
+          "fruitIcon": "🍌"
+        },
+        {
+          "exerciseId": 381,
+          "name": "Cable Fire Hydrant",
+          "bodyRegion": "Lower Body",
+          "targetMuscleGroup": "Glutes",
+          "equipment": "Cable",
+          "restSeconds": 60,
+          "sets": [
+            {
+              "id": 8,
+              "setNumber": 1,
+              "targetReps": "10-15",
+              "recommendedReps": 10,
+              "recommendedWeight": "15",
+              "reps": "10",
+              "weight": "15",
+              "workUnitValues": {},
+              "recommendationSource": "SIMILAR_EXERCISE_HISTORY",
+              "recommendationConfidence": 0.5525,
+              "completed": false
+            },
+            {
+              "id": 9,
+              "setNumber": 2,
+              "targetReps": "10-15",
+              "recommendedReps": 10,
+              "recommendedWeight": "15",
+              "reps": "10",
+              "weight": "15",
+              "workUnitValues": {},
+              "recommendationSource": "SIMILAR_EXERCISE_HISTORY",
+              "recommendationConfidence": 0.5525,
+              "completed": false
+            },
+            {
+              "id": 10,
+              "setNumber": 3,
+              "targetReps": "10-15",
+              "recommendedReps": 10,
+              "recommendedWeight": "15",
+              "reps": "10",
+              "weight": "15",
+              "workUnitValues": {},
+              "recommendationSource": "SIMILAR_EXERCISE_HISTORY",
+              "recommendationConfidence": 0.5525,
+              "completed": false
+            }
+          ],
+          "workUnits": [],
+          "notes": "",
+          "fruitIcon": "🍇"
+        },
+        {
+          "exerciseId": 3259,
+          "name": "Leverage Deadlift",
+          "bodyRegion": "Lower Body",
+          "targetMuscleGroup": "Quadriceps",
+          "equipment": "Machine",
+          "restSeconds": 60,
+          "sets": [
+            {
+              "id": 11,
+              "setNumber": 1,
+              "targetReps": "10-15",
+              "recommendedReps": 10,
+              "recommendedWeight": "55",
+              "reps": "10",
+              "weight": "55",
+              "workUnitValues": {},
+              "recommendationSource": "SIMILAR_EXERCISE_HISTORY",
+              "recommendationConfidence": 0.5525,
+              "completed": false
+            },
+            {
+              "id": 12,
+              "setNumber": 2,
+              "targetReps": "10-15",
+              "recommendedReps": 10,
+              "recommendedWeight": "55",
+              "reps": "10",
+              "weight": "55",
+              "workUnitValues": {},
+              "recommendationSource": "SIMILAR_EXERCISE_HISTORY",
+              "recommendationConfidence": 0.5525,
+              "completed": false
+            }
+          ],
+          "workUnits": [],
+          "notes": "",
+          "fruitIcon": "🍍"
+        },
+        {
+          "exerciseId": 617,
+          "name": "Cable Hip Adduction",
+          "bodyRegion": "Lower Body",
+          "targetMuscleGroup": "Adductors",
+          "equipment": "Cable",
+          "restSeconds": 60,
+          "sets": [
+            {
+              "id": 13,
+              "setNumber": 1,
+              "targetReps": "10-15",
+              "recommendedReps": 10,
+              "recommendedWeight": "25",
+              "reps": "10",
+              "weight": "25",
+              "workUnitValues": {},
+              "recommendationSource": "SIMILAR_EXERCISE_HISTORY",
+              "recommendationConfidence": 0.4,
+              "completed": false
+            },
+            {
+              "id": 14,
+              "setNumber": 2,
+              "targetReps": "10-15",
+              "recommendedReps": 10,
+              "recommendedWeight": "25",
+              "reps": "10",
+              "weight": "25",
+              "workUnitValues": {},
+              "recommendationSource": "SIMILAR_EXERCISE_HISTORY",
+              "recommendationConfidence": 0.4,
+              "completed": false
+            }
+          ],
+          "workUnits": [],
+          "notes": "",
+          "fruitIcon": "🍓"
+        },
+        {
+          "exerciseId": 107,
+          "name": "Cable Hip Abduction",
+          "bodyRegion": "Lower Body",
+          "targetMuscleGroup": "Abductors",
+          "equipment": "Cable",
+          "restSeconds": 60,
+          "sets": [
+            {
+              "id": 15,
+              "setNumber": 1,
+              "targetReps": "10-15",
+              "recommendedReps": 10,
+              "recommendedWeight": "25",
+              "reps": "10",
+              "weight": "25",
+              "workUnitValues": {},
+              "recommendationSource": "SIMILAR_EXERCISE_HISTORY",
+              "recommendationConfidence": 0.4,
+              "completed": false
+            },
+            {
+              "id": 16,
+              "setNumber": 2,
+              "targetReps": "10-15",
+              "recommendedReps": 10,
+              "recommendedWeight": "25",
+              "reps": "10",
+              "weight": "25",
+              "workUnitValues": {},
+              "recommendationSource": "SIMILAR_EXERCISE_HISTORY",
+              "recommendationConfidence": 0.4,
+              "completed": false
+            }
+          ],
+          "workUnits": [],
+          "notes": "",
+          "fruitIcon": "🍉"
+        },
+        {
+          "exerciseId": 49,
+          "name": "Cable Rope Half Kneeling High to Low Chop",
+          "bodyRegion": "Core",
+          "targetMuscleGroup": "Abdominals",
+          "equipment": "Cable",
+          "restSeconds": 45,
+          "sets": [
+            {
+              "id": 17,
+              "setNumber": 1,
+              "targetReps": "12-16",
+              "recommendedReps": 12,
+              "recommendedWeight": "20",
+              "reps": "12",
+              "weight": "20",
+              "workUnitValues": {},
+              "recommendationSource": "GENERATED_PLAN",
+              "recommendationConfidence": 0.92,
+              "completed": false
+            },
+            {
+              "id": 18,
+              "setNumber": 2,
+              "targetReps": "12-16",
+              "recommendedReps": 12,
+              "recommendedWeight": "20",
+              "reps": "12",
+              "weight": "20",
+              "workUnitValues": {},
+              "recommendationSource": "GENERATED_PLAN",
+              "recommendationConfidence": 0.92,
+              "completed": false
+            }
+          ],
+          "workUnits": [],
+          "notes": "",
+          "fruitIcon": "🍑"
+        }
+      ]
+    }
+  }
+}

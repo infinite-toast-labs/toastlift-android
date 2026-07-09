@@ -984,6 +984,9 @@ private fun String?.isDebugActiveWorkoutDetailsSurface(): Boolean =
 private fun String?.isDebugActiveSessionFiltersSurface(): Boolean =
     equals("sheet.active_session_filters", ignoreCase = true)
 
+private fun String?.isDebugActiveWorkoutOverviewSurface(): Boolean =
+    equals("active.workout_overview", ignoreCase = true)
+
 private fun String?.isDebugExerciseDetailSurface(): Boolean =
     equals("sheet.exercise_detail", ignoreCase = true)
 
@@ -12431,6 +12434,12 @@ private fun ActiveSessionScreen(
         }
         if (debugSurfaceOverride.isDebugActiveSessionFiltersSurface()) {
             showExerciseFilterSheet = true
+        }
+    }
+
+    LaunchedEffect(debugSurfaceOverride, selectedExerciseIndex, session.startedAtUtc) {
+        if (debugSurfaceOverride.isDebugActiveWorkoutOverviewSurface() && selectedExerciseIndex != null) {
+            onCloseExercise()
         }
     }
 
