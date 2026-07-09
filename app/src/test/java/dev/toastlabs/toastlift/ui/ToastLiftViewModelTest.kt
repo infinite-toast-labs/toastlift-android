@@ -278,6 +278,76 @@ class ToastLiftViewModelTest {
     }
 
     @Test
+    fun orderedSessionExercises_groupsByStatusAndOrdersEachStatusByRecency() {
+        val session = ActiveSession(
+            title = "Gym Upper Day",
+            origin = "generated",
+            locationModeId = 2L,
+            startedAtUtc = "2026-03-20T10:00:00Z",
+            exercises = listOf(
+                sessionExercise(id = 101L, name = "Not Started A", completedSets = listOf(false, false, false)),
+                sessionExercise(
+                    id = 202L,
+                    name = "Completed Older",
+                    completedSets = listOf(true, true, true),
+                    completedAtUtcBySet = listOf(
+                        "2026-03-20T10:03:00Z",
+                        "2026-03-20T10:06:00Z",
+                        "2026-03-20T10:09:00Z",
+                    ),
+                    activitySequence = 2,
+                    completionSequence = 1,
+                ),
+                sessionExercise(
+                    id = 303L,
+                    name = "In Progress Newer",
+                    completedSets = listOf(true, true, false),
+                    completedAtUtcBySet = listOf(
+                        "2026-03-20T10:10:00Z",
+                        "2026-03-20T10:20:00Z",
+                        null,
+                    ),
+                    activitySequence = 5,
+                ),
+                sessionExercise(id = 404L, name = "Not Started B", completedSets = listOf(false, false, false)),
+                sessionExercise(
+                    id = 505L,
+                    name = "Completed Newer",
+                    completedSets = listOf(true, true, true),
+                    completedAtUtcBySet = listOf(
+                        "2026-03-20T10:12:00Z",
+                        "2026-03-20T10:18:00Z",
+                        "2026-03-20T10:24:00Z",
+                    ),
+                    activitySequence = 4,
+                    completionSequence = 2,
+                ),
+                sessionExercise(
+                    id = 606L,
+                    name = "In Progress Older",
+                    completedSets = listOf(true, false, false),
+                    completedAtUtcBySet = listOf("2026-03-20T10:14:00Z", null, null),
+                    activitySequence = 3,
+                ),
+            ),
+        )
+
+        val orderedNames = orderedSessionExercises(session).map { it.value.name }
+
+        assertEquals(
+            listOf(
+                "In Progress Newer",
+                "In Progress Older",
+                "Completed Newer",
+                "Completed Older",
+                "Not Started A",
+                "Not Started B",
+            ),
+            orderedNames,
+        )
+    }
+
+    @Test
     fun activeSessionEquipmentOptions_returnsDistinctInWorkoutOrder() {
         val session = ActiveSession(
             title = "Gym Upper Day",
@@ -1028,6 +1098,7 @@ class ToastLiftViewModelTest {
         bodyRegion: String = "Upper Body",
         targetMuscleGroup: String = "Chest",
         equipment: String = "Cable",
+        completedAtUtcBySet: List<String?> = emptyList(),
     ): SessionExercise {
         return SessionExercise(
             exerciseId = id,
@@ -1046,6 +1117,7 @@ class ToastLiftViewModelTest {
                     weight = "100",
                     recommendationSource = RecommendationSource.NONE,
                     completed = completed,
+                    completedAtUtc = completedAtUtcBySet.getOrNull(index).takeIf { completed },
                 )
             },
         )
