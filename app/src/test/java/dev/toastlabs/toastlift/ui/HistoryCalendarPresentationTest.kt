@@ -126,6 +126,21 @@ class HistoryCalendarPresentationTest {
         assertEquals(listOf(8, 10, 6), selected.map(HistorySummary::setCount))
     }
 
+    @Test
+    fun buildHistoryCalendarDailySummary_combinesSelectedDayWorkouts() {
+        val summary = buildHistoryCalendarDailySummary(
+            listOf(
+                historySummary(id = 1L, completedAtUtc = "2026-04-03T08:00:00Z", totalVolume = 1200.0, setCount = 8),
+                historySummary(id = 2L, completedAtUtc = "2026-04-03T20:00:00Z", totalVolume = 1800.0, setCount = 10),
+            ),
+        )
+
+        assertEquals(2, summary.workoutCount)
+        assertEquals(8, summary.exerciseCount)
+        assertEquals(18, summary.setCount)
+        assertEquals(3000.0, summary.totalVolume, 0.001)
+    }
+
     private fun historySummary(
         id: Long,
         completedAtUtc: String,
