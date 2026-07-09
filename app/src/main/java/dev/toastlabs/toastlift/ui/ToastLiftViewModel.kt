@@ -5875,6 +5875,74 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
+    fun openDebugHistorySurface(surface: String?) {
+        if (!BuildConfig.DEBUG) return
+        when (surface?.lowercase()) {
+            "history.calendar" -> ensureDebugHistoryFixture()
+        }
+    }
+
+    private fun ensureDebugHistoryFixture() {
+        if (uiState.history.isNotEmpty()) return
+        val exercises = debugCatalogExercises(limit = 4)
+        fun names(offset: Int, count: Int): List<String> =
+            exercises
+                .drop(offset)
+                .take(count)
+                .ifEmpty { exercises.take(count.coerceAtLeast(1)) }
+                .map(ExerciseSummary::name)
+
+        uiState = uiState.copy(
+            history = listOf(
+                HistorySummary(
+                    id = 9101L,
+                    title = "upper push",
+                    origin = "appreveal_debug",
+                    completedAtUtc = "2026-07-03T11:46:00Z",
+                    startedAtUtc = "2026-07-03T11:00:00Z",
+                    durationSeconds = 46 * 60,
+                    totalVolume = 2480.0,
+                    exerciseCount = 3,
+                    setCount = 9,
+                    exerciseNames = names(offset = 0, count = 3),
+                    focusKey = FORMULA_A_UPPER_PUSH_STRENGTH_FOCUS_KEY,
+                    strengthScore = 584,
+                    averageTimeBetweenSetCompletionsSeconds = 155,
+                ),
+                HistorySummary(
+                    id = 9102L,
+                    title = "lower strength",
+                    origin = "appreveal_debug",
+                    completedAtUtc = "2026-06-30T18:42:00Z",
+                    startedAtUtc = "2026-06-30T18:00:00Z",
+                    durationSeconds = 42 * 60,
+                    totalVolume = 3120.0,
+                    exerciseCount = 4,
+                    setCount = 12,
+                    exerciseNames = names(offset = 0, count = 4),
+                    focusKey = FORMULA_A_LOWER_STRENGTH_FOCUS_KEY,
+                    strengthScore = 612,
+                    averageTimeBetweenSetCompletionsSeconds = 142,
+                ),
+                HistorySummary(
+                    id = 9103L,
+                    title = "upper back",
+                    origin = "appreveal_debug",
+                    completedAtUtc = "2026-06-30T10:32:00Z",
+                    startedAtUtc = "2026-06-30T09:46:00Z",
+                    durationSeconds = 46 * 60,
+                    totalVolume = 5670.0,
+                    exerciseCount = 4,
+                    setCount = 12,
+                    exerciseNames = names(offset = 0, count = 4),
+                    focusKey = FORMULA_A_UPPER_PULL_STRENGTH_FOCUS_KEY,
+                    strengthScore = 567,
+                    averageTimeBetweenSetCompletionsSeconds = 138,
+                ),
+            ),
+        )
+    }
+
     private fun openDebugExerciseDetail() {
         viewModelScope.launch(Dispatchers.IO) {
             val exercise = debugCatalogExercise()

@@ -126,6 +126,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
@@ -209,7 +210,9 @@ import androidx.compose.ui.window.DialogWindowProvider
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.view.WindowCompat
+import kotlin.math.cos
 import kotlin.math.roundToInt
+import kotlin.math.sin
 import dev.toastlabs.toastlift.data.ActiveSession
 import dev.toastlabs.toastlift.data.ActiveWorkoutBounty
 import dev.toastlabs.toastlift.data.AbandonedWorkoutSummary
@@ -983,6 +986,9 @@ private fun String?.isDebugActiveWorkoutDetailsSurface(): Boolean =
 private fun String?.isDebugActiveSessionFiltersSurface(): Boolean =
     equals("sheet.active_session_filters", ignoreCase = true)
 
+private fun String?.isDebugActiveWorkoutOverviewSurface(): Boolean =
+    equals("active.workout_overview", ignoreCase = true)
+
 private fun String?.isDebugExerciseDetailSurface(): Boolean =
     equals("sheet.exercise_detail", ignoreCase = true)
 
@@ -1152,6 +1158,12 @@ fun ToastLiftApp(
             debugSurfaceOverride.equals("active.exercise_logging", ignoreCase = true)
         ) {
             viewModel.openDebugSheetSurface(debugSurfaceOverride)
+        }
+    }
+
+    LaunchedEffect(debugHistoryDestination, state.history) {
+        if (debugHistoryDestination != null) {
+            viewModel.openDebugHistorySurface(debugSurfaceOverride)
         }
     }
 
@@ -1494,6 +1506,25 @@ fun ToastLiftApp(
                                                 exploreSection = ExploreSection.History
                                                 historyNavigationState.destination = destination
                                             }
+                                        }
+                                        LaunchedEffect(debugHistoryDestination, state.history) {
+                                            if (debugHistoryDestination != "calendar") return@LaunchedEffect
+                                            val latestWorkoutDate = state.history
+                                                .mapNotNull { historyStartedLocalDate(it) }
+                                                .maxOrNull()
+                                                ?: return@LaunchedEffect
+                                            val latestDateKey = latestWorkoutDate.toString()
+                                            val weekPages = buildHistoryCalendarWeekPages(state.history)
+                                            val monthPages = buildHistoryCalendarMonthPages(state.history)
+                                            historyNavigationState.calendarModeName = HistoryCalendarMode.Week.name
+                                            historyNavigationState.selectedWeekDateKey = latestDateKey
+                                            historyNavigationState.selectedMonthDateKey = latestDateKey
+                                            historyNavigationState.calendarWeekPage = weekPages.indexOfFirst { page ->
+                                                page.days.any { day -> day.date == latestWorkoutDate }
+                                            }.takeIf { it >= 0 }
+                                            historyNavigationState.calendarMonthPage = monthPages.indexOfFirst { page ->
+                                                page.weeks.flatten().any { cell -> cell.date == latestWorkoutDate && cell.isInMonth }
+                                            }.takeIf { it >= 0 }
                                         }
                                         Column(modifier = Modifier.fillMaxSize()) {
                                             ExploreSectionToggle(
@@ -6974,6 +7005,18 @@ private fun HistoryCalendarDetailScreen(
     )
     val coroutineScope = rememberCoroutineScope()
 
+    LaunchedEffect(initialWeekPage) {
+        if (weekPagerState.currentPage != initialWeekPage) {
+            weekPagerState.scrollToPage(initialWeekPage)
+        }
+    }
+
+    LaunchedEffect(initialMonthPage) {
+        if (monthPagerState.currentPage != initialMonthPage) {
+            monthPagerState.scrollToPage(initialMonthPage)
+        }
+    }
+
     LaunchedEffect(weekPagerState) {
         snapshotFlow { weekPagerState.currentPage }.collectLatest { page ->
             navigationState.calendarWeekPage = page
@@ -7023,6 +7066,7 @@ private fun HistoryCalendarDetailScreen(
                     val selectedWorkouts = selectedDate
                         ?.let { date -> historyCalendarWorkoutsForDate(selectedPage.workouts, date) }
                         .orEmpty()
+                    val hasSelectedDay = selectedWorkouts.isNotEmpty()
                     HistoryCalendarPagerHeader(
                         title = formatHistoryCalendarWeekTitle(selectedPage.weekStart),
                         detail = historyCalendarPeriodDetail(
@@ -7059,28 +7103,39 @@ private fun HistoryCalendarDetailScreen(
                             },
                         )
                     }
-                    StatRail(
-                        items = listOf(
-                            Triple("Workouts", selectedPage.workouts.size.toString(), "in this week"),
-                            Triple("Active days", selectedPage.days.count { it.workoutCount > 0 }.toString(), "with logged training"),
-                            Triple("Volume", formatVolume(selectedPage.totalVolume), "completed"),
-                        ),
-                    )
-                    HistoryCalendarSelectedDayDetails(workouts = selectedWorkouts)
-                    HistoryCalendarWorkoutsCard(
-                        title = "Week Workouts",
-                        subtitle = "Completed sessions from ${formatHistoryCalendarWeekTitle(selectedPage.weekStart)}",
-                        workouts = selectedPage.workouts,
-                        onOpenWorkout = onOpenWorkout,
-                        onShareWorkout = onShareWorkout,
-                        onDeleteWorkout = onDeleteWorkout,
-                    )
+                    if (hasSelectedDay && selectedDate != null) {
+                        HistoryCalendarSelectedDayGroup(
+                            date = selectedDate,
+                            workouts = selectedWorkouts,
+                            onOpenWorkout = onOpenWorkout,
+                            onShareWorkout = onShareWorkout,
+                            onDeleteWorkout = onDeleteWorkout,
+                        )
+                    } else {
+                        HistoryCalendarPeriodSummary(
+                            title = "Weekly Summary",
+                            items = listOf(
+                                Triple("Workouts", selectedPage.workouts.size.toString(), "in this week"),
+                                Triple("Active days", selectedPage.days.count { it.workoutCount > 0 }.toString(), "with logged training"),
+                                Triple("Volume", formatVolume(selectedPage.totalVolume), "completed"),
+                            ),
+                        )
+                        HistoryCalendarWorkoutsCard(
+                            title = "Week Workouts",
+                            subtitle = "Completed sessions from ${formatHistoryCalendarWeekTitle(selectedPage.weekStart)}",
+                            workouts = selectedPage.workouts,
+                            onOpenWorkout = onOpenWorkout,
+                            onShareWorkout = onShareWorkout,
+                            onDeleteWorkout = onDeleteWorkout,
+                        )
+                    }
                 } else {
                     val selectedPage = monthPages.getOrElse(monthPagerState.currentPage) { monthPages.last() }
                     val selectedDate = navigationState.selectedMonthDateKey?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
                     val selectedWorkouts = selectedDate
                         ?.let { date -> historyCalendarWorkoutsForDate(selectedPage.workouts, date) }
                         .orEmpty()
+                    val hasSelectedDay = selectedWorkouts.isNotEmpty()
                     HistoryCalendarPagerHeader(
                         title = formatHistoryCalendarMonthTitle(selectedPage.month),
                         detail = historyCalendarPeriodDetail(
@@ -7117,22 +7172,32 @@ private fun HistoryCalendarDetailScreen(
                             },
                         )
                     }
-                    StatRail(
-                        items = listOf(
-                            Triple("Workouts", selectedPage.workouts.size.toString(), "in this month"),
-                            Triple("Active days", selectedPage.weeks.flatten().count { it.workoutCount > 0 && it.isInMonth }.toString(), "with logged training"),
-                            Triple("Volume", formatVolume(selectedPage.totalVolume), "completed"),
-                        ),
-                    )
-                    HistoryCalendarSelectedDayDetails(workouts = selectedWorkouts)
-                    HistoryCalendarWorkoutsCard(
-                        title = "Month Workouts",
-                        subtitle = "Completed sessions from ${formatHistoryCalendarMonthTitle(selectedPage.month)}",
-                        workouts = selectedPage.workouts,
-                        onOpenWorkout = onOpenWorkout,
-                        onShareWorkout = onShareWorkout,
-                        onDeleteWorkout = onDeleteWorkout,
-                    )
+                    if (hasSelectedDay && selectedDate != null) {
+                        HistoryCalendarSelectedDayGroup(
+                            date = selectedDate,
+                            workouts = selectedWorkouts,
+                            onOpenWorkout = onOpenWorkout,
+                            onShareWorkout = onShareWorkout,
+                            onDeleteWorkout = onDeleteWorkout,
+                        )
+                    } else {
+                        HistoryCalendarPeriodSummary(
+                            title = "Monthly Summary",
+                            items = listOf(
+                                Triple("Workouts", selectedPage.workouts.size.toString(), "in this month"),
+                                Triple("Active days", selectedPage.weeks.flatten().count { it.workoutCount > 0 && it.isInMonth }.toString(), "with logged training"),
+                                Triple("Volume", formatVolume(selectedPage.totalVolume), "completed"),
+                            ),
+                        )
+                        HistoryCalendarWorkoutsCard(
+                            title = "Month Workouts",
+                            subtitle = "Completed sessions from ${formatHistoryCalendarMonthTitle(selectedPage.month)}",
+                            workouts = selectedPage.workouts,
+                            onOpenWorkout = onOpenWorkout,
+                            onShareWorkout = onShareWorkout,
+                            onDeleteWorkout = onDeleteWorkout,
+                        )
+                    }
                 }
             }
         }
@@ -7355,24 +7420,156 @@ private fun HistoryMonthDayCell(
     }
 }
 
+internal data class HistoryCalendarDailySummary(
+    val workoutCount: Int,
+    val exerciseCount: Int,
+    val setCount: Int,
+    val totalVolume: Double,
+)
+
+internal fun buildHistoryCalendarDailySummary(workouts: List<HistorySummary>): HistoryCalendarDailySummary {
+    return HistoryCalendarDailySummary(
+        workoutCount = workouts.size,
+        exerciseCount = workouts.sumOf(HistorySummary::exerciseCount),
+        setCount = workouts.sumOf(HistorySummary::setCount),
+        totalVolume = workouts.sumOf(HistorySummary::totalVolume),
+    )
+}
+
 @Composable
-private fun HistoryCalendarSelectedDayDetails(workouts: List<HistorySummary>) {
+private fun HistoryCalendarPeriodSummary(
+    title: String,
+    items: List<Triple<String, String, String>>,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+        StatRail(items = items)
+    }
+}
+
+@Composable
+private fun HistoryCalendarSelectedDayGroup(
+    date: LocalDate,
+    workouts: List<HistorySummary>,
+    onOpenWorkout: (Long) -> Unit,
+    onShareWorkout: (Long, HistoryShareFormat) -> Unit,
+    onDeleteWorkout: (Long) -> Unit,
+) {
     if (workouts.isEmpty()) return
 
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        workouts.forEach { workout ->
+    val summary = remember(workouts) { buildHistoryCalendarDailySummary(workouts) }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 2.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text("Daily Summary", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             Text(
-                workout.title,
+                formatHistoryDateSeparator(date),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        StatRail(
+            items = listOf(
+                Triple("Workouts", summary.workoutCount.toString(), "this day"),
+                Triple("Sets", summary.setCount.toString(), "daily total"),
+                Triple("Volume", formatVolume(summary.totalVolume), "daily total"),
+            ),
+        )
+        Text(
+            "${summary.exerciseCount} movements logged across ${summary.workoutCount} ${if (summary.workoutCount == 1) "workout" else "workouts"}.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.18f))
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(
+                "Workout Details",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
             )
-            StatRail(
-                items = listOf(
-                    Triple("Exercises", workout.exerciseCount.toString(), "total"),
-                    Triple("Sets", workout.setCount.toString(), "total"),
-                    Triple("Volume", formatVolume(workout.totalVolume), "total"),
-                ),
+            Text(
+                "Logged sessions for this day.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+        }
+        HistoryCalendarWorkoutThread(
+            workouts = workouts,
+            onOpenWorkout = onOpenWorkout,
+            onShareWorkout = onShareWorkout,
+            onDeleteWorkout = onDeleteWorkout,
+        )
+    }
+}
+
+@Composable
+private fun HistoryCalendarWorkoutThread(
+    workouts: List<HistorySummary>,
+    onOpenWorkout: (Long) -> Unit,
+    onShareWorkout: (Long, HistoryShareFormat) -> Unit,
+    onDeleteWorkout: (Long) -> Unit,
+) {
+    val railColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.28f)
+    val nodeContainer = MaterialTheme.colorScheme.primaryContainer
+    val nodeContent = MaterialTheme.colorScheme.onPrimaryContainer
+    Column(modifier = Modifier.fillMaxWidth()) {
+        workouts.forEachIndexed { index, workout ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(IntrinsicSize.Min),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .width(30.dp)
+                        .fillMaxHeight(),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.Center)
+                            .width(2.dp)
+                            .fillMaxHeight()
+                            .background(railColor),
+                    )
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .padding(top = 20.dp)
+                            .size(20.dp)
+                            .clip(CircleShape)
+                            .background(nodeContainer),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            (index + 1).toString(),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = nodeContent,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    }
+                }
+                Column(modifier = Modifier.weight(1f)) {
+                    HistoryEntryCard(
+                        entry = workout,
+                        onOpen = { onOpenWorkout(workout.id) },
+                        onShare = { onShareWorkout(workout.id, HistoryShareFormat.FormattedText) },
+                        onDelete = { onDeleteWorkout(workout.id) },
+                        embedded = true,
+                        statItems = listOf(
+                            Triple("Exercises", workout.exerciseCount.toString(), "logged"),
+                            Triple("Sets", workout.setCount.toString(), "logged"),
+                            Triple("Volume", formatVolume(workout.totalVolume), "logged"),
+                        ),
+                    )
+                    if (index < workouts.lastIndex) {
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.14f))
+                    }
+                }
+            }
         }
     }
 }
@@ -7387,9 +7584,12 @@ private fun HistoryCalendarWorkoutsCard(
     onDeleteWorkout: (Long) -> Unit,
 ) {
     Column(
-        modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
+        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.22f))
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             Text(
@@ -8618,6 +8818,7 @@ private fun HistoryDetailHeader(title: String, onBack: () -> Unit) {
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun MilestoneRewardCard(milestone: MilestoneProgress) {
     val achieved = milestone.current >= milestone.target
@@ -8675,21 +8876,21 @@ private fun MilestoneRewardCard(milestone: MilestoneProgress) {
                 }
             }
             Row(
-                modifier = Modifier.padding(16.dp),
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                modifier = Modifier.padding(14.dp),
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 RewardMedallion(
                     icon = spec.icon,
                     accent = spec.accent,
                     achieved = achieved,
-                    modifier = Modifier.size(78.dp),
-                    iconSize = 28.dp,
+                    modifier = Modifier.size(68.dp),
+                    iconSize = 25.dp,
                 )
                 Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Row(
+                    FlowRow(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         MiniTag(spec.token, accent = spec.accent.start.copy(alpha = 0.18f))
                         if (achieved) {
@@ -8713,7 +8914,11 @@ private fun MilestoneRewardCard(milestone: MilestoneProgress) {
                         current = milestone.current,
                         target = milestone.target,
                         label = milestone.celebrationThreshold?.let { "Medal earned: ${formatMilestoneValue(it, milestone.unit)}" }
-                            ?: "${formatMilestoneValue(milestone.current, milestone.unit)} / ${formatMilestoneValue(milestone.target, milestone.unit)}",
+                            ?: formatMilestoneProgressLabel(
+                                current = milestone.current,
+                                target = milestone.target,
+                                unit = milestone.unit,
+                            ),
                         accent = spec.accent,
                     )
                 }
@@ -8807,58 +9012,124 @@ private fun RewardMedallion(
     iconSize: androidx.compose.ui.unit.Dp = 24.dp,
 ) {
     val uiColors = LocalUiColors.current
+    val colorScheme = MaterialTheme.colorScheme
+    val isDarkTheme = LocalToastLiftIsDarkTheme.current
+    val faceColor = if (achieved) {
+        accent.color.copy(alpha = if (isDarkTheme) 0.22f else 0.13f).compositeOver(colorScheme.surface)
+    } else {
+        colorScheme.surfaceVariant.copy(alpha = if (isDarkTheme) 0.28f else 0.42f).compositeOver(colorScheme.surface)
+    }
+    val ringColor = accent.color.copy(alpha = if (achieved) 0.9f else 0.68f)
+    val ribbonLeftColor = accent.color.copy(alpha = if (achieved) 0.76f else 0.5f)
+    val ribbonRightColor = accent.color.copy(alpha = if (achieved) 0.92f else 0.6f)
+    val shadowColor = Color.Black.copy(alpha = if (isDarkTheme) 0.26f else 0.08f)
     Box(modifier = modifier, contentAlignment = Alignment.Center) {
         Canvas(modifier = Modifier.fillMaxSize()) {
             val badgeCenter = androidx.compose.ui.geometry.Offset(size.width / 2f, size.height * if (showRibbons) 0.42f else 0.5f)
-            val outerRadius = size.minDimension * if (showRibbons) 0.28f else 0.34f
-            val innerRadius = outerRadius * 0.76f
+            val outerRadius = size.minDimension * if (showRibbons) 0.31f else 0.39f
+            val faceRadius = outerRadius * 0.74f
+            val symbolRadius = outerRadius * 0.57f
             if (showRibbons) {
-                val ribbonSize = androidx.compose.ui.geometry.Size(size.width * 0.16f, size.height * 0.26f)
-                rotate(degrees = -12f, pivot = androidx.compose.ui.geometry.Offset(size.width * 0.34f, size.height * 0.68f)) {
-                    drawRoundRect(
-                        color = accent.end.copy(alpha = if (achieved) 0.86f else 0.66f),
-                        topLeft = androidx.compose.ui.geometry.Offset(size.width * 0.23f, size.height * 0.54f),
-                        size = ribbonSize,
-                        cornerRadius = androidx.compose.ui.geometry.CornerRadius(ribbonSize.width * 0.42f),
-                    )
+                val ribbonTop = badgeCenter.y + outerRadius * 0.48f
+                val ribbonBottom = size.height * 0.92f
+                val ribbonNotch = outerRadius * 0.24f
+                val leftRibbon = Path().apply {
+                    moveTo(badgeCenter.x - outerRadius * 0.72f, ribbonTop)
+                    lineTo(badgeCenter.x - outerRadius * 0.14f, ribbonTop + outerRadius * 0.06f)
+                    lineTo(badgeCenter.x - outerRadius * 0.24f, ribbonBottom)
+                    lineTo(badgeCenter.x - outerRadius * 0.58f, ribbonBottom - ribbonNotch)
+                    lineTo(badgeCenter.x - outerRadius * 0.92f, ribbonBottom)
+                    close()
                 }
-                rotate(degrees = 12f, pivot = androidx.compose.ui.geometry.Offset(size.width * 0.66f, size.height * 0.68f)) {
-                    drawRoundRect(
-                        color = accent.start.copy(alpha = if (achieved) 0.92f else 0.72f),
-                        topLeft = androidx.compose.ui.geometry.Offset(size.width * 0.61f, size.height * 0.54f),
-                        size = ribbonSize,
-                        cornerRadius = androidx.compose.ui.geometry.CornerRadius(ribbonSize.width * 0.42f),
-                    )
+                val rightRibbon = Path().apply {
+                    moveTo(badgeCenter.x + outerRadius * 0.14f, ribbonTop + outerRadius * 0.06f)
+                    lineTo(badgeCenter.x + outerRadius * 0.72f, ribbonTop)
+                    lineTo(badgeCenter.x + outerRadius * 0.92f, ribbonBottom)
+                    lineTo(badgeCenter.x + outerRadius * 0.58f, ribbonBottom - ribbonNotch)
+                    lineTo(badgeCenter.x + outerRadius * 0.24f, ribbonBottom)
+                    close()
                 }
+                drawPath(leftRibbon, color = ribbonLeftColor)
+                drawPath(rightRibbon, color = ribbonRightColor)
+                drawLine(
+                    color = shadowColor,
+                    start = androidx.compose.ui.geometry.Offset(badgeCenter.x, ribbonTop + outerRadius * 0.08f),
+                    end = androidx.compose.ui.geometry.Offset(badgeCenter.x, ribbonBottom - ribbonNotch * 0.4f),
+                    strokeWidth = outerRadius * 0.08f,
+                    cap = StrokeCap.Round,
+                )
             }
             drawCircle(
-                color = accent.glow.copy(alpha = if (achieved) 0.62f else 0.36f),
-                radius = outerRadius * 1.35f,
+                color = accent.color.copy(alpha = if (achieved) 0.13f else 0.08f),
+                radius = outerRadius * 1.22f,
                 center = badgeCenter,
             )
             drawCircle(
-                brush = Brush.radialGradient(
-                    colors = listOf(
-                        accent.start.copy(alpha = 0.98f),
-                        accent.end.copy(alpha = 0.94f),
-                    ),
-                    center = badgeCenter,
-                    radius = outerRadius,
-                ),
+                color = shadowColor,
+                radius = outerRadius * 1.02f,
+                center = badgeCenter.copy(y = badgeCenter.y + outerRadius * 0.08f),
+            )
+            drawCircle(
+                color = ringColor,
                 radius = outerRadius,
                 center = badgeCenter,
             )
             drawCircle(
-                color = uiColors.highlight.copy(alpha = if (achieved) 0.32f else 0.18f),
-                radius = innerRadius,
+                color = uiColors.highlight.copy(alpha = if (achieved) 0.36f else 0.22f),
+                radius = outerRadius * 0.84f,
                 center = badgeCenter,
-                style = Stroke(width = outerRadius * 0.18f),
             )
             drawCircle(
-                color = uiColors.highlight.copy(alpha = if (achieved) 0.18f else 0.1f),
-                radius = innerRadius * 0.58f,
-                center = badgeCenter.copy(y = badgeCenter.y - (outerRadius * 0.18f)),
+                color = faceColor,
+                radius = faceRadius,
+                center = badgeCenter,
             )
+            drawCircle(
+                color = ringColor,
+                radius = faceRadius,
+                center = badgeCenter,
+                style = Stroke(width = outerRadius * 0.1f),
+            )
+            drawCircle(
+                color = accent.color.copy(alpha = if (achieved) 0.96f else 0.82f),
+                radius = symbolRadius,
+                center = badgeCenter,
+            )
+            drawArc(
+                color = uiColors.highlight.copy(alpha = if (achieved) 0.68f else 0.38f),
+                startAngle = 218f,
+                sweepAngle = 88f,
+                useCenter = false,
+                topLeft = androidx.compose.ui.geometry.Offset(
+                    badgeCenter.x - faceRadius * 0.78f,
+                    badgeCenter.y - faceRadius * 0.78f,
+                ),
+                size = androidx.compose.ui.geometry.Size(faceRadius * 1.56f, faceRadius * 1.56f),
+                style = Stroke(width = outerRadius * 0.09f, cap = StrokeCap.Round),
+            )
+            if (achieved) {
+                val sealCenter = androidx.compose.ui.geometry.Offset(
+                    badgeCenter.x + outerRadius * 0.68f,
+                    badgeCenter.y - outerRadius * 0.68f,
+                )
+                val sealRadius = outerRadius * 0.27f
+                drawCircle(color = colorScheme.surface, radius = sealRadius * 1.12f, center = sealCenter)
+                drawCircle(color = ringColor, radius = sealRadius, center = sealCenter)
+                drawLine(
+                    color = accent.textOnAccent,
+                    start = androidx.compose.ui.geometry.Offset(sealCenter.x - sealRadius * 0.38f, sealCenter.y),
+                    end = androidx.compose.ui.geometry.Offset(sealCenter.x - sealRadius * 0.08f, sealCenter.y + sealRadius * 0.32f),
+                    strokeWidth = sealRadius * 0.24f,
+                    cap = StrokeCap.Round,
+                )
+                drawLine(
+                    color = accent.textOnAccent,
+                    start = androidx.compose.ui.geometry.Offset(sealCenter.x - sealRadius * 0.08f, sealCenter.y + sealRadius * 0.32f),
+                    end = androidx.compose.ui.geometry.Offset(sealCenter.x + sealRadius * 0.46f, sealCenter.y - sealRadius * 0.38f),
+                    strokeWidth = sealRadius * 0.24f,
+                    cap = StrokeCap.Round,
+                )
+            }
         }
         Icon(
             imageVector = icon,
@@ -8868,23 +9139,6 @@ private fun RewardMedallion(
                 .size(iconSize)
                 .offset(y = if (showRibbons) (-6).dp else 0.dp),
         )
-        if (achieved) {
-            Box(
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .size(18.dp)
-                    .clip(CircleShape)
-                    .background(uiColors.highlight.copy(alpha = 0.92f)),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.Star,
-                    contentDescription = null,
-                    tint = accent.start,
-                    modifier = Modifier.size(12.dp),
-                )
-            }
-        }
     }
 }
 
@@ -9395,6 +9649,27 @@ private fun formatMilestoneValue(value: Int, unit: String): String {
     }
 }
 
+private fun formatMilestoneProgressLabel(current: Int, target: Int, unit: String): String {
+    val currentText = formatCompactNumberForMilestone(current)
+    val targetText = formatCompactNumberForMilestone(target)
+    return when (unit) {
+        "lb" -> "$currentText / $targetText lb"
+        "workouts" -> "$currentText / $targetText workouts"
+        "min" -> "$currentText / $targetText min"
+        else -> "$currentText / $targetText $unit"
+    }
+}
+
+private fun formatCompactNumberForMilestone(value: Int): String {
+    return when {
+        value >= 1_000_000 && value % 1_000_000 == 0 -> "${value / 1_000_000}M"
+        value >= 1_000_000 -> String.format("%.1fM", value / 1_000_000.0)
+        value >= 1_000 && value % 1_000 == 0 -> "${value / 1_000}k"
+        value >= 1_000 -> String.format("%.1fk", value / 1_000.0)
+        else -> value.toString()
+    }
+}
+
 @Composable
 private fun HistoryDateSeparator(label: String) {
     Text(
@@ -9414,6 +9689,7 @@ private fun HistoryEntryCard(
     onShare: () -> Unit,
     onDelete: () -> Unit,
     embedded: Boolean = false,
+    statItems: List<Triple<String, String, String>>? = null,
 ) {
     var expanded by remember { mutableStateOf(false) }
 
@@ -9480,7 +9756,7 @@ private fun HistoryEntryCard(
                 }
             }
             StatRail(
-                items = listOf(
+                items = statItems ?: listOf(
                     Triple("Time", formatMinutes(entry.durationSeconds), ""),
                     Triple("Volume", formatVolume(entry.totalVolume), ""),
                     Triple("Moves", entry.exerciseNames.distinct().size.toString(), "logged"),
@@ -12160,6 +12436,12 @@ private fun ActiveSessionScreen(
         }
         if (debugSurfaceOverride.isDebugActiveSessionFiltersSurface()) {
             showExerciseFilterSheet = true
+        }
+    }
+
+    LaunchedEffect(debugSurfaceOverride, selectedExerciseIndex, session.startedAtUtc) {
+        if (debugSurfaceOverride.isDebugActiveWorkoutOverviewSurface() && selectedExerciseIndex != null) {
+            onCloseExercise()
         }
     }
 
@@ -15165,6 +15447,8 @@ private fun SessionExerciseRow(
     val completedSets = exercise.sets.count { it.completed }
     val totalSets = exercise.sets.size
     val progressFraction = if (totalSets > 0) completedSets / totalSets.toFloat() else 0f
+    val isCompleted = totalSets > 0 && completedSets == totalSets
+    val isInProgress = completedSets > 0 && !isCompleted
     val actionWidth = 64.dp
     val actionWidthPx = with(LocalDensity.current) { actionWidth.toPx() }
     val badgeLabel = sessionExerciseBadgeLabel(
@@ -15177,10 +15461,12 @@ private fun SessionExerciseRow(
     )
     val summaryLine = if (completedSets > 0) {
         buildString {
+            append(if (isCompleted) "Completed" else "In Progress")
+            append(" • ")
             append("$completedSets/$totalSets ")
             append(if (exercise.workUnits.isEmpty()) "Sets" else "Intervals")
             append(" Logged")
-            if (completedSets == totalSets) {
+            if (isCompleted) {
                 exercise.lastSetRepsInReserve?.let {
                     append(" • RIR ")
                     append(formatRirLabel(it))
@@ -15194,12 +15480,12 @@ private fun SessionExerciseRow(
         listOfNotNull("$totalSets Interval".let { if (totalSets == 1) it else "${totalSets} Intervals" }, primaryValue)
             .joinToString(" • ")
     } else {
-        "$totalSets Sets • ${exercise.sets.firstOrNull()?.targetReps ?: "--"} Reps" +
+        "Not Started • $totalSets Sets • ${exercise.sets.firstOrNull()?.targetReps ?: "--"} Reps" +
             exercise.sets.firstOrNull()?.displayedWeight()?.takeIf { it.isNotBlank() }?.let { " • $it lb" }.orEmpty()
     }
     val summaryColor = when {
-        progressFraction >= 1f -> momentumAccent.start
-        completedSets > 0 -> surgeAccent.start
+        isCompleted -> surgeAccent.start
+        isInProgress -> Color(0xFF20D6FF)
         else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
     var horizontalOffset by remember(exercise.exerciseId) { mutableFloatStateOf(0f) }
@@ -15283,11 +15569,21 @@ private fun SessionExerciseRow(
                 SessionExerciseProgressBadge(
                     label = badgeLabel,
                     progressFraction = progressFraction,
+                    isCompleted = isCompleted,
                     accent = accentForKey(badgeAccentKey),
                     onClick = onShowDetail,
                 )
                 Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text(exercise.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text(
+                        exercise.name,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = if (isCompleted) {
+                            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.84f)
+                        } else {
+                            MaterialTheme.colorScheme.onSurface
+                        },
+                    )
                     Text(
                         summaryLine,
                         color = summaryColor,
@@ -15305,6 +15601,7 @@ private fun SessionExerciseRow(
 private fun SessionExerciseProgressBadge(
     label: String,
     progressFraction: Float,
+    isCompleted: Boolean,
     accent: GlowAccent,
     onClick: () -> Unit,
 ) {
@@ -15316,10 +15613,11 @@ private fun SessionExerciseProgressBadge(
         ),
         label = "sessionExerciseProgress",
     )
-    val dottedRingColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.65f)
+    val progressRingColor = if (isCompleted) surgeAccent.start else Color(0xFF20D6FF)
+    val progressTrackColor = progressRingColor.copy(alpha = if (LocalToastLiftIsDarkTheme.current) 0.26f else 0.18f)
     Box(
         modifier = Modifier
-            .size(50.dp)
+            .size(58.dp)
             .semantics { contentDescription = "Show exercise details" }
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
@@ -15328,37 +15626,74 @@ private fun SessionExerciseProgressBadge(
             label = label,
             accent = accent,
             textColor = if (clampedProgress > 0f) accent.textOnAccent else MaterialTheme.colorScheme.onSurface,
+            shape = if (clampedProgress > 0f) CircleShape else RoundedCornerShape(10.dp),
         )
         if (clampedProgress > 0f) {
             Canvas(modifier = Modifier.matchParentSize()) {
-                val strokeWidth = 4.dp.toPx()
-                val inset = strokeWidth / 2
-                val arcSize = size.minDimension - strokeWidth
+                val strokeWidth = 7.dp.toPx()
+                val glowStrokeWidth = 13.dp.toPx()
+                val inset = glowStrokeWidth / 2
+                val arcSize = size.minDimension - glowStrokeWidth
+                drawArc(
+                    color = progressRingColor.copy(alpha = 0.18f),
+                    startAngle = -90f,
+                    sweepAngle = 360f,
+                    useCenter = false,
+                    topLeft = androidx.compose.ui.geometry.Offset(inset, inset),
+                    size = androidx.compose.ui.geometry.Size(arcSize, arcSize),
+                    style = Stroke(width = glowStrokeWidth, cap = StrokeCap.Round),
+                )
                 if (clampedProgress < 1f) {
                     drawArc(
-                        color = dottedRingColor,
+                        color = progressTrackColor,
                         startAngle = -90f,
                         sweepAngle = 360f,
                         useCenter = false,
                         topLeft = androidx.compose.ui.geometry.Offset(inset, inset),
                         size = androidx.compose.ui.geometry.Size(arcSize, arcSize),
-                        style = Stroke(
-                            width = strokeWidth,
-                            cap = StrokeCap.Round,
-                            pathEffect = PathEffect.dashPathEffect(
-                                floatArrayOf(strokeWidth * 0.8f, strokeWidth * 1.6f),
-                            ),
-                        ),
+                        style = Stroke(width = strokeWidth, cap = StrokeCap.Round),
                     )
                 }
+                val sweepAngle = 360f * clampedProgress
                 drawArc(
-                    color = accent.start,
+                    color = progressRingColor,
                     startAngle = -90f,
-                    sweepAngle = 360f * clampedProgress,
+                    sweepAngle = sweepAngle,
                     useCenter = false,
                     topLeft = androidx.compose.ui.geometry.Offset(inset, inset),
                     size = androidx.compose.ui.geometry.Size(arcSize, arcSize),
                     style = Stroke(width = strokeWidth, cap = StrokeCap.Round),
+                )
+                if (clampedProgress < 1f) {
+                    val angle = Math.toRadians((-90f + 360f * clampedProgress).toDouble())
+                    val center = androidx.compose.ui.geometry.Offset(size.width / 2f, size.height / 2f)
+                    val radius = arcSize / 2f
+                    drawCircle(
+                        color = progressRingColor,
+                        radius = strokeWidth * 0.72f,
+                        center = androidx.compose.ui.geometry.Offset(
+                            x = center.x + cos(angle).toFloat() * radius,
+                            y = center.y + sin(angle).toFloat() * radius,
+                        ),
+                    )
+                }
+            }
+        }
+        if (isCompleted) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .offset(x = 3.dp, y = (-3).dp)
+                    .size(21.dp)
+                    .clip(CircleShape)
+                    .background(progressRingColor),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Check,
+                    contentDescription = null,
+                    modifier = Modifier.size(15.dp),
+                    tint = surgeAccent.textOnAccent,
                 )
             }
         }
@@ -18700,17 +19035,18 @@ private fun LeadingBadge(
     label: String,
     accent: GlowAccent? = null,
     textColor: Color = Color.Unspecified,
+    shape: androidx.compose.ui.graphics.Shape = RoundedCornerShape(10.dp),
 ) {
     val resolvedAccent = accent ?: emberAccent
     Card(
-        shape = RoundedCornerShape(10.dp),
+        shape = shape,
         colors = CardDefaults.cardColors(containerColor = Color.Transparent),
         border = BorderStroke(1.dp, resolvedAccent.color.copy(alpha = 0.2f)),
     ) {
         Box(
             modifier = Modifier
                 .size(42.dp)
-                .background(resolvedAccent.color),
+                .background(resolvedAccent.color, shape),
             contentAlignment = Alignment.Center,
         ) {
             Text(

@@ -22,6 +22,8 @@ import dev.toastlabs.toastlift.data.OnboardingDraft
 import dev.toastlabs.toastlift.data.RecommendationSource
 import dev.toastlabs.toastlift.data.SessionExercise
 import dev.toastlabs.toastlift.data.SessionSet
+import dev.toastlabs.toastlift.data.WorkUnitDefinition
+import dev.toastlabs.toastlift.data.nextSessionSetId
 import java.io.File
 import java.security.MessageDigest
 import java.time.Instant
@@ -33,6 +35,7 @@ object ToastLiftAppRevealBindings {
     private var screenNavigator: ToastLiftScreenNavigator? = null
     private var featureFlags: ToastLiftDebugFeatureFlags? = null
     private var exerciseFixture: ExerciseLoggingFixtureProvider? = null
+    private var workoutOverviewFixture: ActiveWorkoutOverviewFixtureProvider? = null
 
     fun install(app: ToastLiftApplication) {
         sessionHost = ToastLiftDebugSessionHost(app).also(AppReveal::registerDebugSessionHost)
@@ -40,6 +43,7 @@ object ToastLiftAppRevealBindings {
         screenNavigator = ToastLiftScreenNavigator(app).also(AppReveal::registerScreenNavigator)
         featureFlags = ToastLiftDebugFeatureFlags(app).also(AppReveal::registerDebugFeatureFlagMutator)
         exerciseFixture = ExerciseLoggingFixtureProvider(app).also(AppReveal::registerFixtureProvider)
+        workoutOverviewFixture = ActiveWorkoutOverviewFixtureProvider(app).also(AppReveal::registerFixtureProvider)
     }
 }
 
@@ -166,6 +170,12 @@ private class ToastLiftScreenRegistry : ScreenRegistryProviding {
             description = "Debug-created active workout with one exercise and configurable completed sets.",
             supportsFixtures = true,
         ),
+        ScreenDescriptor(
+            key = "active.workout_overview",
+            title = "Active workout overview",
+            description = "Captured active workout overview with the full active exercise list and set state.",
+            supportsFixtures = true,
+        ),
     )
 }
 
@@ -209,6 +219,7 @@ private class ToastLiftScreenNavigator(
             "history.token-balance" -> ScreenRoute(tab = "Explore", debugSurface = "history.token-balance")
             "history.bounty-cards" -> ScreenRoute(tab = "Explore", debugSurface = "history.bounty-cards")
             "active.exercise_logging" -> ScreenRoute(tab = "Home", debugSurface = "active.exercise_logging")
+            "active.workout_overview" -> ScreenRoute(tab = "Home", debugSurface = "active.workout_overview")
             else -> return OpenScreenResult(
                 screenKey = screenKey,
                 opened = false,
@@ -351,6 +362,65 @@ private class ExerciseLoggingFixtureProvider(
                 completedSets = completedSets,
             ),
             selectedExerciseIndex = inputs["selectedExerciseIndex"].asInt(defaultValue = 0),
+        )
+        app.startActivity(
+            Intent(app, MainActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+                .putExtra(EXTRA_DEBUG_TAB, "Home"),
+        )
+    }
+}
+
+private class ActiveWorkoutOverviewFixtureProvider(
+    private val app: ToastLiftApplication,
+) : ScreenFixtureProviding {
+    override val screenKey: String = "active.workout_overview"
+
+    override fun capture(sessionId: String): ScreenFixture {
+        val persisted = app.container.workoutRepository.loadActiveSession()
+        val session = persisted?.session
+        return ScreenFixture(
+            schemaVersion = 1,
+            screenKey = screenKey,
+            appVersion = dev.toastlabs.toastlift.BuildConfig.VERSION_NAME,
+            appVersionCode = dev.toastlabs.toastlift.BuildConfig.VERSION_CODE.toLong(),
+            featureFlags = app.container.dataEnvironment.featureFlags,
+            capturedAt = Instant.now().toString(),
+            inputs = mapOf(
+                "debugSessionId" to sessionId,
+                "hasActiveSession" to (session != null),
+                "selectedExerciseIndex" to persisted?.selectedExerciseIndex,
+                "session" to session?.toFixtureMap(),
+            ),
+        )
+    }
+
+    override fun restore(
+        sessionId: String,
+        fixture: ScreenFixture,
+    ) {
+        val inputs = fixture.inputs
+        val session = (inputs["session"] as? Map<*, *>)?.toActiveSession()
+            ?: buildExerciseLoggingSession(
+                exercise = ExerciseSummary(
+                    id = 1L,
+                    name = "Debug Exercise",
+                    difficulty = "Intermediate",
+                    bodyRegion = "Lower Body",
+                    targetMuscleGroup = "Quadriceps",
+                    equipment = "Dumbbell",
+                    secondaryEquipment = null,
+                    mechanics = null,
+                    favorite = false,
+                ),
+                title = "Debug Workout",
+                locationModeId = 1L,
+                setCount = 4,
+                completedSets = 1,
+            )
+        app.container.workoutRepository.saveActiveSession(
+            session = session,
+            selectedExerciseIndex = inputs["selectedExerciseIndex"].asIntOrNull(),
         )
         app.startActivity(
             Intent(app, MainActivity::class.java)
@@ -532,6 +602,180 @@ private fun Any?.asBooleanOrNull(): Boolean? =
         is Number -> toInt() != 0
         else -> null
     }
+
+private fun Any?.asString(defaultValue: String = ""): String =
+    this?.toString() ?: defaultValue
+
+private fun Any?.asNullableString(): String? =
+    this?.toString()?.takeIf { it.isNotBlank() }
+
+private fun Any?.asDoubleOrNull(): Double? =
+    when (this) {
+        is Number -> toDouble()
+        is String -> toDoubleOrNull()
+        else -> null
+    }
+
+private fun Any?.asBoolean(defaultValue: Boolean = false): Boolean =
+    when (this) {
+        is Boolean -> this
+        is String -> when {
+            equals("true", ignoreCase = true) -> true
+            equals("false", ignoreCase = true) -> false
+            else -> defaultValue
+        }
+        is Number -> toInt() != 0
+        else -> defaultValue
+    }
+
+private fun ActiveSession.toFixtureMap(): Map<String, Any?> =
+    mapOf(
+        "title" to title,
+        "origin" to origin,
+        "locationModeId" to locationModeId,
+        "startedAtUtc" to startedAtUtc,
+        "focusKey" to focusKey,
+        "subtitle" to subtitle,
+        "estimatedMinutes" to estimatedMinutes,
+        "sessionFormat" to sessionFormat,
+        "isPaused" to isPaused,
+        "pausedAtUtc" to pausedAtUtc,
+        "accumulatedPausedSeconds" to accumulatedPausedSeconds,
+        "exercises" to exercises.map(SessionExercise::toFixtureMap),
+    )
+
+private fun SessionExercise.toFixtureMap(): Map<String, Any?> =
+    mapOf(
+        "exerciseId" to exerciseId,
+        "name" to name,
+        "bodyRegion" to bodyRegion,
+        "targetMuscleGroup" to targetMuscleGroup,
+        "equipment" to equipment,
+        "restSeconds" to restSeconds,
+        "sets" to sets.map(SessionSet::toFixtureMap),
+        "workUnits" to workUnits.map(WorkUnitDefinition::toFixtureMap),
+        "activitySequence" to activitySequence,
+        "completionSequence" to completionSequence,
+        "lastSetRepsInReserve" to lastSetRepsInReserve,
+        "notes" to notes,
+        "fruitIcon" to fruitIcon,
+    )
+
+private fun SessionSet.toFixtureMap(): Map<String, Any?> =
+    mapOf(
+        "id" to id,
+        "setNumber" to setNumber,
+        "targetReps" to targetReps,
+        "recommendedReps" to recommendedReps,
+        "recommendedWeight" to recommendedWeight,
+        "reps" to reps,
+        "weight" to weight,
+        "workUnitValues" to workUnitValues,
+        "recommendationSource" to recommendationSource.name,
+        "recommendationConfidence" to recommendationConfidence,
+        "completed" to completed,
+        "completedAtUtc" to completedAtUtc,
+    )
+
+private fun WorkUnitDefinition.toFixtureMap(): Map<String, Any?> =
+    mapOf(
+        "key" to key,
+        "label" to label,
+        "valueType" to valueType,
+        "unitLabel" to unitLabel,
+        "defaultValue" to defaultValue,
+        "minValue" to minValue,
+        "maxValue" to maxValue,
+        "stepValue" to stepValue,
+        "isPrimary" to isPrimary,
+        "isRequired" to isRequired,
+        "tracksEffort" to tracksEffort,
+    )
+
+private fun Map<*, *>.toActiveSession(): ActiveSession =
+    ActiveSession(
+        title = this["title"].asString("Debug Workout"),
+        origin = this["origin"].asString("debug"),
+        locationModeId = this["locationModeId"].asLong(defaultValue = 1L),
+        startedAtUtc = this["startedAtUtc"].asString(Instant.now().toString()),
+        focusKey = this["focusKey"].asNullableString(),
+        subtitle = this["subtitle"].asString(),
+        estimatedMinutes = this["estimatedMinutes"].asIntOrNull(),
+        sessionFormat = this["sessionFormat"].asNullableString(),
+        exercises = (this["exercises"] as? List<*>)
+            ?.mapNotNull { (it as? Map<*, *>)?.toSessionExercise() }
+            .orEmpty(),
+        isPaused = this["isPaused"].asBoolean(),
+        pausedAtUtc = this["pausedAtUtc"].asNullableString(),
+        accumulatedPausedSeconds = this["accumulatedPausedSeconds"].asInt(defaultValue = 0),
+    )
+
+private fun Map<*, *>.toSessionExercise(): SessionExercise =
+    SessionExercise(
+        exerciseId = this["exerciseId"].asLong(defaultValue = 1L),
+        name = this["name"].asString("Debug Exercise"),
+        bodyRegion = this["bodyRegion"].asString("Lower Body"),
+        targetMuscleGroup = this["targetMuscleGroup"].asString("Quadriceps"),
+        equipment = this["equipment"].asString("Dumbbell"),
+        restSeconds = this["restSeconds"].asInt(defaultValue = 90),
+        sets = (this["sets"] as? List<*>)
+            ?.mapNotNull { (it as? Map<*, *>)?.toSessionSet() }
+            .orEmpty(),
+        workUnits = (this["workUnits"] as? List<*>)
+            ?.mapNotNull { (it as? Map<*, *>)?.toWorkUnitDefinition() }
+            .orEmpty(),
+        activitySequence = this["activitySequence"].asIntOrNull(),
+        completionSequence = this["completionSequence"].asIntOrNull(),
+        lastSetRepsInReserve = this["lastSetRepsInReserve"].asIntOrNull(),
+        notes = this["notes"].asString(),
+        fruitIcon = this["fruitIcon"].asNullableString(),
+    )
+
+private fun Map<*, *>.toSessionSet(): SessionSet =
+    SessionSet(
+        id = this["id"].asLong(defaultValue = 0L).takeIf { it > 0L } ?: nextSessionSetId(),
+        setNumber = this["setNumber"].asInt(defaultValue = 1),
+        targetReps = this["targetReps"].asString("8-10"),
+        recommendedReps = this["recommendedReps"].asIntOrNull(),
+        recommendedWeight = this["recommendedWeight"].asString(),
+        reps = this["reps"].asString(),
+        weight = this["weight"].asString(),
+        workUnitValues = (this["workUnitValues"] as? Map<*, *>)
+            ?.mapNotNull { (key, value) -> key?.toString()?.let { it to value.asString() } }
+            ?.toMap()
+            .orEmpty(),
+        recommendationSource = this["recommendationSource"].asRecommendationSource(),
+        recommendationConfidence = this["recommendationConfidence"].asDoubleOrNull(),
+        completed = this["completed"].asBoolean(),
+        completedAtUtc = this["completedAtUtc"].asNullableString(),
+    )
+
+private fun Map<*, *>.toWorkUnitDefinition(): WorkUnitDefinition =
+    WorkUnitDefinition(
+        key = this["key"].asString(),
+        label = this["label"].asString(),
+        valueType = this["valueType"].asString(),
+        unitLabel = this["unitLabel"].asNullableString(),
+        defaultValue = this["defaultValue"].asNullableString(),
+        minValue = this["minValue"].asDoubleOrNull(),
+        maxValue = this["maxValue"].asDoubleOrNull(),
+        stepValue = this["stepValue"].asDoubleOrNull(),
+        isPrimary = this["isPrimary"].asBoolean(),
+        isRequired = this["isRequired"].asBoolean(),
+        tracksEffort = this["tracksEffort"].asBoolean(),
+    )
+
+private fun Any?.asIntOrNull(): Int? =
+    when (this) {
+        is Number -> toInt()
+        is String -> toIntOrNull()
+        else -> null
+    }
+
+private fun Any?.asRecommendationSource(): RecommendationSource =
+    asNullableString()
+        ?.let { runCatching { RecommendationSource.valueOf(it) }.getOrNull() }
+        ?: RecommendationSource.NONE
 
 private const val GYM_LOCATION_MODE_ID = 2L
 private const val HOME_LOCATION_MODE_ID = 1L
