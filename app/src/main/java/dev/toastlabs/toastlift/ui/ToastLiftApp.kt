@@ -210,7 +210,9 @@ import androidx.compose.ui.window.DialogWindowProvider
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.view.WindowCompat
+import kotlin.math.cos
 import kotlin.math.roundToInt
+import kotlin.math.sin
 import dev.toastlabs.toastlift.data.ActiveSession
 import dev.toastlabs.toastlift.data.ActiveWorkoutBounty
 import dev.toastlabs.toastlift.data.AbandonedWorkoutSummary
@@ -15445,6 +15447,8 @@ private fun SessionExerciseRow(
     val completedSets = exercise.sets.count { it.completed }
     val totalSets = exercise.sets.size
     val progressFraction = if (totalSets > 0) completedSets / totalSets.toFloat() else 0f
+    val isCompleted = totalSets > 0 && completedSets == totalSets
+    val isInProgress = completedSets > 0 && !isCompleted
     val actionWidth = 64.dp
     val actionWidthPx = with(LocalDensity.current) { actionWidth.toPx() }
     val badgeLabel = sessionExerciseBadgeLabel(
@@ -15457,10 +15461,12 @@ private fun SessionExerciseRow(
     )
     val summaryLine = if (completedSets > 0) {
         buildString {
+            append(if (isCompleted) "Completed" else "In Progress")
+            append(" • ")
             append("$completedSets/$totalSets ")
             append(if (exercise.workUnits.isEmpty()) "Sets" else "Intervals")
             append(" Logged")
-            if (completedSets == totalSets) {
+            if (isCompleted) {
                 exercise.lastSetRepsInReserve?.let {
                     append(" • RIR ")
                     append(formatRirLabel(it))
@@ -15474,12 +15480,12 @@ private fun SessionExerciseRow(
         listOfNotNull("$totalSets Interval".let { if (totalSets == 1) it else "${totalSets} Intervals" }, primaryValue)
             .joinToString(" • ")
     } else {
-        "$totalSets Sets • ${exercise.sets.firstOrNull()?.targetReps ?: "--"} Reps" +
+        "Not Started • $totalSets Sets • ${exercise.sets.firstOrNull()?.targetReps ?: "--"} Reps" +
             exercise.sets.firstOrNull()?.displayedWeight()?.takeIf { it.isNotBlank() }?.let { " • $it lb" }.orEmpty()
     }
     val summaryColor = when {
-        progressFraction >= 1f -> momentumAccent.start
-        completedSets > 0 -> surgeAccent.start
+        isCompleted -> surgeAccent.start
+        isInProgress -> Color(0xFF20D6FF)
         else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
     var horizontalOffset by remember(exercise.exerciseId) { mutableFloatStateOf(0f) }
@@ -15563,11 +15569,21 @@ private fun SessionExerciseRow(
                 SessionExerciseProgressBadge(
                     label = badgeLabel,
                     progressFraction = progressFraction,
+                    isCompleted = isCompleted,
                     accent = accentForKey(badgeAccentKey),
                     onClick = onShowDetail,
                 )
                 Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text(exercise.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text(
+                        exercise.name,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = if (isCompleted) {
+                            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.84f)
+                        } else {
+                            MaterialTheme.colorScheme.onSurface
+                        },
+                    )
                     Text(
                         summaryLine,
                         color = summaryColor,
@@ -15585,6 +15601,7 @@ private fun SessionExerciseRow(
 private fun SessionExerciseProgressBadge(
     label: String,
     progressFraction: Float,
+    isCompleted: Boolean,
     accent: GlowAccent,
     onClick: () -> Unit,
 ) {
@@ -15596,10 +15613,11 @@ private fun SessionExerciseProgressBadge(
         ),
         label = "sessionExerciseProgress",
     )
-    val dottedRingColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.65f)
+    val progressRingColor = if (isCompleted) surgeAccent.start else Color(0xFF20D6FF)
+    val progressTrackColor = progressRingColor.copy(alpha = if (LocalToastLiftIsDarkTheme.current) 0.26f else 0.18f)
     Box(
         modifier = Modifier
-            .size(50.dp)
+            .size(58.dp)
             .semantics { contentDescription = "Show exercise details" }
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
@@ -15608,37 +15626,74 @@ private fun SessionExerciseProgressBadge(
             label = label,
             accent = accent,
             textColor = if (clampedProgress > 0f) accent.textOnAccent else MaterialTheme.colorScheme.onSurface,
+            shape = if (clampedProgress > 0f) CircleShape else RoundedCornerShape(10.dp),
         )
         if (clampedProgress > 0f) {
             Canvas(modifier = Modifier.matchParentSize()) {
-                val strokeWidth = 4.dp.toPx()
-                val inset = strokeWidth / 2
-                val arcSize = size.minDimension - strokeWidth
+                val strokeWidth = 7.dp.toPx()
+                val glowStrokeWidth = 13.dp.toPx()
+                val inset = glowStrokeWidth / 2
+                val arcSize = size.minDimension - glowStrokeWidth
+                drawArc(
+                    color = progressRingColor.copy(alpha = 0.18f),
+                    startAngle = -90f,
+                    sweepAngle = 360f,
+                    useCenter = false,
+                    topLeft = androidx.compose.ui.geometry.Offset(inset, inset),
+                    size = androidx.compose.ui.geometry.Size(arcSize, arcSize),
+                    style = Stroke(width = glowStrokeWidth, cap = StrokeCap.Round),
+                )
                 if (clampedProgress < 1f) {
                     drawArc(
-                        color = dottedRingColor,
+                        color = progressTrackColor,
                         startAngle = -90f,
                         sweepAngle = 360f,
                         useCenter = false,
                         topLeft = androidx.compose.ui.geometry.Offset(inset, inset),
                         size = androidx.compose.ui.geometry.Size(arcSize, arcSize),
-                        style = Stroke(
-                            width = strokeWidth,
-                            cap = StrokeCap.Round,
-                            pathEffect = PathEffect.dashPathEffect(
-                                floatArrayOf(strokeWidth * 0.8f, strokeWidth * 1.6f),
-                            ),
-                        ),
+                        style = Stroke(width = strokeWidth, cap = StrokeCap.Round),
                     )
                 }
+                val sweepAngle = 360f * clampedProgress
                 drawArc(
-                    color = accent.start,
+                    color = progressRingColor,
                     startAngle = -90f,
-                    sweepAngle = 360f * clampedProgress,
+                    sweepAngle = sweepAngle,
                     useCenter = false,
                     topLeft = androidx.compose.ui.geometry.Offset(inset, inset),
                     size = androidx.compose.ui.geometry.Size(arcSize, arcSize),
                     style = Stroke(width = strokeWidth, cap = StrokeCap.Round),
+                )
+                if (clampedProgress < 1f) {
+                    val angle = Math.toRadians((-90f + 360f * clampedProgress).toDouble())
+                    val center = androidx.compose.ui.geometry.Offset(size.width / 2f, size.height / 2f)
+                    val radius = arcSize / 2f
+                    drawCircle(
+                        color = progressRingColor,
+                        radius = strokeWidth * 0.72f,
+                        center = androidx.compose.ui.geometry.Offset(
+                            x = center.x + cos(angle).toFloat() * radius,
+                            y = center.y + sin(angle).toFloat() * radius,
+                        ),
+                    )
+                }
+            }
+        }
+        if (isCompleted) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .offset(x = 3.dp, y = (-3).dp)
+                    .size(21.dp)
+                    .clip(CircleShape)
+                    .background(progressRingColor),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Check,
+                    contentDescription = null,
+                    modifier = Modifier.size(15.dp),
+                    tint = surgeAccent.textOnAccent,
                 )
             }
         }
@@ -18980,17 +19035,18 @@ private fun LeadingBadge(
     label: String,
     accent: GlowAccent? = null,
     textColor: Color = Color.Unspecified,
+    shape: androidx.compose.ui.graphics.Shape = RoundedCornerShape(10.dp),
 ) {
     val resolvedAccent = accent ?: emberAccent
     Card(
-        shape = RoundedCornerShape(10.dp),
+        shape = shape,
         colors = CardDefaults.cardColors(containerColor = Color.Transparent),
         border = BorderStroke(1.dp, resolvedAccent.color.copy(alpha = 0.2f)),
     ) {
         Box(
             modifier = Modifier
                 .size(42.dp)
-                .background(resolvedAccent.color),
+                .background(resolvedAccent.color, shape),
             contentAlignment = Alignment.Center,
         ) {
             Text(
