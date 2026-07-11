@@ -597,6 +597,15 @@ private val amethystAccent: GlowAccent
 private val heatAccent: GlowAccent
     @Composable get() = if (LocalToastLiftIsDarkTheme.current) DarkHeatAccent else LightHeatAccent
 
+private val activeExerciseInProgressColor: Color
+    @Composable get() = if (LocalToastLiftIsDarkTheme.current) Color(0xFF20D6FF) else MaterialTheme.colorScheme.primary
+
+private val activeExerciseCompletedColor: Color
+    @Composable get() = if (LocalToastLiftIsDarkTheme.current) surgeAccent.start else Color(0xFF3F765C)
+
+private val LightActiveExerciseBadgeContainer = Color(0xFFF0ECE9)
+private val LightActiveExerciseBadgeBorder = Color(0xFFD8D1CC)
+
 @Composable
 private fun accentForKey(key: String): GlowAccent {
     val normalized = key.lowercase()
@@ -13901,6 +13910,14 @@ private fun SessionMomentumHeader(
                 current = progressMetrics.completedSets.coerceAtMost(progressMetrics.totalSets),
                 target = progressMetrics.totalSets.coerceAtLeast(1),
                 label = if (completionFraction >= 0.66f) "Momentum" else "Workout flow",
+                accent = if (LocalToastLiftIsDarkTheme.current) {
+                    amethystAccent
+                } else {
+                    GlowAccent(
+                        color = MaterialTheme.colorScheme.primary,
+                        textOnAccent = MaterialTheme.colorScheme.onPrimary,
+                    )
+                },
             )
         }
     }
@@ -15464,8 +15481,7 @@ private fun SessionExerciseRow(
             append(if (isCompleted) "Completed" else "In Progress")
             append(" • ")
             append("$completedSets/$totalSets ")
-            append(if (exercise.workUnits.isEmpty()) "Sets" else "Intervals")
-            append(" Logged")
+            append(if (exercise.workUnits.isEmpty()) "sets" else "intervals")
             if (isCompleted) {
                 exercise.lastSetRepsInReserve?.let {
                     append(" • RIR ")
@@ -15480,12 +15496,12 @@ private fun SessionExerciseRow(
         listOfNotNull("$totalSets Interval".let { if (totalSets == 1) it else "${totalSets} Intervals" }, primaryValue)
             .joinToString(" • ")
     } else {
-        "Not Started • $totalSets Sets • ${exercise.sets.firstOrNull()?.targetReps ?: "--"} Reps" +
+        "Not Started • $totalSets×${exercise.sets.firstOrNull()?.targetReps ?: "--"}" +
             exercise.sets.firstOrNull()?.displayedWeight()?.takeIf { it.isNotBlank() }?.let { " • $it lb" }.orEmpty()
     }
     val summaryColor = when {
-        isCompleted -> surgeAccent.start
-        isInProgress -> Color(0xFF20D6FF)
+        isCompleted -> activeExerciseCompletedColor
+        isInProgress -> activeExerciseInProgressColor
         else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
     var horizontalOffset by remember(exercise.exerciseId) { mutableFloatStateOf(0f) }
@@ -15555,11 +15571,7 @@ private fun SessionExerciseRow(
                         onOpen()
                     }
                 },
-            containerColor = if (progressFraction > 0f) {
-                MaterialTheme.colorScheme.surface.copy(alpha = 0.98f)
-            } else {
-                MaterialTheme.colorScheme.surface
-            },
+            containerColor = MaterialTheme.colorScheme.surface,
         ) {
             Row(
                 modifier = Modifier.padding(12.dp),
@@ -15589,6 +15601,9 @@ private fun SessionExerciseRow(
                         color = summaryColor,
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = if (completedSets > 0) FontWeight.SemiBold else FontWeight.Medium,
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
                 RecommendationBiasIndicator(recommendationBias)
@@ -15613,8 +15628,9 @@ private fun SessionExerciseProgressBadge(
         ),
         label = "sessionExerciseProgress",
     )
-    val progressRingColor = if (isCompleted) surgeAccent.start else Color(0xFF20D6FF)
-    val progressTrackColor = progressRingColor.copy(alpha = if (LocalToastLiftIsDarkTheme.current) 0.26f else 0.18f)
+    val isDarkTheme = LocalToastLiftIsDarkTheme.current
+    val progressRingColor = if (isCompleted) activeExerciseCompletedColor else activeExerciseInProgressColor
+    val progressTrackColor = progressRingColor.copy(alpha = if (isDarkTheme) 0.26f else 0.14f)
     Box(
         modifier = Modifier
             .size(58.dp)
@@ -15622,27 +15638,50 @@ private fun SessionExerciseProgressBadge(
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
+        val hasProgress = clampedProgress > 0f
+        val badgeContainerColor = if (hasProgress) {
+            if (isDarkTheme) {
+                lerp(MaterialTheme.colorScheme.surfaceVariant, accent.color, 0.46f)
+            } else {
+                LightActiveExerciseBadgeContainer
+            }
+        } else {
+            if (isDarkTheme) {
+                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.58f)
+            } else {
+                LightActiveExerciseBadgeContainer
+            }
+        }
+        val badgeBorderColor = if (hasProgress) {
+            if (isDarkTheme) accent.color.copy(alpha = 0.58f) else progressRingColor.copy(alpha = 0.28f)
+        } else {
+            if (isDarkTheme) MaterialTheme.colorScheme.outline.copy(alpha = 0.72f) else LightActiveExerciseBadgeBorder
+        }
         LeadingBadge(
             label = label,
             accent = accent,
-            textColor = if (clampedProgress > 0f) accent.textOnAccent else MaterialTheme.colorScheme.onSurface,
-            shape = if (clampedProgress > 0f) CircleShape else RoundedCornerShape(10.dp),
+            textColor = if (hasProgress) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+            shape = if (hasProgress) CircleShape else RoundedCornerShape(10.dp),
+            containerColor = badgeContainerColor,
+            borderColor = badgeBorderColor,
         )
-        if (clampedProgress > 0f) {
+        if (hasProgress) {
             Canvas(modifier = Modifier.matchParentSize()) {
                 val strokeWidth = 7.dp.toPx()
                 val glowStrokeWidth = 13.dp.toPx()
                 val inset = glowStrokeWidth / 2
                 val arcSize = size.minDimension - glowStrokeWidth
-                drawArc(
-                    color = progressRingColor.copy(alpha = 0.18f),
-                    startAngle = -90f,
-                    sweepAngle = 360f,
-                    useCenter = false,
-                    topLeft = androidx.compose.ui.geometry.Offset(inset, inset),
-                    size = androidx.compose.ui.geometry.Size(arcSize, arcSize),
-                    style = Stroke(width = glowStrokeWidth, cap = StrokeCap.Round),
-                )
+                if (isDarkTheme) {
+                    drawArc(
+                        color = progressRingColor.copy(alpha = 0.18f),
+                        startAngle = -90f,
+                        sweepAngle = 360f,
+                        useCenter = false,
+                        topLeft = androidx.compose.ui.geometry.Offset(inset, inset),
+                        size = androidx.compose.ui.geometry.Size(arcSize, arcSize),
+                        style = Stroke(width = glowStrokeWidth, cap = StrokeCap.Round),
+                    )
+                }
                 if (clampedProgress < 1f) {
                     drawArc(
                         color = progressTrackColor,
@@ -15670,7 +15709,7 @@ private fun SessionExerciseProgressBadge(
                     val radius = arcSize / 2f
                     drawCircle(
                         color = progressRingColor,
-                        radius = strokeWidth * 0.72f,
+                        radius = strokeWidth * (if (isDarkTheme) 0.72f else 0.48f),
                         center = androidx.compose.ui.geometry.Offset(
                             x = center.x + cos(angle).toFloat() * radius,
                             y = center.y + sin(angle).toFloat() * radius,
@@ -15693,7 +15732,7 @@ private fun SessionExerciseProgressBadge(
                     imageVector = Icons.Rounded.Check,
                     contentDescription = null,
                     modifier = Modifier.size(15.dp),
-                    tint = surgeAccent.textOnAccent,
+                    tint = if (isDarkTheme) surgeAccent.textOnAccent else Color.White,
                 )
             }
         }
@@ -19036,17 +19075,25 @@ private fun LeadingBadge(
     accent: GlowAccent? = null,
     textColor: Color = Color.Unspecified,
     shape: androidx.compose.ui.graphics.Shape = RoundedCornerShape(10.dp),
+    containerColor: Color = Color.Unspecified,
+    borderColor: Color = Color.Unspecified,
 ) {
     val resolvedAccent = accent ?: emberAccent
+    val resolvedContainerColor = if (containerColor == Color.Unspecified) resolvedAccent.color else containerColor
+    val resolvedBorderColor = if (borderColor == Color.Unspecified) {
+        resolvedAccent.color.copy(alpha = 0.2f)
+    } else {
+        borderColor
+    }
     Card(
         shape = shape,
         colors = CardDefaults.cardColors(containerColor = Color.Transparent),
-        border = BorderStroke(1.dp, resolvedAccent.color.copy(alpha = 0.2f)),
+        border = BorderStroke(1.dp, resolvedBorderColor),
     ) {
         Box(
             modifier = Modifier
                 .size(42.dp)
-                .background(resolvedAccent.color, shape),
+                .background(resolvedContainerColor, shape),
             contentAlignment = Alignment.Center,
         ) {
             Text(
