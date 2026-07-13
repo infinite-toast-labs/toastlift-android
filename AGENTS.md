@@ -1,5 +1,12 @@
 # ToastLift Android Agent Notes
 
+## Product and release handoff
+
+Before changing the production product surface or preparing a Play release, read
+[`docs/PRODUCTION_RELEASE_PLAYBOOK.md`](docs/PRODUCTION_RELEASE_PLAYBOOK.md).
+It documents the debug/staging/release modes, feature-config discipline,
+signing, visual QA, companion website, and Play Store procedure.
+
 ## AppReveal MCP Visual Debugging
 
 ToastLift's visual-debug MCP server is dynamic. It is not registered as a static

@@ -2,8 +2,13 @@ SHELL := /bin/bash
 
 APP_ID := dev.toastlabs.toastlift
 MAIN_ACTIVITY := $(APP_ID)/.MainActivity
+STAGE_APP_ID := $(APP_ID).staging
+STAGE_MAIN_ACTIVITY := $(STAGE_APP_ID)/dev.toastlabs.toastlift.MainActivity
 DEBUG_APK := app/build/outputs/apk/debug/app-debug.apk
+STAGE_APK := app/build/outputs/apk/staging/app-staging.apk
 RELEASE_APK := app/build/outputs/apk/release/app-release-unsigned.apk
+RELEASE_AAB := app/build/outputs/bundle/release/app-release.aab
+RELEASE_MERGED_MANIFEST := app/build/intermediates/merged_manifests/release/processReleaseManifest/AndroidManifest.xml
 LIVE_AI_SMOKE_TEST_REPORT := app/build/test-results/testDebugUnitTest/TEST-dev.toastlabs.toastlift.data.ExerciseMetadataGeneratorTest.xml
 LIVE_AI_SEARCH_SMOKE_TEST_REPORT := app/build/test-results/testDebugUnitTest/TEST-dev.toastlabs.toastlift.data.ExerciseAiSearchServiceTest.xml
 
@@ -21,10 +26,10 @@ GRADLE := ./gradlew --no-daemon --console=plain
 ADB := android-adb
 EMULATOR_ADB := android-emulator-adb
 
-.PHONY: help clean test lint build-debug build-release assemble apk-paths devices \
-	check-emulator check-device install-debug install-debug-appreveal launch-debug install-device-debug \
-	install-device-debug-no-build sync-device-custom-exercises live-ai-smoke-test \
-	mcp-screens-regular mcp-screens-sheets mcp-screens-all mcp-phone-screens-all \
+.PHONY: help clean test lint build-debug build-stage build-release build-prod bundle-prod verify-release-no-internet verify-play-release assemble apk-paths devices \
+	check-emulator check-device install-debug install-debug-appreveal launch-debug launch-stage install-device-debug \
+	install-device-debug-no-build install-device-stage install-device-stage-no-build sync-device-custom-exercises live-ai-smoke-test \
+	install-stage-appreveal mcp-screens-regular mcp-screens-sheets mcp-screens-all mcp-stage-screens-all mcp-phone-screens-all \
 	mcp-full-scroll-regular mcp-full-scroll-sheets mcp-full-scroll-all mcp-full-scroll-screen \
 	mcp-phone-full-scroll-all mcp-phone-full-scroll-screen
 
@@ -34,14 +39,22 @@ help:
 	@echo "  make live-ai-smoke-test           - Run live Gemini/OpenCode custom exercise AI smoke tests and print outputs"
 	@echo "  make lint                         - Run Android lint for debug"
 	@echo "  make build-debug                  - Build debug APK"
+	@echo "  make build-stage                  - Build production-configured, debug-signed staging APK"
 	@echo "  make build-release                - Build unsigned release APK"
+	@echo "  make build-prod                   - Build release APK; signs it when TOASTLIFT_RELEASE_* values are configured"
+	@echo "  make bundle-prod                  - Build Play Store Android App Bundle"
+	@echo "  make verify-release-no-internet   - Fail if the Play release manifest declares INTERNET"
+	@echo "  make verify-play-release          - Build and verify a signed Play Store bundle"
 	@echo "  make assemble                     - Build debug and release APKs"
 	@echo "  make install-debug                - Build and install debug APK on the configured emulator"
 	@echo "  make install-debug-appreveal      - Build and install debug APK on the configured emulator for AppReveal capture"
+	@echo "  make install-stage-appreveal      - Build and install staging APK on the configured emulator for AppReveal capture"
 	@echo "  make launch-debug                 - Launch the app on the configured emulator"
+	@echo "  make launch-stage                 - Launch the production-configured staging app on the configured emulator"
 	@echo "  make mcp-screens-regular         - Single-shot capture all non-bottom-sheet AppReveal screens from the configured emulator"
 	@echo "  make mcp-screens-sheets          - Single-shot capture all AppReveal bottom sheets from the configured emulator"
 	@echo "  make mcp-screens-all             - Single-shot capture regular screens and bottom sheets from the configured emulator"
+	@echo "  make mcp-stage-screens-all       - Single-shot capture staging screens and sheets from the configured emulator"
 	@echo "  make mcp-full-scroll-regular     - Full-scroll capture all non-bottom-sheet AppReveal screens from the configured emulator"
 	@echo "  make mcp-full-scroll-sheets      - Full-scroll capture all AppReveal bottom sheets from the configured emulator"
 	@echo "  make mcp-full-scroll-all         - Full-scroll capture regular screens and bottom sheets from the configured emulator"
@@ -51,6 +64,8 @@ help:
 	@echo "  make mcp-phone-full-scroll-screen SCREEN_KEY=<key> - Full-scroll capture one AppReveal screen or bottom sheet from \$$DEVICE_SERIAL or the first physical adb device"
 	@echo "  make install-device-debug         - Build and install debug APK on \$$DEVICE_SERIAL or the first physical adb device"
 	@echo "  make install-device-debug-no-build - Install existing debug APK on \$$DEVICE_SERIAL or the first physical adb device"
+	@echo "  make install-device-stage         - Build and install production-configured staging APK on a physical device"
+	@echo "  make install-device-stage-no-build - Install existing staging APK on a physical device"
 	@echo "  make sync-device-custom-exercises - Sync post-install custom exercises from \$$DEVICE_SERIAL or the first physical adb device"
 	@echo "  make devices                      - List devices through the configured ADB bridge"
 	@echo "  make apk-paths                    - Print APK output paths"
@@ -96,14 +111,49 @@ build-debug:
 		$(GRADLE) clean assembleDebug; \
 	}
 
+build-stage:
+	$(GRADLE) assembleStaging
+
 build-release:
 	$(GRADLE) assembleRelease
+
+build-prod: build-release
+
+bundle-prod:
+	$(GRADLE) bundleRelease
+
+verify-release-no-internet: bundle-prod
+	@set -euo pipefail; \
+	if [[ ! -f "$(RELEASE_MERGED_MANIFEST)" ]]; then \
+		echo "Merged release manifest not found at $(RELEASE_MERGED_MANIFEST)" >&2; \
+		exit 1; \
+	fi; \
+	if rg -q 'android\.permission\.INTERNET' "$(RELEASE_MERGED_MANIFEST)"; then \
+		echo "Release manifest unexpectedly declares android.permission.INTERNET." >&2; \
+		exit 1; \
+	fi; \
+	echo "Release manifest verified: android.permission.INTERNET is absent."
+
+verify-play-release: verify-release-no-internet
+	@set -euo pipefail; \
+	if [[ ! -f "$(RELEASE_AAB)" ]]; then \
+		echo "Release bundle not found at $(RELEASE_AAB)" >&2; \
+		exit 1; \
+	fi; \
+	if ! jarsigner -verify -strict -certs "$(RELEASE_AAB)" >/dev/null 2>&1; then \
+		echo "Play bundle is unsigned or has an invalid signature." >&2; \
+		echo "Set TOASTLIFT_RELEASE_STORE_FILE, TOASTLIFT_RELEASE_STORE_PASSWORD, TOASTLIFT_RELEASE_KEY_ALIAS, and TOASTLIFT_RELEASE_KEY_PASSWORD, then retry." >&2; \
+		exit 1; \
+	fi; \
+	echo "Signed Play bundle verified: $(RELEASE_AAB)"
 
 assemble: build-debug build-release
 
 apk-paths:
 	@echo "Debug APK:   $(DEBUG_APK)"
+	@echo "Stage APK:   $(STAGE_APK)"
 	@echo "Release APK: $(RELEASE_APK)"
+	@echo "Release AAB: $(RELEASE_AAB)"
 
 devices:
 	$(ADB) devices -l
@@ -147,8 +197,22 @@ install-debug-appreveal: check-emulator build-debug
 		echo "$$output"; \
 	fi
 
+install-stage-appreveal: check-emulator build-stage
+	@set -euo pipefail; \
+	if ! output="$$( $(EMULATOR_ADB) install -r -d -g --no-incremental $(STAGE_APK) 2>&1 )"; then \
+		echo "$$output" >&2; \
+		echo "Retrying after trimming emulator package caches." >&2; \
+		$(EMULATOR_ADB) shell pm trim-caches 999G >/dev/null || true; \
+		$(EMULATOR_ADB) install -r -d -g --no-incremental $(STAGE_APK); \
+	else \
+		echo "$$output"; \
+	fi
+
 launch-debug: check-emulator
 	$(EMULATOR_ADB) shell am start -W -n $(MAIN_ACTIVITY)
+
+launch-stage: check-emulator
+	$(EMULATOR_ADB) shell am start -W -n $(STAGE_MAIN_ACTIVITY)
 
 mcp-screens-regular: install-debug-appreveal
 	scripts/capture_appreveal_mcp_screens.sh \
@@ -173,6 +237,14 @@ mcp-screens-all: install-debug-appreveal
 		--serial "$(ADB_SERIAL)" \
 		--app-id "$(APP_ID)" \
 		--activity "$(MAIN_ACTIVITY)"
+
+mcp-stage-screens-all: install-stage-appreveal
+	scripts/capture_appreveal_mcp_screens.sh \
+		--group all \
+		--adb "$(EMULATOR_ADB)" \
+		--serial "$(ADB_SERIAL)" \
+		--app-id "$(STAGE_APP_ID)" \
+		--activity "$(STAGE_MAIN_ACTIVITY)"
 
 mcp-full-scroll-regular: install-debug-appreveal
 	scripts/capture_appreveal_mcp_screens.sh \
@@ -307,6 +379,27 @@ install-device-debug-no-build: check-device
 	else \
 		echo "$$output"; \
 	fi
+
+install-device-stage: check-device build-stage
+	@set -euo pipefail; \
+	serial="$(DEVICE_SERIAL)"; \
+	if [[ -z "$$serial" ]]; then \
+		serial="$$( $(ADB) devices | awk 'NR > 1 && $$2 == "device" && $$1 !~ /^emulator-/ { print $$1; exit }' )"; \
+	fi; \
+	$(ADB) -s "$$serial" install -r $(STAGE_APK)
+
+install-device-stage-no-build: check-device
+	@set -euo pipefail; \
+	if [[ ! -f "$(STAGE_APK)" ]]; then \
+		echo "Staging APK not found at $(STAGE_APK)" >&2; \
+		echo "Run 'make build-stage' first." >&2; \
+		exit 1; \
+	fi; \
+	serial="$(DEVICE_SERIAL)"; \
+	if [[ -z "$$serial" ]]; then \
+		serial="$$( $(ADB) devices | awk 'NR > 1 && $$2 == "device" && $$1 !~ /^emulator-/ { print $$1; exit }' )"; \
+	fi; \
+	$(ADB) -s "$$serial" install -r $(STAGE_APK)
 
 sync-device-custom-exercises: check-device
 	@set -euo pipefail; \

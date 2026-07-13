@@ -1,11 +1,15 @@
 package dev.toastlabs.toastlift.data
 
 import android.content.Context
+import dev.toastlabs.toastlift.config.AppFeatureConfig
+import dev.toastlabs.toastlift.config.FeatureConfigLoader
 
 class AppContainer(
     context: Context,
     val dataEnvironment: DataEnvironment = DataEnvironment.real(),
 ) {
+    val featureConfig: AppFeatureConfig = FeatureConfigLoader.load(context.applicationContext)
+
     internal val toastLiftDatabase = ToastLiftDatabase(
         context = context.applicationContext,
         databaseFileOverride = dataEnvironment.databaseFile,

@@ -26,8 +26,15 @@ externalNativeBuild/
 *.hprof
 
 # Signing material
+keystore/
 *.jks
 *.keystore
+
+# CDK synthesis and any local secret-material exports
+iac-secrets/node_modules/
+iac-secrets/cdk.out/
+iac-secrets/.env
+iac-secrets/exports/
 
 # OS/editor noise
 .DS_Store
@@ -63,6 +70,7 @@ tools/color-audit/node_modules/
 tools/color-audit/reports/
 
 android-e2e/
+blindspots/
 pi-session-*.html
 
 meta-reports

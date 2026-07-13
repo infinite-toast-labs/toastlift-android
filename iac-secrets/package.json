@@ -1,0 +1,23 @@
+{
+  "name": "toastlift-iac-secrets",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "synth": "cdk synth",
+    "bootstrap": "cdk bootstrap",
+    "deploy": "cdk deploy --require-approval never",
+    "backup:release-signing": "tsx scripts/backup-release-signing.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.10",
+    "aws-cdk": "^2.113.0",
+    "aws-cdk-lib": "^2.113.0",
+    "constructs": "^10.4.2",
+    "tsx": "^4.19.3",
+    "typescript": "^5.7.3"
+  },
+  "dependencies": {
+    "@aws-sdk/client-secrets-manager": "^3.744.0"
+  }
+}

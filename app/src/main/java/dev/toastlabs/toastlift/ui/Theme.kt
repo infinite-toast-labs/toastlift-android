@@ -148,6 +148,7 @@ private val ToastLiftLightUiColors = UiColors(
 // ── Dark Theme ─────────────────────────────────────────────────────────────────
 
 internal val LocalToastLiftIsDarkTheme = staticCompositionLocalOf { false }
+internal val LocalExerciseFamilyEnabled = staticCompositionLocalOf { true }
 
 private val ToastLiftDarkColors = darkColorScheme(
     primary = Color(0xFFE8FF47),

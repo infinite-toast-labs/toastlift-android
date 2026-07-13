@@ -5,7 +5,6 @@ import android.app.NotificationManager
 import android.content.Context
 import android.media.AudioAttributes
 import android.media.RingtoneManager
-import android.os.Build
 import kotlinx.coroutines.delay
 
 object RestTimerNotificationContract {
@@ -19,7 +18,6 @@ class RestTimerNotifier(context: Context) {
         appContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
     fun ensureNotificationChannel() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val attributes = notificationAudioAttributes()
         val channel = NotificationChannel(
             RestTimerNotificationContract.CHANNEL_ID,
@@ -34,17 +32,11 @@ class RestTimerNotifier(context: Context) {
     }
 
     suspend fun playCompletionBeeps() {
-        val soundUri = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = notificationManager.getNotificationChannel(RestTimerNotificationContract.CHANNEL_ID)
-            if (channel?.importance == NotificationManager.IMPORTANCE_NONE) return
-            channel?.sound ?: return
-        } else {
-            RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION) ?: return
-        }
+        val channel = notificationManager.getNotificationChannel(RestTimerNotificationContract.CHANNEL_ID)
+        if (channel?.importance == NotificationManager.IMPORTANCE_NONE) return
+        val soundUri = channel?.sound ?: return
         val ringtone = RingtoneManager.getRingtone(appContext, soundUri) ?: return
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            ringtone.audioAttributes = notificationAudioAttributes()
-        }
+        ringtone.audioAttributes = notificationAudioAttributes()
         ringtone.play()
         try {
             delay(900)
