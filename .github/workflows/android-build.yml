@@ -53,6 +53,15 @@ jobs:
     permissions:
       contents: read
     steps:
+      # A local composite action must exist in the workspace before the runner
+      # can resolve it. The composite action then performs the canonical,
+      # config-driven source checkout below.
+      - name: Check out workflow source
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          ref: ${{ inputs.commit_sha }}
+          fetch-depth: 1
+          persist-credentials: false
       - id: setup
         uses: ./.github/actions/android-setup
         with:
