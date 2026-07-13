@@ -1,0 +1,50 @@
+name: Reusable Android development build
+
+on:
+  workflow_call:
+    inputs:
+      commit_sha:
+        description: Immutable ToastLift commit to build.
+        required: true
+        type: string
+      build_label:
+        description: Debug version label, normally the source commit SHA.
+        required: true
+        type: string
+
+jobs:
+  development:
+    name: development
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    permissions:
+      contents: read
+    steps:
+      # A local composite action must exist in the workspace before the runner
+      # can resolve it. The composite action then performs the canonical,
+      # config-driven source checkout below.
+      - name: Check out workflow source
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          ref: ${{ inputs.commit_sha }}
+          fetch-depth: 1
+          persist-credentials: false
+      - id: setup
+        uses: ./.github/actions/android-setup
+        with:
+          commit-sha: ${{ inputs.commit_sha }}
+      - name: Confirm development build is secret-free
+        shell: bash
+        run: |
+          set -euo pipefail
+          test ! -e .env
+          env | grep -q '^TOASTLIFT_\(RELEASE\|STAGING\)_' && {
+            echo "Development CI must not receive signing configuration." >&2
+            exit 1
+          } || true
+      - name: Validate version source
+        run: make check-version
+      - name: Build and test Android development variant
+        env:
+          TOASTLIFT_BUILD_LABEL: ${{ inputs.build_label }}
+        run: ./gradlew --no-daemon --console=plain ${{ steps.setup.outputs.debug-gradle-tasks }}

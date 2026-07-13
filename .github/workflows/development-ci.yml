@@ -33,8 +33,7 @@ jobs:
 
   android:
     name: Android development build
-    uses: ./.github/workflows/android-build.yml
+    uses: ./.github/workflows/android-development.yml
     with:
       commit_sha: ${{ github.sha }}
-      build_kind: development
       build_label: ${{ github.sha }}

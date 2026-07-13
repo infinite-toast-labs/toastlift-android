@@ -1,4 +1,4 @@
-name: Reusable Android build
+name: Reusable Android promotion build
 
 on:
   workflow_call:
@@ -45,80 +45,6 @@ on:
         type: boolean
 
 jobs:
-  development:
-    if: inputs.promotion_environment == ''
-    name: development
-    runs-on: ubuntu-24.04
-    timeout-minutes: 40
-    permissions:
-      contents: read
-    steps:
-      # A local composite action must exist in the workspace before the runner
-      # can resolve it. The composite action then performs the canonical,
-      # config-driven source checkout below.
-      - name: Check out workflow source
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
-        with:
-          ref: ${{ inputs.commit_sha }}
-          fetch-depth: 1
-          persist-credentials: false
-      - id: setup
-        uses: ./.github/actions/android-setup
-        with:
-          commit-sha: ${{ inputs.commit_sha }}
-      - id: build-config
-        name: Select checked-in build configuration
-        env:
-          BUILD_KIND: ${{ inputs.build_kind }}
-          DEBUG_GRADLE_TASKS: ${{ steps.setup.outputs.debug-gradle-tasks }}
-          STAGING_GRADLE_TASKS: ${{ steps.setup.outputs.staging-gradle-tasks }}
-          PRODUCTION_GRADLE_TASKS: ${{ steps.setup.outputs.production-gradle-tasks }}
-          DEBUG_APK_PATH: ${{ steps.setup.outputs.debug-apk-path }}
-          STAGING_APK_PATH: ${{ steps.setup.outputs.staging-apk-path }}
-          RELEASE_AAB_PATH: ${{ steps.setup.outputs.release-aab-path }}
-          STAGING_RETENTION: ${{ steps.setup.outputs.staging-artifact-retention-days }}
-          PRODUCTION_RETENTION: ${{ steps.setup.outputs.production-artifact-retention-days }}
-          APPREVEAL_COMMIT: ${{ steps.setup.outputs.appreveal-commit }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          case "$BUILD_KIND" in
-            development)
-              tasks="$DEBUG_GRADLE_TASKS"; artifact_path="$DEBUG_APK_PATH"; retention=1
-              ;;
-            staging)
-              tasks="$STAGING_GRADLE_TASKS"; artifact_path="$STAGING_APK_PATH"; retention="$STAGING_RETENTION"
-              ;;
-            production)
-              tasks="$PRODUCTION_GRADLE_TASKS"; artifact_path="$RELEASE_AAB_PATH"; retention="$PRODUCTION_RETENTION"
-              ;;
-            *)
-              echo "Unknown checked-in build kind: $BUILD_KIND" >&2
-              exit 2
-              ;;
-          esac
-          {
-            echo "gradle_tasks=$tasks"
-            echo "artifact_path=$artifact_path"
-            echo "retention_days=$retention"
-            echo "appreveal_commit=$APPREVEAL_COMMIT"
-          } >> "$GITHUB_OUTPUT"
-      - name: Confirm development build is secret-free
-        shell: bash
-        run: |
-          set -euo pipefail
-          test ! -e .env
-          env | grep -q '^TOASTLIFT_\(RELEASE\|STAGING\)_' && {
-            echo "Development CI must not receive signing configuration." >&2
-            exit 1
-          } || true
-      - name: Validate version source
-        run: make check-version
-      - name: Build and test Android development variant
-        env:
-          TOASTLIFT_BUILD_LABEL: ${{ inputs.build_label }}
-        run: ./gradlew --no-daemon --console=plain ${{ steps.build-config.outputs.gradle_tasks }}
-
   promotion:
     if: inputs.promotion_environment != '' && !inputs.publish_github_release
     name: ${{ inputs.promotion_environment }} promotion
