@@ -11,12 +11,12 @@ const scriptDirectory = dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = resolve(scriptDirectory, "../..");
 const maxSecretBytes = 65_536;
 
-type SigningProfile = "release" | "staging";
+type SigningProfile = "play-upload" | "staging";
 
 function signingProfile(): SigningProfile {
-  const configured = process.env.TOASTLIFT_SIGNING_PROFILE?.trim() || "release";
-  if (configured === "release" || configured === "staging") return configured;
-  throw new Error("TOASTLIFT_SIGNING_PROFILE must be release or staging.");
+  const configured = process.env.TOASTLIFT_SIGNING_PROFILE?.trim() || "play-upload";
+  if (configured === "play-upload" || configured === "staging") return configured;
+  throw new Error("TOASTLIFT_SIGNING_PROFILE must be play-upload or staging.");
 }
 
 function readDotEnv(file: string): Map<string, string> {
@@ -34,9 +34,11 @@ function readDotEnv(file: string): Map<string, string> {
   return entries;
 }
 
-function required(values: Map<string, string>, key: string): string {
-  const value = values.get(key)?.trim();
-  if (!value) throw new Error(`Missing ${key} in ${repositoryRoot}/.env`);
+function requiredSigningValue(values: Map<string, string>, profile: SigningProfile, suffix: string): string {
+  const primary = profile === "play-upload" ? "TOASTLIFT_PLAY_UPLOAD" : "TOASTLIFT_STAGING";
+  const value = values.get(`${primary}_${suffix}`)?.trim()
+    || (profile === "play-upload" ? values.get(`TOASTLIFT_RELEASE_${suffix}`)?.trim() : undefined);
+  if (!value) throw new Error(`Missing ${primary}_${suffix} in ${repositoryRoot}/.env`);
   return value;
 }
 
@@ -45,9 +47,8 @@ async function main(): Promise<void> {
   if (!region) throw new Error("Set AWS_REGION or AWS_DEFAULT_REGION before backing up signing material.");
 
   const profile = signingProfile();
-  const prefix = `TOASTLIFT_${profile.toUpperCase()}`;
   const values = readDotEnv(resolve(repositoryRoot, ".env"));
-  const configuredStoreFile = required(values, `${prefix}_STORE_FILE`);
+  const configuredStoreFile = requiredSigningValue(values, profile, "STORE_FILE");
   const storeFile = isAbsolute(configuredStoreFile)
     ? configuredStoreFile
     : resolve(repositoryRoot, configuredStoreFile);
@@ -55,14 +56,18 @@ async function main(): Promise<void> {
 
   const payload = JSON.stringify({
     schemaVersion: 1,
-    kind: `toastlift-android-${profile}-signing`,
+    // Keep the existing schema identifier until the physical Secrets Manager
+    // secret is migrated. It contains the Play upload key, not an app-signing key.
+    kind: profile === "play-upload"
+      ? "toastlift-android-release-signing"
+      : "toastlift-android-staging-signing",
     state: "backed-up",
     updatedAtUtc: new Date().toISOString(),
     keyStoreFileName: basename(storeFile),
     keyStoreBase64: readFileSync(storeFile).toString("base64"),
-    storePassword: required(values, `${prefix}_STORE_PASSWORD`),
-    keyAlias: required(values, `${prefix}_KEY_ALIAS`),
-    keyPassword: required(values, `${prefix}_KEY_PASSWORD`),
+    storePassword: requiredSigningValue(values, profile, "STORE_PASSWORD"),
+    keyAlias: requiredSigningValue(values, profile, "KEY_ALIAS"),
+    keyPassword: requiredSigningValue(values, profile, "KEY_PASSWORD"),
   });
 
   const bytes = Buffer.byteLength(payload, "utf8");

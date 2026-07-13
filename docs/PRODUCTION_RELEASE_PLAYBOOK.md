@@ -186,10 +186,10 @@ Gradle properties. Never commit, print, paste into source, or pass signing
 passwords as a command-line argument.
 
 ```bash
-export TOASTLIFT_RELEASE_STORE_FILE=/absolute/path/to/toastlift-upload.keystore
-export TOASTLIFT_RELEASE_STORE_PASSWORD='...'
-export TOASTLIFT_RELEASE_KEY_ALIAS='...'
-export TOASTLIFT_RELEASE_KEY_PASSWORD='...'
+export TOASTLIFT_PLAY_UPLOAD_STORE_FILE=/absolute/path/to/toastlift-upload.keystore
+export TOASTLIFT_PLAY_UPLOAD_STORE_PASSWORD='...'
+export TOASTLIFT_PLAY_UPLOAD_KEY_ALIAS='...'
+export TOASTLIFT_PLAY_UPLOAD_KEY_PASSWORD='...'
 
 make verify-play-release
 ```
@@ -209,14 +209,14 @@ signed AAB and that the merged release manifest has no `INTERNET` permission.
 
 ## Signing-material backup
 
-`iac-secrets/` is a TypeScript CDK app that can create an AWS Secrets Manager
-placeholder named `/toastlift/android/release-signing`, then back up the real
-ignored keystore and its signing values directly to that secret.
+`iac-secrets/` is a TypeScript CDK app that backs up the Play upload key. Its
+current physical secret name, `/toastlift/android/release-signing`, is a
+legacy-compatible storage name; it does not contain the Play app-signing key.
 
 ```bash
 cd iac-secrets
 ./scripts/deploy.sh
-AWS_REGION=us-east-1 ./scripts/backup-release-signing.sh
+AWS_REGION=us-east-1 ./scripts/backup-play-upload-signing.sh
 ```
 
 The backup script reads the ignored Android `.env` and keystore, never writes a

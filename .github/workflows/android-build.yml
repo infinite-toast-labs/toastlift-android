@@ -13,7 +13,7 @@ on:
         default: ''
         type: string
       signing_profile:
-        description: staging or production for OIDC signing retrieval; leave empty for development CI.
+        description: staging or play-upload for OIDC signing retrieval; leave empty for development CI.
         required: false
         default: ''
         type: string
@@ -184,7 +184,7 @@ jobs:
           role-to-assume: ${{ inputs.aws_role_arn }}
           aws-region: ${{ inputs.aws_region }}
           mask-aws-account-id: true
-      - name: Restore temporary production signing material
+      - name: Restore temporary Play upload signing material
         run: .github/scripts/restore-signing-secret.sh '${{ inputs.signing_profile }}'
       - name: Validate version source
         run: make check-version

@@ -22,6 +22,10 @@ fun escapeBuildConfig(value: String): String = value.replace("\\", "\\\\").repla
 fun gradlePropertyOrEnv(name: String): String =
     providers.gradleProperty(name).orNull ?: System.getenv(name).orEmpty()
 
+fun playUploadPropertyOrEnv(suffix: String): String =
+    gradlePropertyOrEnv("TOASTLIFT_PLAY_UPLOAD_$suffix")
+        .ifBlank { gradlePropertyOrEnv("TOASTLIFT_RELEASE_$suffix") }
+
 data class SemanticVersion(
     val major: Int,
     val minor: Int,
@@ -75,15 +79,17 @@ val hasStagingSigning = listOf(
     stagingKeyAlias,
     stagingKeyPassword,
 ).all(String::isNotBlank)
-val releaseStoreFile = gradlePropertyOrEnv("TOASTLIFT_RELEASE_STORE_FILE")
-val releaseStorePassword = gradlePropertyOrEnv("TOASTLIFT_RELEASE_STORE_PASSWORD")
-val releaseKeyAlias = gradlePropertyOrEnv("TOASTLIFT_RELEASE_KEY_ALIAS")
-val releaseKeyPassword = gradlePropertyOrEnv("TOASTLIFT_RELEASE_KEY_PASSWORD")
-val hasReleaseSigning = listOf(
-    releaseStoreFile,
-    releaseStorePassword,
-    releaseKeyAlias,
-    releaseKeyPassword,
+// This is the Play upload key. Google Play App Signing owns the distinct app-signing key.
+// The RELEASE aliases support existing local environments during migration.
+val playUploadStoreFile = playUploadPropertyOrEnv("STORE_FILE")
+val playUploadStorePassword = playUploadPropertyOrEnv("STORE_PASSWORD")
+val playUploadKeyAlias = playUploadPropertyOrEnv("KEY_ALIAS")
+val playUploadKeyPassword = playUploadPropertyOrEnv("KEY_PASSWORD")
+val hasPlayUploadSigning = listOf(
+    playUploadStoreFile,
+    playUploadStorePassword,
+    playUploadKeyAlias,
+    playUploadKeyPassword,
 ).all(String::isNotBlank)
 
 android {
@@ -112,12 +118,12 @@ android {
                 keyPassword = stagingKeyPassword
             }
         }
-        if (hasReleaseSigning) {
-            create("play") {
-                storeFile = rootProject.file(releaseStoreFile)
-                storePassword = releaseStorePassword
-                keyAlias = releaseKeyAlias
-                keyPassword = releaseKeyPassword
+        if (hasPlayUploadSigning) {
+            create("playUpload") {
+                storeFile = rootProject.file(playUploadStoreFile)
+                storePassword = playUploadStorePassword
+                keyAlias = playUploadKeyAlias
+                keyPassword = playUploadKeyPassword
             }
         }
     }
@@ -166,8 +172,8 @@ android {
         }
         release {
             isMinifyEnabled = false
-            if (hasReleaseSigning) {
-                signingConfig = signingConfigs.getByName("play")
+            if (hasPlayUploadSigning) {
+                signingConfig = signingConfigs.getByName("playUpload")
             }
             buildConfigField("String", "FEATURE_CONFIG_ASSET", "\"feature-config.production.json\"")
             buildConfigField("boolean", "PRODUCTION_FEATURE_CONFIG", "true")

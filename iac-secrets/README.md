@@ -5,7 +5,7 @@ GitHub Actions identity that can read them:
 
 | Purpose | Secret | GitHub environment / IAM role |
 | --- | --- | --- |
-| Production Play upload signer | `/toastlift/android/release-signing` | `production` / production signing role |
+| Production Play upload signer | `/toastlift/android/release-signing` (legacy physical name) | `production` / production signing role |
 | Dedicated staging signer | `/toastlift/android/staging-signing` | `staging` / staging signing role |
 
 Each role can perform only `secretsmanager:GetSecretValue` on its own secret.
@@ -36,7 +36,7 @@ cd iac-secrets
 Override a name or the repository only when necessary:
 
 ```bash
-TOASTLIFT_AWS_RELEASE_SECRET_NAME=/toastlift/android/release-signing \
+TOASTLIFT_AWS_PLAY_UPLOAD_SECRET_NAME=/toastlift/android/release-signing \
 TOASTLIFT_AWS_STAGING_SECRET_NAME=/toastlift/android/staging-signing \
 TOASTLIFT_GITHUB_REPOSITORY=infinite-toast-labs/toastlift-android \
 ./scripts/deploy.sh
@@ -61,13 +61,15 @@ the ignored local JKS under `keystore/`. It never uses the Play upload key.
 After the placeholder exists, run this from `iac-secrets/`:
 
 ```bash
-AWS_REGION=us-east-1 ./scripts/backup-release-signing.sh
+AWS_REGION=us-east-1 ./scripts/backup-play-upload-signing.sh
 ```
 
-The release script reads the ignored Android-root `.env` values prefixed
-`TOASTLIFT_RELEASE_` and the referenced keystore. It writes a single JSON
+The Play upload script reads the ignored Android-root `.env` values prefixed
+`TOASTLIFT_PLAY_UPLOAD_` and the referenced keystore. It writes a single JSON
 secret containing the base64 keystore and signing values directly to Secrets
 Manager. It never writes a local export and never prints secret material.
+It also accepts the old `TOASTLIFT_RELEASE_` names temporarily, so an existing
+local signing environment keeps working while it is renamed.
 
 For an existing staging signer, use the equivalent `TOASTLIFT_STAGING_` values:
 
@@ -84,11 +86,16 @@ Copy the two role ARN outputs from `cdk deploy` into repository **variables**
 | --- | --- |
 | `AWS_REGION` | AWS region, e.g. `us-east-1` |
 | `AWS_STAGING_SIGNING_ROLE_ARN` | `GitHubActionsStagingSigningRoleArn` output |
-| `AWS_PRODUCTION_SIGNING_ROLE_ARN` | `GitHubActionsProductionSigningRoleArn` output |
+| `AWS_PRODUCTION_PLAY_UPLOAD_SIGNING_ROLE_ARN` | `GitHubActionsProductionSigningRoleArn` output |
 
 The workflow retrieves a secret only after the matching GitHub environment has
 approved the job. It masks retrieved fields, writes the JKS to a restrictive
 temporary directory, and removes it after the build.
+
+The production workflow temporarily falls back to the legacy
+`AWS_PRODUCTION_SIGNING_ROLE_ARN` variable so the renamed variable can be
+introduced without interrupting an in-flight release. Set the new variable
+before removing the legacy one in a later, separate cleanup.
 
 Do not place real values in CDK context, source files, shell arguments,
 CloudFormation parameters, or GitHub secrets.

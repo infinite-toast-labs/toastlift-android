@@ -5,14 +5,14 @@ import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
 import { Construct } from "constructs";
 
 export interface SigningBackupStackProps extends cdk.StackProps {
-  releaseSecretName: string;
+  playUploadSecretName: string;
   stagingSecretName: string;
   githubRepository: string;
 }
 
 /**
  * Creates only a placeholder. Real signing material is deliberately written by
- * scripts/backup-release-signing.ts after deployment, never via CDK context or
+ * scripts/backup-signing.ts after deployment, never via CDK context or
  * CloudFormation parameters.
  */
 export class SigningBackupStack extends cdk.Stack {
@@ -36,9 +36,11 @@ export class SigningBackupStack extends cdk.Stack {
         },
       });
 
-    const releaseSigning = createSigningSecret(
+    // The construct ID and secret schema retain their release-era names so a
+    // routine CDK deploy never replaces the existing Play upload-key secret.
+    const playUploadSigning = createSigningSecret(
       "AndroidReleaseSigning",
-      props.releaseSecretName,
+      props.playUploadSecretName,
       "release",
     );
     const stagingSigning = createSigningSecret(
@@ -81,11 +83,11 @@ export class SigningBackupStack extends cdk.Stack {
     const productionRole = createGitHubSigningRole(
       "GitHubActionsProductionSigningRole",
       "production",
-      releaseSigning,
+      playUploadSigning,
     );
 
-    new cdk.CfnOutput(this, "ReleaseSigningSecretName", {
-      value: props.releaseSecretName,
+    new cdk.CfnOutput(this, "PlayUploadSigningSecretName", {
+      value: props.playUploadSecretName,
     });
     new cdk.CfnOutput(this, "StagingSigningSecretName", {
       value: props.stagingSecretName,

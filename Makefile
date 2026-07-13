@@ -42,7 +42,7 @@ help:
 	@echo "  make build-debug                  - Build debug APK"
 	@echo "  make build-stage                  - Build production-configured, debug-signed staging APK"
 	@echo "  make build-release                - Build unsigned release APK"
-	@echo "  make build-prod                   - Build release APK; signs it when TOASTLIFT_RELEASE_* values are configured"
+	@echo "  make build-prod                   - Build release APK; signs it when TOASTLIFT_PLAY_UPLOAD_* values are configured"
 	@echo "  make bundle-prod                  - Build Play Store Android App Bundle"
 	@echo "  make verify-release-no-internet   - Fail if the Play release manifest declares INTERNET"
 	@echo "  make verify-play-release          - Build and verify a signed Play Store bundle"
@@ -146,7 +146,7 @@ verify-play-release: verify-release-no-internet
 	fi; \
 	if ! jarsigner -verify -strict -certs "$(RELEASE_AAB)" >/dev/null 2>&1; then \
 		echo "Play bundle is unsigned or has an invalid signature." >&2; \
-		echo "Set TOASTLIFT_RELEASE_STORE_FILE, TOASTLIFT_RELEASE_STORE_PASSWORD, TOASTLIFT_RELEASE_KEY_ALIAS, and TOASTLIFT_RELEASE_KEY_PASSWORD, then retry." >&2; \
+		echo "Set TOASTLIFT_PLAY_UPLOAD_STORE_FILE, TOASTLIFT_PLAY_UPLOAD_STORE_PASSWORD, TOASTLIFT_PLAY_UPLOAD_KEY_ALIAS, and TOASTLIFT_PLAY_UPLOAD_KEY_PASSWORD, then retry." >&2; \
 		exit 1; \
 	fi; \
 	echo "Signed Play bundle verified: $(RELEASE_AAB)"

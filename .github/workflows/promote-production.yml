@@ -59,8 +59,8 @@ jobs:
     with:
       commit_sha: ${{ inputs.commit_sha }}
       promotion_environment: production
-      signing_profile: production
-      aws_role_arn: ${{ vars.AWS_PRODUCTION_SIGNING_ROLE_ARN }}
+      signing_profile: play-upload
+      aws_role_arn: ${{ vars.AWS_PRODUCTION_PLAY_UPLOAD_SIGNING_ROLE_ARN || vars.AWS_PRODUCTION_SIGNING_ROLE_ARN }}
       aws_region: ${{ vars.AWS_REGION }}
       build_kind: production
       build_label: ${{ github.run_number }}

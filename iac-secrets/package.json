@@ -7,8 +7,8 @@
     "synth": "cdk synth",
     "bootstrap": "cdk bootstrap",
     "deploy": "cdk deploy --require-approval never",
-    "backup:release-signing": "TOASTLIFT_SIGNING_PROFILE=release tsx scripts/backup-release-signing.ts",
-    "backup:staging-signing": "TOASTLIFT_SIGNING_PROFILE=staging tsx scripts/backup-release-signing.ts",
+    "backup:play-upload-signing": "TOASTLIFT_SIGNING_PROFILE=play-upload tsx scripts/backup-signing.ts",
+    "backup:staging-signing": "TOASTLIFT_SIGNING_PROFILE=staging tsx scripts/backup-signing.ts",
     "create:staging-signing": "tsx scripts/create-staging-signing.ts"
   },
   "devDependencies": {

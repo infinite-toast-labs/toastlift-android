@@ -8,13 +8,15 @@ case "$profile" in
     prefix="TOASTLIFT_STAGING"
     expected_kind="toastlift-android-staging-signing"
     ;;
-  production)
+  play-upload)
+    # The physical Secrets Manager name is retained during the production-key
+    # migration. It stores the Play upload key, never the Play app-signing key.
     secret_name="/toastlift/android/release-signing"
-    prefix="TOASTLIFT_RELEASE"
+    prefix="TOASTLIFT_PLAY_UPLOAD"
     expected_kind="toastlift-android-release-signing"
     ;;
   *)
-    echo "Usage: $0 staging|production" >&2
+    echo "Usage: $0 staging|play-upload" >&2
     exit 2
     ;;
 esac
