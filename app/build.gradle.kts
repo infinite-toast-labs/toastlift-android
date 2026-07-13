@@ -19,6 +19,9 @@ fun readDotEnv(root: java.io.File): Map<String, String> {
 
 fun escapeBuildConfig(value: String): String = value.replace("\\", "\\\\").replace("\"", "\\\"")
 
+fun gradlePropertyOrEnv(name: String): String =
+    providers.gradleProperty(name).orNull ?: System.getenv(name).orEmpty()
+
 val dotEnv = readDotEnv(rootProject.projectDir)
 val customExerciseAiProvider = dotEnv["CUSTOM_EXERCISE_AI_PROVIDER"].orEmpty().ifBlank { "gemini" }
 val opencodeModel = dotEnv["OPENCODE_MODEL"].orEmpty().ifBlank { "deepseek-v4-flash" }
@@ -29,6 +32,16 @@ val openRouterChatCompletionsUrl = dotEnv["OPENROUTER_CHAT_COMPLETIONS_URL"].orE
     .ifBlank { "https://openrouter.ai/api/v1/chat/completions" }
 val openRouterGenerationUrl = dotEnv["OPENROUTER_GENERATION_URL"].orEmpty()
     .ifBlank { "https://openrouter.ai/api/v1/generation" }
+val releaseStoreFile = gradlePropertyOrEnv("TOASTLIFT_RELEASE_STORE_FILE")
+val releaseStorePassword = gradlePropertyOrEnv("TOASTLIFT_RELEASE_STORE_PASSWORD")
+val releaseKeyAlias = gradlePropertyOrEnv("TOASTLIFT_RELEASE_KEY_ALIAS")
+val releaseKeyPassword = gradlePropertyOrEnv("TOASTLIFT_RELEASE_KEY_PASSWORD")
+val hasReleaseSigning = listOf(
+    releaseStoreFile,
+    releaseStorePassword,
+    releaseKeyAlias,
+    releaseKeyPassword,
+).all(String::isNotBlank)
 
 android {
     namespace = "dev.toastlabs.toastlift"
@@ -47,8 +60,21 @@ android {
         }
     }
 
+    signingConfigs {
+        if (hasReleaseSigning) {
+            create("play") {
+                storeFile = rootProject.file(releaseStoreFile)
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
+    }
+
     buildTypes {
         debug {
+            buildConfigField("String", "FEATURE_CONFIG_ASSET", "\"feature-config.debug.json\"")
+            buildConfigField("boolean", "PRODUCTION_FEATURE_CONFIG", "false")
             buildConfigField("String", "GEMINI_API_KEY", "\"${escapeBuildConfig(dotEnv["GEMINI_API_KEY"].orEmpty())}\"")
             buildConfigField("String", "GEMINI_PRIMARY_MODEL", "\"${escapeBuildConfig(dotEnv["GEMINI_PRIMARY_MODEL"].orEmpty())}\"")
             buildConfigField("String", "CUSTOM_EXERCISE_AI_PROVIDER", "\"${escapeBuildConfig(customExerciseAiProvider)}\"")
@@ -60,11 +86,37 @@ android {
             buildConfigField("String", "OPENROUTER_CHAT_COMPLETIONS_URL", "\"${escapeBuildConfig(openRouterChatCompletionsUrl)}\"")
             buildConfigField("String", "OPENROUTER_GENERATION_URL", "\"${escapeBuildConfig(openRouterGenerationUrl)}\"")
         }
-        release {
-            isMinifyEnabled = false
+        create("staging") {
+            // Production behavior, debug signing. The suffix lets it coexist with
+            // the full-featured debug app on a tester's phone.
+            initWith(getByName("debug"))
+            applicationIdSuffix = ".staging"
+            versionNameSuffix = "-staging"
+            matchingFallbacks += listOf("debug")
+
+            buildConfigField("String", "FEATURE_CONFIG_ASSET", "\"feature-config.production.json\"")
+            buildConfigField("boolean", "PRODUCTION_FEATURE_CONFIG", "true")
             buildConfigField("String", "GEMINI_API_KEY", "\"\"")
             buildConfigField("String", "GEMINI_PRIMARY_MODEL", "\"\"")
-            buildConfigField("String", "CUSTOM_EXERCISE_AI_PROVIDER", "\"gemini\"")
+            buildConfigField("String", "CUSTOM_EXERCISE_AI_PROVIDER", "\"\"")
+            buildConfigField("String", "OPENCODE_API_KEY", "\"\"")
+            buildConfigField("String", "OPENCODE_MODEL", "\"\"")
+            buildConfigField("String", "OPENCODE_CHAT_COMPLETIONS_URL", "\"\"")
+            buildConfigField("String", "OPENROUTER_API_KEY", "\"\"")
+            buildConfigField("String", "OPENROUTER_MODEL", "\"\"")
+            buildConfigField("String", "OPENROUTER_CHAT_COMPLETIONS_URL", "\"\"")
+            buildConfigField("String", "OPENROUTER_GENERATION_URL", "\"\"")
+        }
+        release {
+            isMinifyEnabled = false
+            if (hasReleaseSigning) {
+                signingConfig = signingConfigs.getByName("play")
+            }
+            buildConfigField("String", "FEATURE_CONFIG_ASSET", "\"feature-config.production.json\"")
+            buildConfigField("boolean", "PRODUCTION_FEATURE_CONFIG", "true")
+            buildConfigField("String", "GEMINI_API_KEY", "\"\"")
+            buildConfigField("String", "GEMINI_PRIMARY_MODEL", "\"\"")
+            buildConfigField("String", "CUSTOM_EXERCISE_AI_PROVIDER", "\"\"")
             buildConfigField("String", "OPENCODE_API_KEY", "\"\"")
             buildConfigField("String", "OPENCODE_MODEL", "\"\"")
             buildConfigField("String", "OPENCODE_CHAT_COMPLETIONS_URL", "\"\"")
@@ -143,6 +195,9 @@ dependencies {
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
     debugImplementation("com.appreveal:appreveal:0.10.0")
+    // Staging is a debug-signed production-feature build. Keep AppReveal here
+    // solely so it can be visually audited before the Play artifact is built.
+    add("stagingImplementation", "com.appreveal:appreveal:0.10.0")
     releaseImplementation("com.appreveal:appreveal-noop:0.10.0")
 
     testImplementation("junit:junit:4.13.2")

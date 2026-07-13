@@ -13,6 +13,9 @@ class ToastLiftApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         container = AppContainer(this)
+        // Staging deliberately keeps this debug-only server so its production
+        // feature configuration can be captured and reviewed. Release uses the
+        // no-op AppReveal dependency and never enters this branch.
         if (BuildConfig.DEBUG) {
             AppReveal.start(this)
             ToastLiftAppRevealBindings.install(this)

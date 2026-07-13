@@ -2192,6 +2192,8 @@ internal fun smartPickExerciseScore(
 }
 
 class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
+    internal val featureConfig = container.featureConfig
+
     internal var uiState by mutableStateOf(AppUiState())
         private set
 
@@ -2212,8 +2214,12 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
             if (restoredCustomExercises) {
                 refreshAll()
             }
-            loadProgramState()
-            refreshDailyCoachMessage(force = true)
+            if (featureConfig.global.workoutPrograms && featureConfig.home.programs) {
+                loadProgramState()
+            }
+            if (featureConfig.aiEnabled && featureConfig.home.dailyCoach) {
+                refreshDailyCoachMessage(force = true)
+            }
         }
     }
 
@@ -2473,6 +2479,7 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     private fun refreshDailyCoachMessage(force: Boolean = false) {
+        if (!featureConfig.aiEnabled || !featureConfig.home.dailyCoach) return
         viewModelScope.launch(Dispatchers.IO) {
             val today = LocalDate.now()
             if (!force && uiState.dailyCoachMessage?.generatedForDate == today) {
@@ -2869,6 +2876,10 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     fun generateExerciseDiscovery() {
+        if (!featureConfig.aiEnabled || (!featureConfig.generate.aiDiscovery && !featureConfig.library.aiDiscovery)) {
+            uiState = uiState.withoutExerciseDiscovery().copy(message = "AI discovery is not available in this build.")
+            return
+        }
         val query = uiState.libraryQuery
         val filters = libraryFiltersWithEquipmentLocation(
             filters = uiState.libraryFilters,
@@ -2916,6 +2927,10 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     fun runExerciseAiSearch() {
+        if (!featureConfig.aiEnabled || (!featureConfig.generate.aiSearch && !featureConfig.library.aiSearch)) {
+            uiState = uiState.withoutExerciseAiSearch().copy(message = "AI search is not available in this build.")
+            return
+        }
         val query = uiState.libraryQuery.trim()
         if (query.isBlank()) {
             uiState = uiState.copy(message = "Type the full exercise name first, then run AI search.")
@@ -3261,6 +3276,7 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     fun openExerciseFamily(exercise: ExerciseSummary) {
+        if (!featureConfig.library.exerciseFamily) return
         loadExerciseFamily(
             seed = exercise,
             trail = listOf(exercise),
@@ -3268,6 +3284,7 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     fun openExerciseFamily(exerciseId: Long) {
+        if (!featureConfig.library.exerciseFamily) return
         viewModelScope.launch(Dispatchers.IO) {
             val exercise = container.catalogRepository.exerciseById(exerciseId)
             if (exercise == null) {
@@ -3330,6 +3347,10 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
         seed: ExerciseSummary,
         trail: List<ExerciseSummary>,
     ) {
+        if (!featureConfig.library.exerciseFamily) {
+            dismissExerciseFamily()
+            return
+        }
         exerciseFamilyJob?.cancel()
         uiState = uiState.copy(
             selectedExerciseDetail = null,
@@ -3378,6 +3399,10 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     fun generateExerciseDescription(exerciseId: Long) {
+        if (!featureConfig.aiEnabled) {
+            uiState = uiState.copy(message = "AI exercise descriptions are not available in this build.")
+            return
+        }
         viewModelScope.launch(Dispatchers.IO) {
             val existingDetail = uiState.selectedExerciseDetail
             val detail = if (existingDetail?.summary?.id == exerciseId) {
@@ -5088,6 +5113,10 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
         destination: CustomExerciseDestination,
         seedName: String,
     ) {
+        if (!featureConfig.global.customExercises) {
+            uiState = uiState.copy(message = "Custom exercises are not available in this build.")
+            return
+        }
         viewModelScope.launch(Dispatchers.IO) {
             val draft = container.customExerciseRepository.newDraft(seedName)
             uiState = uiState.copy(
@@ -5154,6 +5183,13 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     fun generateCustomExerciseDetails() {
+        if (!featureConfig.aiEnabled || !featureConfig.global.customExercises) {
+            val current = uiState.customExerciseDraft ?: return
+            uiState = uiState.copy(
+                customExerciseDraft = current.copy(errorMessage = "AI exercise generation is not available in this build."),
+            )
+            return
+        }
         val current = uiState.customExerciseDraft ?: return
         if (current.name.isBlank()) {
             uiState = uiState.copy(customExerciseDraft = current.copy(errorMessage = "Enter an exercise name first."))

@@ -1,7 +1,6 @@
 package dev.toastlabs.toastlift.ui
 
 import android.content.ActivityNotFoundException
-import android.app.Activity
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -11,6 +10,7 @@ import android.provider.Settings
 import android.util.Log
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
@@ -151,6 +151,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -213,6 +214,7 @@ import androidx.core.view.WindowCompat
 import kotlin.math.cos
 import kotlin.math.roundToInt
 import kotlin.math.sin
+import dev.toastlabs.toastlift.config.AppFeatureConfig
 import dev.toastlabs.toastlift.data.ActiveSession
 import dev.toastlabs.toastlift.data.ActiveWorkoutBounty
 import dev.toastlabs.toastlift.data.AbandonedWorkoutSummary
@@ -357,6 +359,7 @@ private val MainTab.navIconRes: Int
 @Composable
 private fun ToastLiftBottomBar(
     selectedTab: MainTab,
+    tabs: List<MainTab>,
     onSelectTab: (MainTab) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -385,7 +388,7 @@ private fun ToastLiftBottomBar(
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                MainTab.entries.forEach { tab ->
+                tabs.forEach { tab ->
                     val isSelected = selectedTab == tab
                     val iconTint by animateColorAsState(
                         targetValue = if (isSelected) accent else inactive,
@@ -421,6 +424,12 @@ private fun ToastLiftBottomBar(
         }
     }
 }
+
+private fun AppFeatureConfig.mainTabs(): List<MainTab> = buildList {
+    if (navigation.home) add(MainTab.Home)
+    if (navigation.generate) add(MainTab.Generate)
+    if (navigation.explore) add(MainTab.Explore)
+}.ifEmpty { listOf(MainTab.Home) }
 
 @Composable
 private fun GlobalOverflowMenu(
@@ -890,7 +899,7 @@ private fun ToastLiftModalBottomSheet(
     skipPartiallyExpanded: Boolean = false,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    val debugSurface = (LocalContext.current as? Activity)
+    val debugSurface = LocalActivity.current
         ?.intent
         ?.getStringExtra(EXTRA_DEBUG_SURFACE)
     val forceExpandedForDebugSurface = debugSurface?.startsWith("sheet.", ignoreCase = true) == true
@@ -1057,7 +1066,10 @@ fun ToastLiftApp(
     debugSurfaceOverride: String? = null,
 ) {
     val state = viewModel.uiState
-    val displayedTab = selectedTabOverride ?: state.selectedTab
+    val featureConfig = viewModel.featureConfig
+    val availableTabs = featureConfig.mainTabs()
+    val requestedTab = selectedTabOverride ?: state.selectedTab
+    val displayedTab = requestedTab.takeIf { it in availableTabs } ?: availableTabs.first()
     val effectiveThemePreference = themePreferenceOverride ?: state.themePreference
     val debugHistoryDestination = debugSurfaceOverride.historyDestinationOrNull()
     val snackbars = remember { SnackbarHostState() }
@@ -1177,6 +1189,9 @@ fun ToastLiftApp(
     }
 
     ToastLiftTheme(themePreference = effectiveThemePreference) {
+        CompositionLocalProvider(
+            LocalExerciseFamilyEnabled provides featureConfig.library.exerciseFamily,
+        ) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -1189,9 +1204,15 @@ fun ToastLiftApp(
             ) {
             when {
                 state.isLoading -> LoadingScreen()
-                state.profile == null -> OnboardingScreen(state = state, viewModel = viewModel)
+                state.profile == null -> OnboardingScreen(
+                    state = state,
+                    viewModel = viewModel,
+                    features = featureConfig,
+                )
                 state.activeSession != null -> ActiveSessionScreen(
                     state = state,
+                    allowCustomExercises = featureConfig.global.customExercises,
+                    allowAiSearch = featureConfig.aiEnabled && featureConfig.library.aiSearch,
                     session = requireNotNull(state.activeSession),
                     exerciseDetailsById = state.activeSessionExerciseDetailsById,
                     trainingFreshness = state.trainingFreshness,
@@ -1269,6 +1290,7 @@ fun ToastLiftApp(
                                 // floating pill, 3 icon-only tabs.
                                 ToastLiftBottomBar(
                                     selectedTab = displayedTab,
+                                    tabs = availableTabs,
                                     onSelectTab = viewModel::selectTab,
                                 )
                             }
@@ -1306,6 +1328,7 @@ fun ToastLiftApp(
                                     ProfileScreen(
                                         state = state,
                                         viewModel = viewModel,
+                                        features = featureConfig,
                                         debugSurfaceOverride = debugSurfaceOverride,
                                     )
                                 } else when (tab) {
@@ -1316,6 +1339,7 @@ fun ToastLiftApp(
                                             BackHandler { isGenerateFullscreenFlow = false }
                                             GenerateScreen(
                                                 state = state,
+                                                features = featureConfig,
                                                 onGenerate = viewModel::generateWorkout,
                                                 onSwapGenerated = viewModel::swapGeneratedWorkoutToFocus,
                                                 onStartGenerated = viewModel::startGeneratedWorkout,
@@ -1363,6 +1387,7 @@ fun ToastLiftApp(
                                         } else {
                                             TodayScreen(
                                                 state = state,
+                                                features = featureConfig,
                                                 onGenerate = {
                                                     viewModel.selectTab(MainTab.Generate)
                                                     viewModel.generateWorkout()
@@ -1443,6 +1468,7 @@ fun ToastLiftApp(
                                     MainTab.Generate -> {
                                         GenerateScreen(
                                             state = state,
+                                            features = featureConfig,
                                             onGenerate = viewModel::generateWorkout,
                                             onSwapGenerated = viewModel::swapGeneratedWorkoutToFocus,
                                             onStartGenerated = viewModel::startGeneratedWorkout,
@@ -1543,6 +1569,7 @@ fun ToastLiftApp(
                                             when (exploreSection) {
                                                 ExploreSection.Library -> LibraryScreen(
                                                     state = state,
+                                                    features = featureConfig,
                                                     onToggleSearch = viewModel::toggleLibrarySearch,
                                                     onQueryChange = viewModel::updateLibraryQuery,
                                                     onToggleFavoritesOnly = viewModel::toggleLibraryFavoritesOnly,
@@ -1582,6 +1609,7 @@ fun ToastLiftApp(
                                                 )
                                                 ExploreSection.History -> HistoryScreen(
                                                     navigationState = historyNavigationState,
+                                                    features = featureConfig,
                                                     profile = state.profile,
                                                     history = state.history,
                                                     bountyCards = state.bountyCards,
@@ -1655,11 +1683,11 @@ fun ToastLiftApp(
                     onSaveSynonym = { synonym -> viewModel.saveExerciseSynonym(detail.summary.id, synonym) },
                 )
             }
-            if (
+            if (featureConfig.library.exerciseFamily && (
                 state.selectedExerciseFamily != null ||
                 state.exerciseFamilyLoadingSeed != null ||
                 state.exerciseFamilyError != null
-            ) {
+            )) {
                 ExerciseFamilySheet(
                     family = state.selectedExerciseFamily,
                     loadingSeed = state.exerciseFamilyLoadingSeed,
@@ -1715,7 +1743,7 @@ fun ToastLiftApp(
             }
 
             // ── Program overlays ──
-            if (state.showProgramSetup) {
+            if (featureConfig.global.workoutPrograms && featureConfig.home.programs && state.showProgramSetup) {
                 ProgramSetupScreen(
                     draft = state.programSetupDraft,
                     splitPrograms = state.splitPrograms,
@@ -1724,7 +1752,7 @@ fun ToastLiftApp(
                     onDismiss = viewModel::dismissProgramSetup,
                 )
             }
-            if (state.showCheckpointReview && state.checkpointResult != null) {
+            if (featureConfig.global.workoutPrograms && featureConfig.home.programs && state.showCheckpointReview && state.checkpointResult != null) {
                 CheckpointReviewSheet(
                     result = state.checkpointResult,
                     onAccept = viewModel::dismissCheckpointReview,
@@ -1732,14 +1760,14 @@ fun ToastLiftApp(
                     onDismiss = viewModel::dismissCheckpointReview,
                 )
             }
-            if (state.showSfrDebrief) {
+            if (featureConfig.global.workoutPrograms && featureConfig.home.programs && state.showSfrDebrief) {
                 SfrDebriefSheet(
                     exercises = state.sfrDebriefExercises,
                     onSubmit = viewModel::submitSfrFeedback,
                     onDismiss = viewModel::dismissSfrDebrief,
                 )
             }
-            if (state.showProgramWrapUp) {
+            if (featureConfig.global.workoutPrograms && featureConfig.home.programs && state.showProgramWrapUp) {
                 ProgramWrapUpScreen(
                     onStartNext = {
                         viewModel.dismissProgramWrapUp()
@@ -1764,6 +1792,7 @@ fun ToastLiftApp(
                 )
             }
             }
+        }
         }
     }
 }
@@ -2108,13 +2137,22 @@ private fun DopamineBackdrop() {
 }
 
 @Composable
-private fun OnboardingScreen(state: AppUiState, viewModel: ToastLiftViewModel) {
+private fun OnboardingScreen(
+    state: AppUiState,
+    viewModel: ToastLiftViewModel,
+    features: AppFeatureConfig,
+) {
+    val programsEnabled = features.global.workoutPrograms && features.profile.programSettings
     ProfileEditor(
         title = "Build your ToastLift profile",
-        subtitle = "Choose a split program, then configure Home and Gym in bottom sheets instead of one endless form.",
+        subtitle = if (programsEnabled) {
+            "Choose a split program, then configure Home and Gym in bottom sheets instead of one endless form."
+        } else {
+            "Set a few defaults, then let the generator create your next workout."
+        },
         draft = state.onboardingDraft,
         smartPickerTargetOptions = state.smartPickerTargetOptions,
-        splitPrograms = state.splitPrograms,
+        splitPrograms = state.splitPrograms.takeIf { programsEnabled }.orEmpty(),
         locationModes = state.locationModes,
         equipmentOptions = state.equipmentOptions,
         equipmentByLocation = state.equipmentByLocation,
@@ -2122,12 +2160,15 @@ private fun OnboardingScreen(state: AppUiState, viewModel: ToastLiftViewModel) {
         onToggleEquipment = viewModel::toggleEquipment,
         onSave = viewModel::saveProfile,
         saveLabel = "Finish setup",
+        showProgramSettings = programsEnabled,
+        showSmartPickerTarget = features.profile.smartPickerTarget,
     )
 }
 
 @Composable
 private fun TodayScreen(
     state: AppUiState,
+    features: AppFeatureConfig,
     onGenerate: () -> Unit,
     onOpenGenerate: () -> Unit,
     onStartFreshnessReEntry: () -> Unit,
@@ -2213,6 +2254,20 @@ private fun TodayScreen(
 
     DisposableEffect(Unit) {
         onDispose { onFullscreenFlowChange(false) }
+    }
+
+    if (!features.home.programs && !features.home.templates) {
+        MinimalTodayScreen(
+            state = state,
+            showTrainingFreshness = features.home.trainingFreshness,
+            showCompletionReceipt = features.home.completionReceipt,
+            onGenerate = onGenerate,
+            onStartFreshnessReEntry = onStartFreshnessReEntry,
+            onOpenFreshness = { showTrainingFreshnessDashboard = true },
+            onViewReceipt = onViewReceipt,
+            onRestoreAbandonedWorkout = onRestoreAbandonedWorkout,
+        )
+        return
     }
 
     if (showTemplateAddScreen && state.todayEditingTemplateId != null) {
@@ -2518,6 +2573,71 @@ private fun TodayScreen(
         )
     }
 
+}
+
+@Composable
+private fun MinimalTodayScreen(
+    state: AppUiState,
+    showTrainingFreshness: Boolean,
+    showCompletionReceipt: Boolean,
+    onGenerate: () -> Unit,
+    onStartFreshnessReEntry: () -> Unit,
+    onOpenFreshness: () -> Unit,
+    onViewReceipt: (Long) -> Unit,
+    onRestoreAbandonedWorkout: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        RichHeroCard(
+            eyebrow = "Next workout",
+            title = "Train what matters now",
+            subtitle = "A focused session, shaped by your recent work.",
+        ) {
+            Button(onClick = onGenerate, modifier = Modifier.fillMaxWidth()) {
+                Text("Generate workout")
+            }
+        }
+        val reEntry = state.freshnessReEntry
+        if (reEntry != null) {
+            FreshnessReEntryCard(
+                state = reEntry,
+                onStart = onStartFreshnessReEntry,
+                onEditFirst = onGenerate,
+                onOpenFreshness = onOpenFreshness,
+            )
+        } else if (showTrainingFreshness) {
+            state.trainingFreshness?.let { freshness ->
+                TrainingFreshnessCard(summary = freshness, onOpen = onOpenFreshness)
+            }
+        }
+        if (showCompletionReceipt) {
+            TodayCompletionFeedbackSection(
+                variant = state.todayCompletionFeedbackVariant,
+                completion = state.todayWorkoutCompletion,
+                recap = state.todayReceiptRecap,
+                onViewReceipt = onViewReceipt,
+            )
+        }
+        state.abandonedWorkout?.let { abandoned ->
+            CompactSectionCard(
+                title = "Resume workout",
+                subtitle = "Your latest in-progress session is saved on this device.",
+            ) {
+                WorkoutListRow(
+                    title = abandoned.title,
+                    subtitle = "${abandoned.exerciseCount} exercises",
+                    detail = "${abandoned.completedSetCount} logged sets",
+                    actionLabel = "Resume",
+                    onAction = onRestoreAbandonedWorkout,
+                )
+            }
+        }
+    }
 }
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -2952,7 +3072,9 @@ private fun TemplateExerciseOverflow(
         }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             DropdownMenuItem(text = { Text("Details") }, onClick = { expanded = false; onShowDetail() })
-            DropdownMenuItem(text = { Text("Explore family") }, onClick = { expanded = false; onOpenExerciseFamily() })
+            if (LocalExerciseFamilyEnabled.current) {
+                DropdownMenuItem(text = { Text("Explore family") }, onClick = { expanded = false; onOpenExerciseFamily() })
+            }
             DropdownMenuItem(text = { Text("Add to builder") }, onClick = { expanded = false; onAddToBuilder() })
             if (hasMyPlan) {
                 DropdownMenuItem(text = { Text("Add to My Plan") }, onClick = { expanded = false; onAddToMyPlan() })
@@ -4536,6 +4658,7 @@ private fun TodayTemplatesListScreen(
 @Composable
 private fun GenerateScreen(
     state: AppUiState,
+    features: AppFeatureConfig,
     onGenerate: () -> Unit,
     onSwapGenerated: (String) -> Unit,
     onStartGenerated: () -> Unit,
@@ -4581,6 +4704,16 @@ private fun GenerateScreen(
     onFullscreenFlowChange: (Boolean) -> Unit,
     debugSurfaceOverride: String? = null,
 ) {
+    if (!features.global.manualWorkoutBuilder && !features.global.workoutTemplates && !features.global.customExercises) {
+        MinimalGenerateScreen(
+            state = state,
+            onGenerate = onGenerate,
+            onStartGenerated = onStartGenerated,
+            onShowExerciseDetail = onShowExerciseDetail,
+        )
+        return
+    }
+
     var showBuilderSheet by remember { mutableStateOf(false) }
     var showSwapSheet by remember { mutableStateOf(false) }
     var showBuilderAddSheet by remember { mutableStateOf(false) }
@@ -4892,10 +5025,67 @@ private fun GenerateScreen(
     }
 }
 
+@Composable
+private fun MinimalGenerateScreen(
+    state: AppUiState,
+    onGenerate: () -> Unit,
+    onStartGenerated: () -> Unit,
+    onShowExerciseDetail: (Long) -> Unit,
+) {
+    val workout = state.generatedWorkout
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(16.dp, 16.dp, 16.dp, 132.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        item {
+            RichHeroCard(
+                eyebrow = "Generator",
+                title = if (workout == null) "Your next workout" else "Try a different session",
+                subtitle = state.profile?.let { "${it.durationMinutes} min • ${it.goal}" }
+                    ?: "One focused workout at a time.",
+            ) {
+                Button(onClick = onGenerate, modifier = Modifier.fillMaxWidth()) {
+                    Text(if (workout == null) "Generate workout" else "Generate another")
+                }
+            }
+        }
+        workout?.let { generated ->
+            item {
+                FeatureCard {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        Text(generated.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                        Text(
+                            "${generated.exercises.size} exercises • ${generated.estimatedMinutes} min",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        generated.exercises.forEach { exercise ->
+                            WorkoutListRow(
+                                title = exercise.name,
+                                subtitle = "${exercise.sets} sets • ${exercise.repRange}",
+                                detail = exercise.targetMuscleGroup,
+                                actionLabel = "Details",
+                                onAction = { onShowExerciseDetail(exercise.exerciseId) },
+                            )
+                        }
+                        Button(onClick = onStartGenerated, modifier = Modifier.fillMaxWidth()) {
+                            Text("Start workout")
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun LibraryScreen(
     state: AppUiState,
+    features: AppFeatureConfig,
     onToggleSearch: () -> Unit,
     onQueryChange: (String) -> Unit,
     onToggleFavoritesOnly: () -> Unit,
@@ -4933,7 +5123,12 @@ private fun LibraryScreen(
     onSaveCustomExercise: () -> Unit,
     debugSurfaceOverride: String? = null,
 ) {
-    if (state.customExerciseDraft != null && state.customExerciseDestination == CustomExerciseDestination.Library) {
+    if (
+        features.global.customExercises &&
+            features.library.customExercises &&
+            state.customExerciseDraft != null &&
+            state.customExerciseDestination == CustomExerciseDestination.Library
+    ) {
         CustomExerciseEditorScreen(
             draft = state.customExerciseDraft,
             onBack = onCloseCustomExercise,
@@ -4984,19 +5179,22 @@ private fun LibraryScreen(
                         },
                     )
                 } else {
-                    LibraryToolbarIconButton(
-                        onClick = onOpenCustomExercise,
-                        imageVector = Icons.Rounded.Add,
-                        contentDescription = "Add custom exercise",
-                    )
-                    OutlinedButton(
-                        onClick = { showFilterSheet = true },
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(48.dp),
-                        shape = RoundedCornerShape(16.dp),
-                        contentPadding = PaddingValues(horizontal = 16.dp),
-                    ) {
+                    if (features.global.customExercises && features.library.customExercises) {
+                        LibraryToolbarIconButton(
+                            onClick = onOpenCustomExercise,
+                            imageVector = Icons.Rounded.Add,
+                            contentDescription = "Add custom exercise",
+                        )
+                    }
+                    if (features.library.filters) {
+                        OutlinedButton(
+                            onClick = { showFilterSheet = true },
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(48.dp),
+                            shape = RoundedCornerShape(16.dp),
+                            contentPadding = PaddingValues(horizontal = 16.dp),
+                        ) {
                         Icon(
                             imageVector = Icons.Rounded.FilterList,
                             contentDescription = "Open filters",
@@ -5010,18 +5208,23 @@ private fun LibraryScreen(
                                 "Filters ${state.libraryFilters.activeCount()}"
                             },
                         )
+                        }
                     }
-                    LibraryToolbarIconButton(
-                        onClick = onToggleFavoritesOnly,
-                        imageVector = if (state.libraryFilters.favoritesOnly) Icons.Rounded.Star else Icons.Rounded.StarOutline,
-                        contentDescription = if (state.libraryFilters.favoritesOnly) "Show all exercises" else "Show favorites only",
-                        selected = state.libraryFilters.favoritesOnly,
-                    )
-                    LibraryToolbarIconButton(
-                        onClick = onToggleSearch,
-                        imageVector = Icons.Rounded.Search,
-                        contentDescription = "Search exercises",
-                    )
+                    if (features.library.favorites) {
+                        LibraryToolbarIconButton(
+                            onClick = onToggleFavoritesOnly,
+                            imageVector = if (state.libraryFilters.favoritesOnly) Icons.Rounded.Star else Icons.Rounded.StarOutline,
+                            contentDescription = if (state.libraryFilters.favoritesOnly) "Show all exercises" else "Show favorites only",
+                            selected = state.libraryFilters.favoritesOnly,
+                        )
+                    }
+                    if (features.library.search) {
+                        LibraryToolbarIconButton(
+                            onClick = onToggleSearch,
+                            imageVector = Icons.Rounded.Search,
+                            contentDescription = "Search exercises",
+                        )
+                    }
                 }
             }
             LazyColumn(
@@ -5029,7 +5232,7 @@ private fun LibraryScreen(
                 contentPadding = PaddingValues(bottom = 132.dp),
                 modifier = Modifier.fillMaxSize(),
             ) {
-                if (state.librarySearchVisible) {
+                if (state.librarySearchVisible && features.aiEnabled && features.library.aiSearch) {
                     item(key = "exercise-ai-search") {
                         ExerciseAiSearchPanel(
                             query = state.libraryQuery,
@@ -5053,7 +5256,7 @@ private fun LibraryScreen(
                         }
                     }
                 }
-                item(key = "exercise-discovery") {
+                if (features.aiEnabled && features.library.aiDiscovery) item(key = "exercise-discovery") {
                     ExerciseDiscoveryPanel(
                         result = state.exerciseDiscoveryResult,
                         isLoading = state.exerciseDiscoveryLoading,
@@ -5084,13 +5287,14 @@ private fun LibraryScreen(
                         onOpenExerciseVideos = { onOpenExerciseVideos(exercise.id, exercise.name) },
                         onAddToExistingTemplate = { existingTemplateTarget = exercise },
                         onCreateTemplateFromExercise = { newTemplateTarget = exercise },
+                        showPlanningActions = features.global.workoutTemplates || features.global.manualWorkoutBuilder,
                     )
                 }
             }
         }
     }
 
-    if (showFilterSheet) {
+    if (showFilterSheet && features.library.filters) {
         LibraryFilterSheet(
             facets = state.libraryFacets,
             filters = state.libraryFilters,
@@ -5758,7 +5962,9 @@ private fun ExerciseDiscoveryPickRow(
                 }
                 DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                     DropdownMenuItem(text = { Text("Details") }, onClick = { expanded = false; onShowDetail() })
-                    DropdownMenuItem(text = { Text("Explore family") }, onClick = { expanded = false; onExploreFamily() })
+                    if (LocalExerciseFamilyEnabled.current) {
+                        DropdownMenuItem(text = { Text("Explore family") }, onClick = { expanded = false; onExploreFamily() })
+                    }
                     DropdownMenuItem(text = { Text("Add to builder") }, onClick = { expanded = false; onAddToBuilder() })
                     DropdownMenuItem(text = { Text("Add to My Plan") }, onClick = { expanded = false; onAddToMyPlan() })
                     DropdownMenuItem(text = { Text("Add to existing template") }, onClick = { expanded = false; onAddToExistingTemplate() })
@@ -6095,6 +6301,7 @@ private class HistoryNavigationState(
 @Composable
 private fun HistoryScreen(
     navigationState: HistoryNavigationState,
+    features: AppFeatureConfig,
     profile: UserProfile?,
     history: List<HistorySummary>,
     bountyCards: List<EarnedBountyCard>,
@@ -6111,6 +6318,18 @@ private fun HistoryScreen(
     onDeleteWorkout: (Long) -> Unit,
     onOpenLibraryMuscleTarget: (String) -> Unit,
 ) {
+    if (!features.history.overviewDashboard) {
+        MinimalHistoryScreen(
+            navigationState = navigationState,
+            history = history,
+            tokenBalanceTrend = tokenBalanceTrend.takeIf { features.history.tokenSystem },
+            weeklyMuscleTargets = weeklyMuscleTargets.takeIf { features.history.weeklyMuscleTargets },
+            onOpenWorkout = onOpenWorkout,
+            onOpenLibraryMuscleTarget = onOpenLibraryMuscleTarget,
+        )
+        return
+    }
+
     var deleteTarget by remember { mutableStateOf<HistorySummary?>(null) }
     var shareTarget by remember { mutableStateOf<HistorySummary?>(null) }
     val dashboard = remember(history, historyWorkoutMetrics, profile, topExercise, topEquipment, strengthScore) {
@@ -6139,7 +6358,7 @@ private fun HistoryScreen(
             }
         }
     }
-    val bountyCardsEnabled = profile?.devInSessionBountiesEnabled == true
+    val bountyCardsEnabled = features.history.bountyCards && profile?.devInSessionBountiesEnabled == true
     LaunchedEffect(bountyCardsEnabled, navigationState.destination) {
         if (!bountyCardsEnabled && navigationState.destination == "bounty-cards") {
             navigationState.destination = "dashboard"
@@ -6403,6 +6622,79 @@ private fun HistoryScreen(
                 onDeleteWorkout(entry.id)
             },
         )
+    }
+}
+
+@Composable
+private fun MinimalHistoryScreen(
+    navigationState: HistoryNavigationState,
+    history: List<HistorySummary>,
+    tokenBalanceTrend: AdherenceCurrencyTrend?,
+    weeklyMuscleTargets: WeeklyMuscleTargetSummary?,
+    onOpenWorkout: (Long) -> Unit,
+    onOpenLibraryMuscleTarget: (String) -> Unit,
+) {
+    BackHandler(enabled = navigationState.destination != "dashboard") {
+        navigationState.destination = "dashboard"
+    }
+    if (navigationState.destination == "weekly-muscles" && weeklyMuscleTargets != null) {
+        WeeklyMuscleTargetsDetailScreen(
+            summary = weeklyMuscleTargets,
+            listState = navigationState.weeklyMuscleTargetsListState,
+            expandedByGroup = navigationState.weeklyMuscleTargetExpandedGroups,
+            onBack = { navigationState.destination = "dashboard" },
+            onOpenLibraryMuscleTarget = onOpenLibraryMuscleTarget,
+        )
+        return
+    }
+    if (navigationState.destination == "token-balance" && tokenBalanceTrend != null) {
+        TokenBalanceDetailScreen(
+            trend = tokenBalanceTrend,
+            selectedWindow = navigationState.tokenBalanceWindow,
+            onSelectedWindowChange = { navigationState.tokenBalanceWindow = it },
+            scrollState = navigationState.tokenBalanceScrollState,
+            onBack = { navigationState.destination = "dashboard" },
+        )
+        return
+    }
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(16.dp, 16.dp, 16.dp, 132.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        tokenBalanceTrend?.let { trend ->
+            item(key = "production-token-system") {
+                TokenBalanceOverviewCard(trend = trend, onOpen = { navigationState.destination = "token-balance" })
+            }
+        }
+        weeklyMuscleTargets?.let { targets ->
+            item(key = "production-weekly-muscles") {
+                WeeklyMuscleTargetsOverviewCard(summary = targets, onOpen = { navigationState.destination = "weekly-muscles" })
+            }
+        }
+        item(key = "production-workouts") {
+            CompactSectionCard(
+                title = "Workouts",
+                subtitle = if (history.isEmpty()) "Your completed sessions will appear here." else "${history.size} logged session${if (history.size == 1) "" else "s"}",
+            ) {
+                if (history.isEmpty()) {
+                    Text(
+                        "Complete a generated workout to start building your training record.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else {
+                    history.forEach { entry ->
+                        WorkoutListRow(
+                            title = entry.title,
+                            subtitle = entry.exerciseNames.joinToString(limit = 3),
+                            detail = "${formatMinutes(entry.durationSeconds)} • ${formatVolume(entry.totalVolume)}",
+                            actionLabel = "View",
+                            onAction = { onOpenWorkout(entry.id) },
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -8065,7 +8357,7 @@ private fun TokenBalanceChart(
     val chartColor = tokenTrendColor(delta, palette)
     val selectedPointSurface = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f)
     val haptic = LocalHapticFeedback.current
-    var selectedIndex by remember(points) { mutableStateOf(points.lastIndex.coerceAtLeast(0)) }
+    var selectedIndex by remember(points) { mutableIntStateOf(points.lastIndex.coerceAtLeast(0)) }
     val selectedPoint = points.getOrNull(selectedIndex)
     val chartAlpha by animateFloatAsState(
         targetValue = 1f,
@@ -9672,9 +9964,9 @@ private fun formatMilestoneProgressLabel(current: Int, target: Int, unit: String
 private fun formatCompactNumberForMilestone(value: Int): String {
     return when {
         value >= 1_000_000 && value % 1_000_000 == 0 -> "${value / 1_000_000}M"
-        value >= 1_000_000 -> String.format("%.1fM", value / 1_000_000.0)
+        value >= 1_000_000 -> String.format(Locale.ROOT, "%.1fM", value / 1_000_000.0)
         value >= 1_000 && value % 1_000 == 0 -> "${value / 1_000}k"
-        value >= 1_000 -> String.format("%.1fk", value / 1_000.0)
+        value >= 1_000 -> String.format(Locale.ROOT, "%.1fk", value / 1_000.0)
         else -> value.toString()
     }
 }
@@ -9800,6 +10092,7 @@ private fun HistoryEntryCard(
 private fun ProfileScreen(
     state: AppUiState,
     viewModel: ToastLiftViewModel,
+    features: AppFeatureConfig,
     debugSurfaceOverride: String? = null,
 ) {
     val context = LocalContext.current
@@ -9829,13 +10122,21 @@ private fun ProfileScreen(
         onSetDevRestTimerSoundDisabled = viewModel::setDevRestTimerSoundDisabled,
         onSetDevSessionSetSwipeCompleteEnabled = viewModel::setDevSessionSetSwipeCompleteEnabled,
         onSetDevInSessionBountiesEnabled = viewModel::setDevInSessionBountiesEnabled,
-        onSetCustomExerciseAiModelId = viewModel::setCustomExerciseAiModelId,
+        onSetCustomExerciseAiModelId = viewModel::setCustomExerciseAiModelId.takeIf {
+            features.aiEnabled && features.profile.aiSettings
+        },
         onSetTrainingFreshnessThresholdDays = viewModel::setTrainingFreshnessThresholdDays,
         onSetTrainingFreshnessMinimumBucketExercises = viewModel::setTrainingFreshnessMinimumBucketExercises,
         onOpenRestTimerSoundSettings = { openRestTimerSoundSettings(context) },
         onExportPersonalData = viewModel::preparePersonalDataExport,
         onDeletePersonalData = viewModel::deleteAllPersonalData,
+        onOpenPrivacyPolicy = {
+            openExternalUrl(context, "https://www.toastlabs.dev/toastlift/privacy/")
+        },
         showAppearanceSettings = true,
+        showProgramSettings = features.global.workoutPrograms && features.profile.programSettings,
+        showSmartPickerTarget = features.profile.smartPickerTarget,
+        showDeveloperSettings = features.profile.developerSettings,
         debugSurfaceOverride = debugSurfaceOverride,
     )
 }
@@ -9887,7 +10188,11 @@ private fun ProfileEditor(
     onOpenRestTimerSoundSettings: (() -> Unit)? = null,
     onExportPersonalData: (() -> Unit)? = null,
     onDeletePersonalData: (() -> Unit)? = null,
+    onOpenPrivacyPolicy: (() -> Unit)? = null,
     showAppearanceSettings: Boolean = false,
+    showProgramSettings: Boolean = true,
+    showSmartPickerTarget: Boolean = true,
+    showDeveloperSettings: Boolean = true,
     debugSurfaceOverride: String? = null,
 ) {
     var equipmentSheetMode by remember { mutableStateOf<LocationMode?>(null) }
@@ -9962,11 +10267,15 @@ private fun ProfileEditor(
             subtitle = subtitle,
         ) {
             StatRail(
-                items = listOf(
-                    Triple("Split", compactSplitLabel(splitName), "program"),
+                items = buildList {
+                    if (showProgramSettings) {
+                        add(Triple("Split", compactSplitLabel(splitName), "program"))
+                    }
+                    addAll(listOf(
                     Triple("Duration", draft.durationMinutes.toString(), "min"),
                     Triple("Freq", draft.weeklyFrequency.toString(), "days"),
-                ),
+                    ))
+                },
             )
         }
 
@@ -9986,7 +10295,7 @@ private fun ProfileEditor(
             )
         }
 
-        CompactSectionCard(
+        if (showSmartPickerTarget) CompactSectionCard(
             title = "Pick Next Exercise target",
             subtitle = draft.smartPickerTargetMuscle?.let { target ->
                 "Current target: $target. The helper will front matching untouched exercises first."
@@ -10077,7 +10386,7 @@ private fun ProfileEditor(
             )
         }
 
-        CompactSectionCard(title = "Split program", subtitle = splitPrograms.firstOrNull { it.id == draft.splitProgramId }?.name ?: "") {
+        if (showProgramSettings) CompactSectionCard(title = "Split program", subtitle = splitPrograms.firstOrNull { it.id == draft.splitProgramId }?.name ?: "") {
             ChoiceChipRow(
                 values = splitPrograms.map { it.name },
                 selected = splitPrograms.firstOrNull { it.id == draft.splitProgramId }?.name ?: "",
@@ -10117,6 +10426,7 @@ private fun ProfileEditor(
         }
 
         if (
+            showDeveloperSettings &&
             profile != null && (
                 onSetGymMachineCableBiasEnabled != null ||
                 onSetHistoryWorkoutAbFlagsVisible != null ||
@@ -10256,7 +10566,7 @@ private fun ProfileEditor(
             }
         }
 
-        if (onExportPersonalData != null || onDeletePersonalData != null) {
+        if (onExportPersonalData != null || onDeletePersonalData != null || onOpenPrivacyPolicy != null) {
             CompactSectionCard(
                 title = "Privacy",
                 subtitle = "Export or delete personal data stored on this device",
@@ -10266,6 +10576,14 @@ private fun ProfileEditor(
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                onOpenPrivacyPolicy?.let { openPrivacyPolicy ->
+                    OutlinedButton(
+                        onClick = openPrivacyPolicy,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text("Read Privacy Policy")
+                    }
+                }
                 onExportPersonalData?.let { exportPersonalData ->
                     Button(
                         onClick = exportPersonalData,
@@ -10341,6 +10659,7 @@ private fun ExerciseListCard(
     onOpenExerciseVideos: () -> Unit,
     onAddToExistingTemplate: () -> Unit,
     onCreateTemplateFromExercise: () -> Unit,
+    showPlanningActions: Boolean = true,
 ) {
     var expanded by remember { mutableStateOf(false) }
     FeatureCard(modifier = Modifier.clickable(onClick = onDetails)) {
@@ -10386,10 +10705,14 @@ private fun ExerciseListCard(
                     }
                     DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                         DropdownMenuItem(text = { Text("Details") }, onClick = { expanded = false; onDetails() })
-                        DropdownMenuItem(text = { Text("Explore family") }, onClick = { expanded = false; onExploreFamily() })
-                        DropdownMenuItem(text = { Text("Add to builder") }, onClick = { expanded = false; onAdd() })
-                        DropdownMenuItem(text = { Text("Add to existing template") }, onClick = { expanded = false; onAddToExistingTemplate() })
-                        DropdownMenuItem(text = { Text("Add to new template") }, onClick = { expanded = false; onCreateTemplateFromExercise() })
+                        if (LocalExerciseFamilyEnabled.current) {
+                            DropdownMenuItem(text = { Text("Explore family") }, onClick = { expanded = false; onExploreFamily() })
+                        }
+                        if (showPlanningActions) {
+                            DropdownMenuItem(text = { Text("Add to builder") }, onClick = { expanded = false; onAdd() })
+                            DropdownMenuItem(text = { Text("Add to existing template") }, onClick = { expanded = false; onAddToExistingTemplate() })
+                            DropdownMenuItem(text = { Text("Add to new template") }, onClick = { expanded = false; onCreateTemplateFromExercise() })
+                        }
                         DropdownMenuItem(text = { Text("Exercise history") }, onClick = { expanded = false; onOpenExerciseHistory() })
                         DropdownMenuItem(text = { Text("Videos") }, onClick = { expanded = false; onOpenExerciseVideos() })
                         DropdownMenuItem(
@@ -10407,8 +10730,8 @@ private fun ExerciseListCard(
 private fun CompactSectionCard(
     title: String,
     subtitle: String,
-    menuItems: List<Pair<String, () -> Unit>> = emptyList(),
     modifier: Modifier = Modifier,
+    menuItems: List<Pair<String, () -> Unit>> = emptyList(),
     content: @Composable () -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
@@ -11119,6 +11442,7 @@ private fun AddExercisesFlowScreen(
     onToggleRecommendationBiasFilter: (RecommendationBias) -> Unit,
     onToggleLoggedHistoryFilter: () -> Unit,
     onClearFilters: () -> Unit,
+    modifier: Modifier = Modifier,
     onClearFreshnessMuscleFilters: () -> Unit = onClearFilters,
     onClearMuscleTargetFilters: () -> Unit = onClearFilters,
     onShowDetail: (Long) -> Unit,
@@ -11134,7 +11458,8 @@ private fun AddExercisesFlowScreen(
     onCreateTemplateFromExercise: (String, ExerciseSummary) -> Unit,
     onRunAiSearch: () -> Unit,
     onClearAiSearch: () -> Unit,
-    modifier: Modifier = Modifier,
+    allowCustomExercises: Boolean = true,
+    allowAiSearch: Boolean = true,
 ) {
     val selectedExercises = remember { mutableStateMapOf<Long, ExerciseSummary>() }
     val listState = rememberLazyListState()
@@ -11172,7 +11497,7 @@ private fun AddExercisesFlowScreen(
         scrollTargetId = null
     }
 
-    if (state.customExerciseDraft != null) {
+    if (allowCustomExercises && state.customExerciseDraft != null) {
         CustomExerciseEditorScreen(
             draft = state.customExerciseDraft,
             onBack = onCloseCustomExercise,
@@ -11213,8 +11538,9 @@ private fun AddExercisesFlowScreen(
             onCreateTemplateFromExercise = { exercise -> newTemplateTarget = exercise },
             onRunAiSearch = onRunAiSearch,
             onClearAiSearch = onClearAiSearch,
-            overflowActionLabel = "Add custom exercise",
-            onOverflowActionClick = onOpenCustomExercise,
+            showAiSearch = allowAiSearch,
+            overflowActionLabel = if (allowCustomExercises) "Add custom exercise" else null,
+            onOverflowActionClick = onOpenCustomExercise.takeIf { allowCustomExercises },
         )
     }
 
@@ -11277,6 +11603,7 @@ private fun BuilderAddExercisesScreen(
     onCreateTemplateFromExercise: (ExerciseSummary) -> Unit,
     onRunAiSearch: () -> Unit,
     onClearAiSearch: () -> Unit,
+    showAiSearch: Boolean = true,
     overflowActionLabel: String? = null,
     onOverflowActionClick: (() -> Unit)? = null,
 ) {
@@ -11328,7 +11655,7 @@ private fun BuilderAddExercisesScreen(
                     tint = MaterialTheme.colorScheme.onBackground,
                 )
             }
-            if (state.librarySearchVisible) {
+            if (state.librarySearchVisible && showAiSearch) {
                 OutlinedTextField(
                     value = state.libraryQuery,
                     onValueChange = onQueryChange,
@@ -12257,6 +12584,8 @@ private fun RecommendationBiasFacetSection(
 @Composable
 private fun ActiveSessionAddExerciseScreen(
     state: AppUiState,
+    allowCustomExercises: Boolean,
+    allowAiSearch: Boolean,
     onBack: () -> Unit,
     onOpenManualPicker: () -> Unit,
     onOpenGeneratedPicker: () -> Unit,
@@ -12340,6 +12669,8 @@ private fun ActiveSessionAddExerciseScreen(
             onCreateTemplateFromExercise = onCreateTemplateFromExercise,
             onRunAiSearch = onRunAiSearch,
             onClearAiSearch = onClearAiSearch,
+            allowCustomExercises = allowCustomExercises,
+            allowAiSearch = allowAiSearch,
             modifier = Modifier
                 .fillMaxSize()
                 .statusBarsPadding(),
@@ -12361,6 +12692,8 @@ private fun ActiveSessionAddExerciseScreen(
 @Composable
 private fun ActiveSessionScreen(
     state: AppUiState,
+    allowCustomExercises: Boolean,
+    allowAiSearch: Boolean,
     session: ActiveSession,
     exerciseDetailsById: Map<Long, ExerciseDetail>,
     trainingFreshness: TrainingFreshnessSummary?,
@@ -12479,7 +12812,7 @@ private fun ActiveSessionScreen(
         selectedMuscleTargetBucketKey = resolveActiveSessionMuscleTargetBucket(selectedMuscleTargetBucketKey)
         selectedMuscleTargetSubcategoryKey = resolveActiveSessionMuscleTargetSubcategory(selectedMuscleTargetSubcategoryKey)
     }
-    if (customExerciseDraft != null && !activeSessionAddExerciseVisible) {
+    if (allowCustomExercises && customExerciseDraft != null && !activeSessionAddExerciseVisible) {
         CustomExerciseEditorScreen(
             draft = customExerciseDraft,
             onBack = onCloseCustomExercise,
@@ -12494,6 +12827,8 @@ private fun ActiveSessionScreen(
     if (activeSessionAddExerciseVisible) {
         ActiveSessionAddExerciseScreen(
             state = state,
+            allowCustomExercises = allowCustomExercises,
+            allowAiSearch = allowAiSearch,
             onBack = onCloseAddExercise,
             onOpenManualPicker = onOpenManualAddExercise,
             onOpenGeneratedPicker = onOpenGeneratedAddExercise,
@@ -17020,9 +17355,9 @@ private fun formatElapsedTime(session: ActiveSession): String {
     val minutes = (elapsed % 3600) / 60
     val seconds = elapsed % 60
     return if (hours > 0) {
-        String.format("%d:%02d:%02d", hours, minutes, seconds)
+        String.format(Locale.ROOT, "%d:%02d:%02d", hours, minutes, seconds)
     } else {
-        String.format("%d:%02d:%02d", 0, minutes, seconds)
+        String.format(Locale.ROOT, "%d:%02d:%02d", 0, minutes, seconds)
     }
 }
 
@@ -17043,8 +17378,8 @@ private fun formatVolume(volume: Double): String {
 
 private fun formatCompactNumber(value: Double): String {
     return when {
-        value >= 1_000_000 -> String.format("%.1fM", value / 1_000_000.0)
-        value >= 1_000 -> String.format("%.1fk", value / 1_000.0)
+        value >= 1_000_000 -> String.format(Locale.ROOT, "%.1fM", value / 1_000_000.0)
+        value >= 1_000 -> String.format(Locale.ROOT, "%.1fk", value / 1_000.0)
         else -> value.toLong().toString()
     }
 }
@@ -17417,17 +17752,19 @@ private fun ExerciseDetailSheet(
                         Spacer(modifier = Modifier.width(6.dp))
                         Text("Description")
                     }
-                    OutlinedButton(
-                        onClick = onExploreFamily,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.AccountTree,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp),
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Explore family")
+                    if (LocalExerciseFamilyEnabled.current) {
+                        OutlinedButton(
+                            onClick = onExploreFamily,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.AccountTree,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp),
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Explore family")
+                        }
                     }
                 }
             }

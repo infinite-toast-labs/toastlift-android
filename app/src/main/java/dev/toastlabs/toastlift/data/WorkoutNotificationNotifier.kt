@@ -24,7 +24,6 @@ class WorkoutNotificationNotifier(context: Context) {
         appContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
     fun ensureNotificationChannel() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val channel = NotificationChannel(
             WorkoutNotificationContract.CHANNEL_ID,
             WorkoutNotificationContract.CHANNEL_NAME,

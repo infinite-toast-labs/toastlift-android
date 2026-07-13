@@ -15,6 +15,7 @@ import com.appreveal.debug.ScreenNavigating
 import com.appreveal.debug.ScreenRegistryProviding
 import dev.toastlabs.toastlift.MainActivity
 import dev.toastlabs.toastlift.ToastLiftApplication
+import dev.toastlabs.toastlift.config.AppFeatureConfig
 import dev.toastlabs.toastlift.data.ActiveSession
 import dev.toastlabs.toastlift.data.DataEnvironment
 import dev.toastlabs.toastlift.data.ExerciseSummary
@@ -39,7 +40,7 @@ object ToastLiftAppRevealBindings {
 
     fun install(app: ToastLiftApplication) {
         sessionHost = ToastLiftDebugSessionHost(app).also(AppReveal::registerDebugSessionHost)
-        screenRegistry = ToastLiftScreenRegistry().also(AppReveal::registerScreenRegistry)
+        screenRegistry = ToastLiftScreenRegistry(app.container.featureConfig).also(AppReveal::registerScreenRegistry)
         screenNavigator = ToastLiftScreenNavigator(app).also(AppReveal::registerScreenNavigator)
         featureFlags = ToastLiftDebugFeatureFlags(app).also(AppReveal::registerDebugFeatureFlagMutator)
         exerciseFixture = ExerciseLoggingFixtureProvider(app).also(AppReveal::registerFixtureProvider)
@@ -132,51 +133,82 @@ private class ToastLiftDebugSessionHost(
     }
 }
 
-private class ToastLiftScreenRegistry : ScreenRegistryProviding {
-    override fun screens(): List<ScreenDescriptor> = listOf(
-        ScreenDescriptor("home.today", "Home / Today"),
-        ScreenDescriptor("generate.main", "Generate"),
-        ScreenDescriptor("explore.library", "Explore / Library"),
-        ScreenDescriptor("profile.main", "Profile"),
-        ScreenDescriptor("sheet.library_filters", "Sheet / Library filters"),
-        ScreenDescriptor("sheet.exercise_detail", "Sheet / Exercise detail"),
-        ScreenDescriptor("sheet.exercise_description", "Sheet / Exercise description"),
-        ScreenDescriptor("sheet.exercise_family", "Sheet / Exercise family"),
-        ScreenDescriptor("sheet.exercise_history", "Sheet / Exercise history"),
-        ScreenDescriptor("sheet.exercise_videos", "Sheet / Exercise videos"),
-        ScreenDescriptor("sheet.history_detail", "Sheet / History workout detail"),
-        ScreenDescriptor("sheet.profile_equipment_home", "Sheet / Profile home equipment"),
-        ScreenDescriptor("sheet.profile_equipment_gym", "Sheet / Profile gym equipment"),
-        ScreenDescriptor("sheet.profile_delete_data", "Sheet / Profile delete data"),
-        ScreenDescriptor("sheet.active_workout_details", "Sheet / Active workout details"),
-        ScreenDescriptor("sheet.active_session_filters", "Sheet / Active session filters"),
-        ScreenDescriptor("sheet.generated_workout_swap", "Sheet / Generated workout swap"),
-        ScreenDescriptor("sheet.manual_builder", "Sheet / Manual builder"),
-        ScreenDescriptor("sheet.skipped_exercise_feedback", "Sheet / Skipped exercise feedback"),
-        ScreenDescriptor("sheet.sfr_debrief", "Sheet / Program SFR debrief"),
-        ScreenDescriptor("sheet.checkpoint_review", "Sheet / Program checkpoint review"),
-        ScreenDescriptor("history.dashboard", "History / Dashboard"),
-        ScreenDescriptor("history.workouts", "History / Workouts"),
-        ScreenDescriptor("history.stats", "History / Stats"),
-        ScreenDescriptor("history.milestones", "History / Milestones"),
-        ScreenDescriptor("history.streak", "History / Streak"),
-        ScreenDescriptor("history.calendar", "History / Calendar"),
-        ScreenDescriptor("history.weekly-muscles", "History / Weekly muscle targets"),
-        ScreenDescriptor("history.token-balance", "History / Token balance"),
-        ScreenDescriptor("history.bounty-cards", "History / Bounty cards"),
-        ScreenDescriptor(
-            key = "active.exercise_logging",
-            title = "Active exercise logging",
-            description = "Debug-created active workout with one exercise and configurable completed sets.",
-            supportsFixtures = true,
-        ),
-        ScreenDescriptor(
-            key = "active.workout_overview",
-            title = "Active workout overview",
-            description = "Captured active workout overview with the full active exercise list and set state.",
-            supportsFixtures = true,
-        ),
-    )
+private class ToastLiftScreenRegistry(
+    private val features: AppFeatureConfig,
+) : ScreenRegistryProviding {
+    override fun screens(): List<ScreenDescriptor> = buildList {
+        add(ScreenDescriptor("home.today", "Home / Today"))
+        add(ScreenDescriptor("generate.main", "Generate"))
+        add(ScreenDescriptor("explore.library", "Explore / Library"))
+        add(ScreenDescriptor("profile.main", "Profile"))
+
+        if (features.library.filters) {
+            add(ScreenDescriptor("sheet.library_filters", "Sheet / Library filters"))
+        }
+        add(ScreenDescriptor("sheet.exercise_detail", "Sheet / Exercise detail"))
+        add(ScreenDescriptor("sheet.exercise_description", "Sheet / Exercise description"))
+        add(ScreenDescriptor("sheet.exercise_family", "Sheet / Exercise family"))
+        add(ScreenDescriptor("sheet.exercise_history", "Sheet / Exercise history"))
+        add(ScreenDescriptor("sheet.exercise_videos", "Sheet / Exercise videos"))
+        add(ScreenDescriptor("sheet.history_detail", "Sheet / History workout detail"))
+        add(ScreenDescriptor("sheet.profile_equipment_home", "Sheet / Profile home equipment"))
+        add(ScreenDescriptor("sheet.profile_equipment_gym", "Sheet / Profile gym equipment"))
+        if (features.profile.dataControls) {
+            add(ScreenDescriptor("sheet.profile_delete_data", "Sheet / Profile delete data"))
+        }
+        add(ScreenDescriptor("sheet.active_workout_details", "Sheet / Active workout details"))
+        add(ScreenDescriptor("sheet.active_session_filters", "Sheet / Active session filters"))
+        if (features.generate.workoutEditing) {
+            add(ScreenDescriptor("sheet.generated_workout_swap", "Sheet / Generated workout swap"))
+        }
+        if (features.global.manualWorkoutBuilder && features.generate.manualBuilder) {
+            add(ScreenDescriptor("sheet.manual_builder", "Sheet / Manual builder"))
+        }
+        add(ScreenDescriptor("sheet.skipped_exercise_feedback", "Sheet / Skipped exercise feedback"))
+        if (features.global.workoutPrograms && features.home.programs) {
+            add(ScreenDescriptor("sheet.sfr_debrief", "Sheet / Program SFR debrief"))
+            add(ScreenDescriptor("sheet.checkpoint_review", "Sheet / Program checkpoint review"))
+        }
+
+        // The minimal production history surface has one summary screen with
+        // its retained token, weekly-target, and workout sections.
+        add(ScreenDescriptor("history.dashboard", "History / Dashboard"))
+        if (features.history.overviewDashboard) {
+            add(ScreenDescriptor("history.workouts", "History / Workouts"))
+            if (features.history.advancedStats) {
+                add(ScreenDescriptor("history.stats", "History / Stats"))
+            }
+            add(ScreenDescriptor("history.milestones", "History / Milestones"))
+            add(ScreenDescriptor("history.streak", "History / Streak"))
+            add(ScreenDescriptor("history.calendar", "History / Calendar"))
+        }
+        if (features.history.weeklyMuscleTargets) {
+            add(ScreenDescriptor("history.weekly-muscles", "History / Weekly muscle targets"))
+        }
+        if (features.history.tokenSystem) {
+            add(ScreenDescriptor("history.token-balance", "History / Token balance"))
+        }
+        if (features.history.bountyCards) {
+            add(ScreenDescriptor("history.bounty-cards", "History / Bounty cards"))
+        }
+
+        add(
+            ScreenDescriptor(
+                key = "active.exercise_logging",
+                title = "Active exercise logging",
+                description = "Debug-created active workout with one exercise and configurable completed sets.",
+                supportsFixtures = true,
+            ),
+        )
+        add(
+            ScreenDescriptor(
+                key = "active.workout_overview",
+                title = "Active workout overview",
+                description = "Captured active workout overview with the full active exercise list and set state.",
+                supportsFixtures = true,
+            ),
+        )
+    }
 }
 
 private class ToastLiftScreenNavigator(

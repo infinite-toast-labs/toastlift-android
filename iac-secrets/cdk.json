@@ -1,0 +1,6 @@
+{
+  "app": "npx tsx bin/iac-secrets.ts",
+  "context": {
+    "secretName": "/toastlift/android/release-signing"
+  }
+}

@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 1,
+  "releaseName": "development",
+  "navigation": {
+    "home": true,
+    "generate": true,
+    "explore": true,
+    "profile": true
+  },
+  "global": {
+    "ai": true,
+    "customExercises": true,
+    "workoutPrograms": true,
+    "workoutTemplates": true,
+    "manualWorkoutBuilder": true
+  },
+  "screens": {
+    "home": {
+      "adHocGenerator": true,
+      "trainingFreshness": true,
+      "recoveryStory": true,
+      "completionReceipt": true,
+      "programs": true,
+      "templates": true,
+      "dailyCoach": true
+    },
+    "generate": {
+      "adHocGenerator": true,
+      "workoutEditing": true,
+      "manualBuilder": true,
+      "savedTemplates": true,
+      "customExercises": true,
+      "aiSearch": true,
+      "aiDiscovery": true
+    },
+    "explore": {
+      "library": {
+        "search": true,
+        "favorites": true,
+        "filters": true,
+        "exerciseFamily": true,
+        "customExercises": true,
+        "aiSearch": true,
+        "aiDiscovery": true
+      },
+      "history": {
+        "workouts": true,
+        "tokenSystem": true,
+        "weeklyMuscleTargets": true,
+        "overviewDashboard": true,
+        "advancedStats": true,
+        "muscleIndex": true,
+        "movementBalance": true,
+        "bountyCards": true
+      }
+    },
+    "profile": {
+      "aiSettings": true,
+      "programSettings": true,
+      "smartPickerTarget": true,
+      "developerSettings": true,
+      "dataControls": true
+    }
+  }
+}
