@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PACKAGE_NAME="${PACKAGE_NAME:-dev.toastlabs.toastlift}"
-ACTIVITY_NAME="${ACTIVITY_NAME:-.MainActivity}"
+PACKAGE_NAME="${PACKAGE_NAME:-dev.toastlabs.toastlift.debug}"
+ACTIVITY_NAME="${ACTIVITY_NAME:-dev.toastlabs.toastlift.MainActivity}"
 SURFACE_EXTRA_KEY="${SURFACE_EXTRA_KEY:-dev.toastlabs.toastlift.extra.DEBUG_SURFACE}"
 SCENARIO_EXTRA_KEY="${SCENARIO_EXTRA_KEY:-dev.toastlabs.toastlift.extra.DEBUG_RECEIPT_SCENARIO}"
 THEME_EXTRA_KEY="${THEME_EXTRA_KEY:-dev.toastlabs.toastlift.extra.DEBUG_THEME}"

@@ -87,8 +87,8 @@ set -euo pipefail
 
 adb_bin=android-emulator-adb
 serial=emulator-5560
-app_id=dev.toastlabs.toastlift
-activity=dev.toastlabs.toastlift/.MainActivity
+app_id=dev.toastlabs.toastlift.debug
+activity=dev.toastlabs.toastlift.debug/dev.toastlabs.toastlift.MainActivity
 fixture_path=examples/active-workout-overview-replay/phone.fixture.json
 slug="$(printf '%s' "$(date -u +%Y%m%d%H%M%S%N)" | sha1sum | cut -c1-5)"
 out_dir="android-e2e/$(date -u +%Y%m%d-%H%M%S)-active-workout-overview-replay-${slug}"

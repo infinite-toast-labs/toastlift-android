@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 
 
-DEFAULT_APP_ID = "dev.toastlabs.toastlift"
+DEFAULT_APP_ID = "dev.toastlabs.toastlift.debug"
 DEFAULT_REPO_DB = Path("functional_fitness_workout_generator.sqlite")
 DEFAULT_DEVICE_DB_RELATIVE_PATH = "databases/toastlift.db"
 

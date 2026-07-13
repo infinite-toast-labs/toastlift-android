@@ -9,8 +9,15 @@ import {
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = resolve(scriptDirectory, "../..");
-const defaultSecretName = "/toastlift/android/release-signing";
 const maxSecretBytes = 65_536;
+
+type SigningProfile = "release" | "staging";
+
+function signingProfile(): SigningProfile {
+  const configured = process.env.TOASTLIFT_SIGNING_PROFILE?.trim() || "release";
+  if (configured === "release" || configured === "staging") return configured;
+  throw new Error("TOASTLIFT_SIGNING_PROFILE must be release or staging.");
+}
 
 function readDotEnv(file: string): Map<string, string> {
   if (!existsSync(file)) throw new Error(`Missing signing configuration: ${file}`);
@@ -37,8 +44,10 @@ async function main(): Promise<void> {
   const region = process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION;
   if (!region) throw new Error("Set AWS_REGION or AWS_DEFAULT_REGION before backing up signing material.");
 
+  const profile = signingProfile();
+  const prefix = `TOASTLIFT_${profile.toUpperCase()}`;
   const values = readDotEnv(resolve(repositoryRoot, ".env"));
-  const configuredStoreFile = required(values, "TOASTLIFT_RELEASE_STORE_FILE");
+  const configuredStoreFile = required(values, `${prefix}_STORE_FILE`);
   const storeFile = isAbsolute(configuredStoreFile)
     ? configuredStoreFile
     : resolve(repositoryRoot, configuredStoreFile);
@@ -46,14 +55,14 @@ async function main(): Promise<void> {
 
   const payload = JSON.stringify({
     schemaVersion: 1,
-    kind: "toastlift-android-release-signing",
+    kind: `toastlift-android-${profile}-signing`,
     state: "backed-up",
     updatedAtUtc: new Date().toISOString(),
     keyStoreFileName: basename(storeFile),
     keyStoreBase64: readFileSync(storeFile).toString("base64"),
-    storePassword: required(values, "TOASTLIFT_RELEASE_STORE_PASSWORD"),
-    keyAlias: required(values, "TOASTLIFT_RELEASE_KEY_ALIAS"),
-    keyPassword: required(values, "TOASTLIFT_RELEASE_KEY_PASSWORD"),
+    storePassword: required(values, `${prefix}_STORE_PASSWORD`),
+    keyAlias: required(values, `${prefix}_KEY_ALIAS`),
+    keyPassword: required(values, `${prefix}_KEY_PASSWORD`),
   });
 
   const bytes = Buffer.byteLength(payload, "utf8");
@@ -61,7 +70,8 @@ async function main(): Promise<void> {
     throw new Error(`Signing backup is ${bytes} bytes; AWS Secrets Manager secrets are limited to ${maxSecretBytes} bytes.`);
   }
 
-  const secretName = process.env.TOASTLIFT_AWS_SECRET_NAME?.trim() || defaultSecretName;
+  const secretName = process.env.TOASTLIFT_AWS_SECRET_NAME?.trim()
+    || (profile === "staging" ? "/toastlift/android/staging-signing" : "/toastlift/android/release-signing");
   const client = new SecretsManagerClient({ region });
   await client.send(new UpdateSecretCommand({
     SecretId: secretName,

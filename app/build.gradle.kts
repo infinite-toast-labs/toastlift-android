@@ -22,6 +22,35 @@ fun escapeBuildConfig(value: String): String = value.replace("\\", "\\\\").repla
 fun gradlePropertyOrEnv(name: String): String =
     providers.gradleProperty(name).orNull ?: System.getenv(name).orEmpty()
 
+data class SemanticVersion(
+    val major: Int,
+    val minor: Int,
+    val patch: Int,
+) {
+    val versionCode: Int
+        get() = Math.addExact(
+            Math.addExact(Math.multiplyExact(major, 1_000_000), Math.multiplyExact(minor, 1_000)),
+            patch,
+        )
+}
+
+fun readSemanticVersion(root: java.io.File): SemanticVersion {
+    val versionFile = root.resolve("version.txt")
+    check(versionFile.isFile) { "Missing required version source: ${versionFile.path}" }
+    val source = versionFile.readText().trim()
+    val match = Regex("^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)$").matchEntire(source)
+        ?: error("version.txt must contain a SemVer core version (for example 1.2.3), found: $source")
+    return try {
+        SemanticVersion(
+            major = match.groupValues[1].toInt(),
+            minor = match.groupValues[2].toInt(),
+            patch = match.groupValues[3].toInt(),
+        )
+    } catch (error: NumberFormatException) {
+        throw GradleException("version.txt contains a SemVer component outside Android versionCode range: $source", error)
+    }
+}
+
 val dotEnv = readDotEnv(rootProject.projectDir)
 val customExerciseAiProvider = dotEnv["CUSTOM_EXERCISE_AI_PROVIDER"].orEmpty().ifBlank { "gemini" }
 val opencodeModel = dotEnv["OPENCODE_MODEL"].orEmpty().ifBlank { "deepseek-v4-flash" }
@@ -32,6 +61,20 @@ val openRouterChatCompletionsUrl = dotEnv["OPENROUTER_CHAT_COMPLETIONS_URL"].orE
     .ifBlank { "https://openrouter.ai/api/v1/chat/completions" }
 val openRouterGenerationUrl = dotEnv["OPENROUTER_GENERATION_URL"].orEmpty()
     .ifBlank { "https://openrouter.ai/api/v1/generation" }
+val sourceVersion = readSemanticVersion(rootProject.projectDir)
+val sourceVersionName = rootProject.file("version.txt").readText().trim()
+val buildLabel = gradlePropertyOrEnv("TOASTLIFT_BUILD_LABEL")
+    .ifBlank { System.getenv("GITHUB_SHA")?.take(12).orEmpty().ifBlank { "local" } }
+val stagingStoreFile = gradlePropertyOrEnv("TOASTLIFT_STAGING_STORE_FILE")
+val stagingStorePassword = gradlePropertyOrEnv("TOASTLIFT_STAGING_STORE_PASSWORD")
+val stagingKeyAlias = gradlePropertyOrEnv("TOASTLIFT_STAGING_KEY_ALIAS")
+val stagingKeyPassword = gradlePropertyOrEnv("TOASTLIFT_STAGING_KEY_PASSWORD")
+val hasStagingSigning = listOf(
+    stagingStoreFile,
+    stagingStorePassword,
+    stagingKeyAlias,
+    stagingKeyPassword,
+).all(String::isNotBlank)
 val releaseStoreFile = gradlePropertyOrEnv("TOASTLIFT_RELEASE_STORE_FILE")
 val releaseStorePassword = gradlePropertyOrEnv("TOASTLIFT_RELEASE_STORE_PASSWORD")
 val releaseKeyAlias = gradlePropertyOrEnv("TOASTLIFT_RELEASE_KEY_ALIAS")
@@ -51,8 +94,8 @@ android {
         applicationId = "dev.toastlabs.toastlift"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = sourceVersion.versionCode
+        versionName = sourceVersionName
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -61,6 +104,14 @@ android {
     }
 
     signingConfigs {
+        if (hasStagingSigning) {
+            create("staging") {
+                storeFile = rootProject.file(stagingStoreFile)
+                storePassword = stagingStorePassword
+                keyAlias = stagingKeyAlias
+                keyPassword = stagingKeyPassword
+            }
+        }
         if (hasReleaseSigning) {
             create("play") {
                 storeFile = rootProject.file(releaseStoreFile)
@@ -73,6 +124,8 @@ android {
 
     buildTypes {
         debug {
+            applicationIdSuffix = ".debug"
+            versionNameSuffix = "-dev.$buildLabel"
             buildConfigField("String", "FEATURE_CONFIG_ASSET", "\"feature-config.debug.json\"")
             buildConfigField("boolean", "PRODUCTION_FEATURE_CONFIG", "false")
             buildConfigField("String", "GEMINI_API_KEY", "\"${escapeBuildConfig(dotEnv["GEMINI_API_KEY"].orEmpty())}\"")
@@ -88,11 +141,15 @@ android {
         }
         create("staging") {
             // Production behavior, debug signing. The suffix lets it coexist with
-            // the full-featured debug app on a tester's phone.
+            // the full-featured debug app on a tester's phone. CI supplies the
+            // dedicated staging signer; local builds keep Android's debug signer.
             initWith(getByName("debug"))
             applicationIdSuffix = ".staging"
-            versionNameSuffix = "-staging"
+            versionNameSuffix = "-rc.$buildLabel"
             matchingFallbacks += listOf("debug")
+            if (hasStagingSigning) {
+                signingConfig = signingConfigs.getByName("staging")
+            }
 
             buildConfigField("String", "FEATURE_CONFIG_ASSET", "\"feature-config.production.json\"")
             buildConfigField("boolean", "PRODUCTION_FEATURE_CONFIG", "true")

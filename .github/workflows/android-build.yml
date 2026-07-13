@@ -1,0 +1,310 @@
+name: Reusable Android build
+
+on:
+  workflow_call:
+    inputs:
+      commit_sha:
+        description: Immutable ToastLift commit to build.
+        required: true
+        type: string
+      promotion_environment:
+        description: GitHub environment name; leave empty for secret-free development CI.
+        required: false
+        default: ''
+        type: string
+      signing_profile:
+        description: staging or production for OIDC signing retrieval; leave empty for development CI.
+        required: false
+        default: ''
+        type: string
+      aws_role_arn:
+        required: false
+        default: ''
+        type: string
+      aws_region:
+        required: false
+        default: ''
+        type: string
+      build_kind:
+        required: true
+        type: string
+      build_label:
+        required: true
+        type: string
+      artifact_name:
+        required: false
+        default: ''
+        type: string
+      verify_play_release:
+        required: false
+        default: false
+        type: boolean
+      publish_github_release:
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  development:
+    if: inputs.promotion_environment == ''
+    name: development
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    permissions:
+      contents: read
+    steps:
+      - id: setup
+        uses: ./.github/actions/android-setup
+        with:
+          commit-sha: ${{ inputs.commit_sha }}
+      - id: build-config
+        name: Select checked-in build configuration
+        env:
+          BUILD_KIND: ${{ inputs.build_kind }}
+          DEBUG_GRADLE_TASKS: ${{ steps.setup.outputs.debug-gradle-tasks }}
+          STAGING_GRADLE_TASKS: ${{ steps.setup.outputs.staging-gradle-tasks }}
+          PRODUCTION_GRADLE_TASKS: ${{ steps.setup.outputs.production-gradle-tasks }}
+          DEBUG_APK_PATH: ${{ steps.setup.outputs.debug-apk-path }}
+          STAGING_APK_PATH: ${{ steps.setup.outputs.staging-apk-path }}
+          RELEASE_AAB_PATH: ${{ steps.setup.outputs.release-aab-path }}
+          STAGING_RETENTION: ${{ steps.setup.outputs.staging-artifact-retention-days }}
+          PRODUCTION_RETENTION: ${{ steps.setup.outputs.production-artifact-retention-days }}
+          APPREVEAL_COMMIT: ${{ steps.setup.outputs.appreveal-commit }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$BUILD_KIND" in
+            development)
+              tasks="$DEBUG_GRADLE_TASKS"; artifact_path="$DEBUG_APK_PATH"; retention=1
+              ;;
+            staging)
+              tasks="$STAGING_GRADLE_TASKS"; artifact_path="$STAGING_APK_PATH"; retention="$STAGING_RETENTION"
+              ;;
+            production)
+              tasks="$PRODUCTION_GRADLE_TASKS"; artifact_path="$RELEASE_AAB_PATH"; retention="$PRODUCTION_RETENTION"
+              ;;
+            *)
+              echo "Unknown checked-in build kind: $BUILD_KIND" >&2
+              exit 2
+              ;;
+          esac
+          {
+            echo "gradle_tasks=$tasks"
+            echo "artifact_path=$artifact_path"
+            echo "retention_days=$retention"
+            echo "appreveal_commit=$APPREVEAL_COMMIT"
+          } >> "$GITHUB_OUTPUT"
+      - name: Confirm development build is secret-free
+        shell: bash
+        run: |
+          set -euo pipefail
+          test ! -e .env
+          env | grep -q '^TOASTLIFT_\(RELEASE\|STAGING\)_' && {
+            echo "Development CI must not receive signing configuration." >&2
+            exit 1
+          } || true
+      - name: Validate version source
+        run: make check-version
+      - name: Build and test Android development variant
+        env:
+          TOASTLIFT_BUILD_LABEL: ${{ inputs.build_label }}
+        run: ./gradlew --no-daemon --console=plain ${{ steps.build-config.outputs.gradle_tasks }}
+
+  promotion:
+    if: inputs.promotion_environment != '' && !inputs.publish_github_release
+    name: ${{ inputs.promotion_environment }} promotion
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    environment:
+      name: ${{ inputs.promotion_environment }}
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Check out main for promotion validation
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify requested commit is on main
+        run: .github/scripts/ensure-main-commit.sh '${{ inputs.commit_sha }}'
+      - id: setup
+        uses: ./.github/actions/android-setup
+        with:
+          commit-sha: ${{ inputs.commit_sha }}
+      - id: build-config
+        name: Select checked-in build configuration
+        env:
+          BUILD_KIND: ${{ inputs.build_kind }}
+          DEBUG_GRADLE_TASKS: ${{ steps.setup.outputs.debug-gradle-tasks }}
+          STAGING_GRADLE_TASKS: ${{ steps.setup.outputs.staging-gradle-tasks }}
+          PRODUCTION_GRADLE_TASKS: ${{ steps.setup.outputs.production-gradle-tasks }}
+          DEBUG_APK_PATH: ${{ steps.setup.outputs.debug-apk-path }}
+          STAGING_APK_PATH: ${{ steps.setup.outputs.staging-apk-path }}
+          RELEASE_AAB_PATH: ${{ steps.setup.outputs.release-aab-path }}
+          STAGING_RETENTION: ${{ steps.setup.outputs.staging-artifact-retention-days }}
+          APPREVEAL_COMMIT: ${{ steps.setup.outputs.appreveal-commit }}
+          PRODUCTION_RETENTION: ${{ steps.setup.outputs.production-artifact-retention-days }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$BUILD_KIND" in
+            staging)
+              tasks="$STAGING_GRADLE_TASKS"; artifact_path="$STAGING_APK_PATH"; retention="$STAGING_RETENTION"
+              ;;
+            *)
+              echo "This promotion job only accepts the staging build kind." >&2
+              exit 2
+              ;;
+          esac
+          {
+            echo "gradle_tasks=$tasks"
+            echo "artifact_path=$artifact_path"
+            echo "retention_days=$retention"
+            echo "appreveal_commit=$APPREVEAL_COMMIT"
+          } >> "$GITHUB_OUTPUT"
+      - name: Configure AWS credentials through GitHub OIDC
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a
+        with:
+          role-to-assume: ${{ inputs.aws_role_arn }}
+          aws-region: ${{ inputs.aws_region }}
+          mask-aws-account-id: true
+      - name: Restore temporary staging signing material
+        run: .github/scripts/restore-signing-secret.sh '${{ inputs.signing_profile }}'
+      - name: Validate version source
+        run: make check-version
+      - name: Build and test Android promotion candidate
+        env:
+          TOASTLIFT_BUILD_LABEL: ${{ inputs.build_label }}
+        run: ./gradlew --no-daemon --console=plain ${{ steps.build-config.outputs.gradle_tasks }}
+      - name: Write artifact checksum and provenance
+        id: provenance
+        if: inputs.artifact_name != ''
+        run: >-
+          .github/scripts/write-provenance.sh '${{ steps.build-config.outputs.artifact_path }}' '${{ inputs.promotion_environment }}'
+          '${{ inputs.commit_sha }}' '${{ steps.build-config.outputs.appreveal_commit }}'
+      - name: Upload signed promotion artifact
+        if: inputs.artifact_name != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ${{ inputs.artifact_name }}
+          path: |
+            ${{ steps.build-config.outputs.artifact_path }}
+            ${{ steps.provenance.outputs.checksum_file }}
+            ${{ steps.provenance.outputs.provenance_file }}
+          retention-days: ${{ steps.build-config.outputs.retention_days }}
+          if-no-files-found: error
+      - name: Remove temporary signing material
+        if: always()
+        run: .github/scripts/cleanup-signing-material.sh
+
+  production:
+    if: inputs.promotion_environment != '' && inputs.publish_github_release
+    name: production promotion and release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    environment:
+      name: ${{ inputs.promotion_environment }}
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - name: Check out main for promotion validation
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify requested commit is on main
+        run: .github/scripts/ensure-main-commit.sh '${{ inputs.commit_sha }}'
+      - id: setup
+        uses: ./.github/actions/android-setup
+        with:
+          commit-sha: ${{ inputs.commit_sha }}
+      - id: build-config
+        name: Select checked-in build configuration
+        env:
+          BUILD_KIND: ${{ inputs.build_kind }}
+          PRODUCTION_GRADLE_TASKS: ${{ steps.setup.outputs.production-gradle-tasks }}
+          RELEASE_AAB_PATH: ${{ steps.setup.outputs.release-aab-path }}
+          APPREVEAL_COMMIT: ${{ steps.setup.outputs.appreveal-commit }}
+          PRODUCTION_RETENTION: ${{ steps.setup.outputs.production-artifact-retention-days }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$BUILD_KIND" != production ]]; then
+            echo "The release job only accepts the production build kind." >&2
+            exit 2
+          fi
+          {
+            echo "gradle_tasks=$PRODUCTION_GRADLE_TASKS"
+            echo "artifact_path=$RELEASE_AAB_PATH"
+            echo "appreveal_commit=$APPREVEAL_COMMIT"
+            echo "retention_days=$PRODUCTION_RETENTION"
+          } >> "$GITHUB_OUTPUT"
+      - name: Configure AWS credentials through GitHub OIDC
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a
+        with:
+          role-to-assume: ${{ inputs.aws_role_arn }}
+          aws-region: ${{ inputs.aws_region }}
+          mask-aws-account-id: true
+      - name: Restore temporary production signing material
+        run: .github/scripts/restore-signing-secret.sh '${{ inputs.signing_profile }}'
+      - name: Validate version source
+        run: make check-version
+      - name: Build and test Android production candidate
+        env:
+          TOASTLIFT_BUILD_LABEL: ${{ inputs.build_label }}
+        run: ./gradlew --no-daemon --console=plain ${{ steps.build-config.outputs.gradle_tasks }}
+      - name: Verify signed Play bundle and release manifest
+        if: inputs.verify_play_release
+        run: make verify-play-release
+      - name: Write artifact checksum and provenance
+        id: provenance
+        run: >-
+          .github/scripts/write-provenance.sh '${{ steps.build-config.outputs.artifact_path }}' production
+          '${{ inputs.commit_sha }}' '${{ steps.build-config.outputs.appreveal_commit }}'
+      - name: Upload production build record
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ${{ inputs.artifact_name }}
+          path: |
+            ${{ steps.build-config.outputs.artifact_path }}
+            ${{ steps.provenance.outputs.checksum_file }}
+            ${{ steps.provenance.outputs.provenance_file }}
+          retention-days: ${{ steps.build-config.outputs.retention_days }}
+          if-no-files-found: error
+      - name: Create immutable production tag and public GitHub Release
+        env:
+          TARGET_SHA: ${{ inputs.commit_sha }}
+          AAB_PATH: ${{ steps.build-config.outputs.artifact_path }}
+          CHECKSUM_PATH: ${{ steps.provenance.outputs.checksum_file }}
+          PROVENANCE_PATH: ${{ steps.provenance.outputs.provenance_file }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          version="$(tr -d '[:space:]' < version.txt)"
+          tag="v$version"
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" >/dev/null 2>&1; then
+            echo "Refusing to replace existing production tag $tag." >&2
+            exit 1
+          fi
+          tag_object="$(gh api --method POST "repos/$GITHUB_REPOSITORY/git/tags" \
+            -f "tag=$tag" \
+            -f "message=ToastLift $version" \
+            -f "object=$TARGET_SHA" \
+            -f "type=commit" \
+            --jq .sha)"
+          gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" \
+            -f "ref=refs/tags/$tag" \
+            -f "sha=$tag_object" >/dev/null
+          gh release create "$tag" \
+            "$AAB_PATH#ToastLift-$version.aab" \
+            "$CHECKSUM_PATH#ToastLift-$version.aab.sha256" \
+            "$PROVENANCE_PATH#ToastLift-$version-provenance.json" \
+            --title "ToastLift $version" \
+            --generate-notes
+      - name: Remove temporary signing material
+        if: always()
+        run: .github/scripts/cleanup-signing-material.sh

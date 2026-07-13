@@ -1,0 +1,118 @@
+name: Prepare ToastLift Android build
+description: Check out a pinned ToastLift/AppReveal source pair and install the configured Android toolchain.
+inputs:
+  commit-sha:
+    description: Immutable ToastLift commit to build.
+    required: true
+outputs:
+  debug-gradle-tasks:
+    value: ${{ steps.config.outputs.debug_gradle_tasks }}
+  staging-gradle-tasks:
+    value: ${{ steps.config.outputs.staging_gradle_tasks }}
+  production-gradle-tasks:
+    value: ${{ steps.config.outputs.production_gradle_tasks }}
+  debug-apk-path:
+    value: ${{ steps.config.outputs.debug_apk_path }}
+  staging-apk-path:
+    value: ${{ steps.config.outputs.staging_apk_path }}
+  release-aab-path:
+    value: ${{ steps.config.outputs.release_aab_path }}
+  staging-artifact-retention-days:
+    value: ${{ steps.config.outputs.staging_artifact_retention_days }}
+  production-artifact-retention-days:
+    value: ${{ steps.config.outputs.production_artifact_retention_days }}
+  appreveal-commit:
+    value: ${{ steps.config.outputs.appreveal_commit }}
+runs:
+  using: composite
+  steps:
+    - name: Check out ToastLift commit
+      uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      with:
+        ref: ${{ inputs.commit-sha }}
+        fetch-depth: 1
+        persist-credentials: false
+
+    - name: Read checked-in CI configuration
+      id: config
+      shell: bash
+      run: |
+        set -euo pipefail
+        # shellcheck disable=SC1091
+        source ci/android-ci.env
+        required=(
+          ANDROID_MODULE JAVA_VERSION ANDROID_COMPILE_SDK ANDROID_BUILD_TOOLS
+          APPREVEAL_REPOSITORY APPREVEAL_COMMIT DEBUG_APK_PATH STAGING_APK_PATH
+          RELEASE_AAB_PATH STAGING_ARTIFACT_RETENTION_DAYS PRODUCTION_ARTIFACT_RETENTION_DAYS DEBUG_GRADLE_TASKS
+          STAGING_GRADLE_TASKS PRODUCTION_GRADLE_TASKS
+        )
+        for name in "${required[@]}"; do
+          if [[ -z "${!name:-}" ]]; then
+            echo "ci/android-ci.env is missing $name" >&2
+            exit 1
+          fi
+        done
+        if [[ ! "$APPREVEAL_COMMIT" =~ ^[0-9a-f]{40}$ ]]; then
+          echo "APPREVEAL_COMMIT must be a full 40-character commit SHA." >&2
+          exit 1
+        fi
+        {
+          echo "android_module=$ANDROID_MODULE"
+          echo "java_version=$JAVA_VERSION"
+          echo "android_compile_sdk=$ANDROID_COMPILE_SDK"
+          echo "android_build_tools=$ANDROID_BUILD_TOOLS"
+          echo "appreveal_repository=$APPREVEAL_REPOSITORY"
+          echo "appreveal_commit=$APPREVEAL_COMMIT"
+          echo "debug_apk_path=$DEBUG_APK_PATH"
+          echo "staging_apk_path=$STAGING_APK_PATH"
+          echo "release_aab_path=$RELEASE_AAB_PATH"
+          echo "staging_artifact_retention_days=$STAGING_ARTIFACT_RETENTION_DAYS"
+          echo "production_artifact_retention_days=$PRODUCTION_ARTIFACT_RETENTION_DAYS"
+          echo "debug_gradle_tasks=$DEBUG_GRADLE_TASKS"
+          echo "staging_gradle_tasks=$STAGING_GRADLE_TASKS"
+          echo "production_gradle_tasks=$PRODUCTION_GRADLE_TASKS"
+        } >> "$GITHUB_OUTPUT"
+
+    - name: Check out pinned AppReveal composite build
+      uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      with:
+        repository: ${{ steps.config.outputs.appreveal_repository }}
+        ref: ${{ steps.config.outputs.appreveal_commit }}
+        path: third_party/appreveal
+        fetch-depth: 1
+        persist-credentials: false
+
+    - name: Set up JDK
+      uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9
+      with:
+        distribution: temurin
+        java-version: ${{ steps.config.outputs.java_version }}
+        cache: gradle
+
+    - name: Install configured Android SDK packages
+      shell: bash
+      env:
+        ANDROID_COMPILE_SDK: ${{ steps.config.outputs.android_compile_sdk }}
+        ANDROID_BUILD_TOOLS: ${{ steps.config.outputs.android_build_tools }}
+      run: |
+        set -euo pipefail
+        sdk_root="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+        if [[ -z "$sdk_root" ]]; then
+          echo "Android SDK root is unavailable on this runner." >&2
+          exit 1
+        fi
+        sdkmanager_bin="$sdk_root/cmdline-tools/latest/bin/sdkmanager"
+        if [[ ! -x "$sdkmanager_bin" ]]; then
+          sdkmanager_bin="$(command -v sdkmanager)"
+        fi
+        yes | "$sdkmanager_bin" --licenses >/dev/null || true
+        "$sdkmanager_bin" "platforms;android-$ANDROID_COMPILE_SDK" "build-tools;$ANDROID_BUILD_TOOLS"
+
+    - name: Validate Gradle wrapper
+      uses: gradle/actions/wrapper-validation@ed408507eac070d1f99cc633dbcf757c94c7933a
+
+    - name: Export AppReveal composite-build override
+      shell: bash
+      run: |
+        set -euo pipefail
+        echo "APPREVEAL_COMPOSITE_BUILD=$GITHUB_WORKSPACE/third_party/appreveal/Android" >> "$GITHUB_ENV"

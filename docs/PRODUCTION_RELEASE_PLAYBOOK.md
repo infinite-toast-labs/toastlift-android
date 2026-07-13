@@ -47,7 +47,8 @@ The product contract is encoded in
 flag service. Do not re-enable a production feature just because its underlying
 code still exists.
 
-Current Android baseline: `versionCode = 1`, `versionName = "1.0"`,
+Current Android baseline is `version.txt`; `versionName` is its SemVer value and
+`versionCode` is `major * 1_000_000 + minor * 1_000 + patch`.
 `minSdk = 26`, `targetSdk = 36`. Android automatic backup is disabled with
 `android:allowBackup="false"`.
 
@@ -64,8 +65,8 @@ permission and every added dependency before changing privacy claims.
 
 | Mode | Purpose | Package / signing | Feature configuration | Main command |
 | --- | --- | --- | --- | --- |
-| Debug | Full development product and feature work. | `dev.toastlabs.toastlift`; debug-signed. | `feature-config.debug.json`; full development surface, including AI and Exercise Family Tree. | `make install-device-debug` |
-| Staging | Test the exact production product surface on an emulator or development phone. | `dev.toastlabs.toastlift.staging`; debug-signed, so it can coexist with debug. | `feature-config.production.json`; AI BuildConfig values are blank. AppReveal remains available for visual review. | `make install-device-stage` |
+| Debug | Full development product and feature work. | `dev.toastlabs.toastlift.debug`; debug-signed. | `feature-config.debug.json`; full development surface, including AI and Exercise Family Tree. | `make install-device-debug` |
+| Staging | Test the exact production product surface on an emulator or development phone. | `dev.toastlabs.toastlift.staging`; locally debug-signed and CI-signed by the dedicated staging key, so it can coexist with debug. | `feature-config.production.json`; AI BuildConfig values are blank. AppReveal remains available for visual review. | `make install-device-stage` |
 | Release / production | The artifact uploaded to Google Play. | `dev.toastlabs.toastlift`; release-signed only when all signing values are present. | `feature-config.production.json`; AI BuildConfig values are blank and the AppReveal no-op dependency is used. | `make verify-play-release` |
 
 Staging intentionally inherits the debug build type so it is debuggable and can
@@ -258,8 +259,9 @@ repository.
 1. **Freeze the intended product surface.** Review every production feature flag
    and verify that the required core features—training freshness, tokens, weekly
    muscle targets, and ad-hoc generation—remain enabled.
-2. **Advance the version.** Increment `versionCode` for every Play upload and
-   set the user-facing `versionName` in `app/build.gradle.kts`.
+2. **Advance the version.** Merge the reviewed Release Please PR that updates
+   `version.txt` and `CHANGELOG.md`; Gradle derives the monotonically increasing
+   `versionCode` and user-facing `versionName` from that one SemVer source.
 3. **Review policy and permissions.** Inspect the merged release manifest and
    dependencies. Confirm that `INTERNET` remains absent, then reconcile
    notification behavior, local storage, export/delete behavior, and any new

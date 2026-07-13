@@ -5,7 +5,7 @@
 | Mode | Build command | What it is for |
 | --- | --- | --- |
 | Debug | `make install-device-debug` | Full development product with AppReveal and every feature enabled. |
-| Staging | `make install-device-stage` | Debug-signed APK with the production feature configuration. It includes the debug-only AppReveal localhost server for capture/review and installs as `dev.toastlabs.toastlift.staging`, alongside debug. |
+| Staging | `make install-device-stage` | Locally debug-signed or CI-signed with the dedicated staging key, with the production feature configuration. It includes the debug-only AppReveal localhost server for capture/review and installs as `dev.toastlabs.toastlift.staging`, alongside debug. |
 | Production | `make build-prod` / `make bundle-prod` | Release build with production configuration. Upload the signed `.aab`, not the APK, to Play Console. |
 
 The production feature surface is in `app/src/main/assets/feature-config.production.json`.
