@@ -1120,6 +1120,20 @@ fun ToastLiftApp(
             }
         }
     }
+    val openImportDocument = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument(),
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        coroutineScope.launch(Dispatchers.IO) {
+            runCatching {
+                context.contentResolver.openInputStream(uri)
+                    ?.bufferedReader(Charsets.UTF_8)
+                    ?.use { it.readText() }
+                    ?: error("Could not open the selected backup.")
+            }.onSuccess(viewModel::importPersonalData)
+                .onFailure(viewModel::reportPersonalDataImportReadFailure)
+        }
+    }
 
     LaunchedEffect(Unit) {
         snackbarMessages(snapshotFlow { latestMessage.value }).collectLatest { message ->
@@ -1224,6 +1238,7 @@ fun ToastLiftApp(
                     state = state,
                     viewModel = viewModel,
                     features = featureConfig,
+                    onImportPersonalData = { openImportDocument.launch(arrayOf("application/json")) },
                 )
                 state.activeSession != null -> ActiveSessionScreen(
                     state = state,
@@ -1345,6 +1360,7 @@ fun ToastLiftApp(
                                         state = state,
                                         viewModel = viewModel,
                                         features = featureConfig,
+                                        onImportPersonalData = { openImportDocument.launch(arrayOf("application/json")) },
                                         debugSurfaceOverride = debugSurfaceOverride,
                                     )
                                 } else when (tab) {
@@ -2157,6 +2173,7 @@ private fun OnboardingScreen(
     state: AppUiState,
     viewModel: ToastLiftViewModel,
     features: AppFeatureConfig,
+    onImportPersonalData: () -> Unit,
 ) {
     val programsEnabled = features.global.workoutPrograms && features.profile.programSettings
     ProfileEditor(
@@ -2175,6 +2192,7 @@ private fun OnboardingScreen(
         onDraftChange = viewModel::updateOnboardingDraft,
         onToggleEquipment = viewModel::toggleEquipment,
         onSave = viewModel::saveProfile,
+        onImportPersonalData = onImportPersonalData,
         saveLabel = "Finish setup",
         showProgramSettings = programsEnabled,
         showSmartPickerTarget = features.profile.smartPickerTarget,
@@ -4155,29 +4173,25 @@ private fun TrainingFreshnessCard(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalAlignment = Alignment.Top,
-            ) {
-                Column(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(
+                    "Training Freshness",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
                 ) {
-                    Text(
-                        "Training Freshness",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                    )
-                    Text(
-                        summary.headline,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    MiniTag(
+                        text = trainingFreshnessCardLabel(summary.cardMode),
+                        accent = accent.start.copy(alpha = 0.18f),
                     )
                 }
-                MiniTag(
-                    text = trainingFreshnessCardLabel(summary.cardMode),
-                    accent = accent.start.copy(alpha = 0.18f),
+                Text(
+                    summary.headline,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
             primaryRows.take(2).forEach { row ->
@@ -10109,6 +10123,7 @@ private fun ProfileScreen(
     state: AppUiState,
     viewModel: ToastLiftViewModel,
     features: AppFeatureConfig,
+    onImportPersonalData: () -> Unit,
     debugSurfaceOverride: String? = null,
 ) {
     val context = LocalContext.current
@@ -10145,6 +10160,7 @@ private fun ProfileScreen(
         onSetTrainingFreshnessMinimumBucketExercises = viewModel::setTrainingFreshnessMinimumBucketExercises,
         onOpenRestTimerSoundSettings = { openRestTimerSoundSettings(context) },
         onExportPersonalData = viewModel::preparePersonalDataExport,
+        onImportPersonalData = onImportPersonalData,
         onDeletePersonalData = viewModel::deleteAllPersonalData,
         onOpenPrivacyPolicy = {
             openExternalUrl(context, "https://www.toastlabs.dev/toastlift/privacy/")
@@ -10203,6 +10219,7 @@ private fun ProfileEditor(
     onSetTrainingFreshnessMinimumBucketExercises: ((Int) -> Unit)? = null,
     onOpenRestTimerSoundSettings: (() -> Unit)? = null,
     onExportPersonalData: (() -> Unit)? = null,
+    onImportPersonalData: (() -> Unit)? = null,
     onDeletePersonalData: (() -> Unit)? = null,
     onOpenPrivacyPolicy: (() -> Unit)? = null,
     showAppearanceSettings: Boolean = false,
@@ -10213,6 +10230,7 @@ private fun ProfileEditor(
 ) {
     var equipmentSheetMode by remember { mutableStateOf<LocationMode?>(null) }
     var showDeleteSheet by remember { mutableStateOf(false) }
+    var showImportConfirmation by remember { mutableStateOf(false) }
 
     LaunchedEffect(debugSurfaceOverride, locationModes) {
         val requestedModeName = debugSurfaceOverride.debugEquipmentSheetModeNameOrNull() ?: return@LaunchedEffect
@@ -10582,7 +10600,7 @@ private fun ProfileEditor(
             }
         }
 
-        if (onExportPersonalData != null || onDeletePersonalData != null || onOpenPrivacyPolicy != null) {
+        if (onExportPersonalData != null || onImportPersonalData != null || onDeletePersonalData != null || onOpenPrivacyPolicy != null) {
             CompactSectionCard(
                 title = "Privacy",
                 subtitle = "Export or delete personal data stored on this device",
@@ -10607,6 +10625,25 @@ private fun ProfileEditor(
                     ) {
                         Text("Export My Data (JSON)")
                     }
+                }
+                onImportPersonalData?.let { importPersonalData ->
+                    OutlinedButton(
+                        onClick = {
+                            if (profile == null) importPersonalData() else showImportConfirmation = true
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(if (profile == null) "Import Previous Export" else "Replace Data from Export")
+                    }
+                    Text(
+                        if (profile == null) {
+                            "Already have ToastLift data? Import its JSON export to finish setup without choosing any options."
+                        } else {
+                            "This replaces the personal data currently stored in this app with the selected ToastLift export."
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
                 if (onDeletePersonalData != null) {
                     OutlinedButton(
@@ -10644,6 +10681,15 @@ private fun ProfileEditor(
             onConfirm = {
                 showDeleteSheet = false
                 onDeletePersonalData()
+            },
+        )
+    }
+    if (showImportConfirmation && onImportPersonalData != null) {
+        ImportDataSheet(
+            onDismiss = { showImportConfirmation = false },
+            onConfirm = {
+                showImportConfirmation = false
+                onImportPersonalData()
             },
         )
     }
@@ -11155,6 +11201,28 @@ private fun DeleteDataSheet(
                 Button(onClick = onConfirm, modifier = Modifier.weight(1f)) {
                     Text("Delete")
                 }
+            }
+            Spacer(modifier = Modifier.height(24.dp))
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ImportDataSheet(
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    ToastLiftModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text("Replace data from an export?", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+            Text("Selecting an export replaces this app's current profile, workout history, custom exercises, templates, and preferences.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
+                OutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f)) { Text("Cancel") }
+                Button(onClick = onConfirm, modifier = Modifier.weight(1f)) { Text("Choose export") }
             }
             Spacer(modifier = Modifier.height(24.dp))
         }

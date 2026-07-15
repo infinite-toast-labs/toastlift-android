@@ -24,6 +24,7 @@ class AppContainer(
         catalogRepository = catalogRepository,
         userRepository = userRepository,
     )
+    val personalDataImporter = PersonalDataImporter(toastLiftDatabase, customExerciseRepository)
     internal val exerciseDiscoveryService = ExerciseDiscoveryService()
     internal val exerciseAiSearchService = ExerciseAiSearchService()
     val experimentRepository = ExperimentRepository(toastLiftDatabase)

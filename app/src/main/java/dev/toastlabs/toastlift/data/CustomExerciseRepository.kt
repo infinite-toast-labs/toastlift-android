@@ -355,6 +355,29 @@ class CustomExerciseRepository(
         if (snapshotFile.exists()) snapshotFile.delete()
     }
 
+    /** Restores the custom-exercise portion of a validated personal-data backup. */
+    fun replaceCustomExercisesFromExport(payload: JSONArray) {
+        val db = database.open()
+        db.beginTransaction()
+        try {
+            replaceCustomExercisesFromExport(db, payload)
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
+        writeSnapshotFromDatabase()
+    }
+
+    /** Caller owns the database transaction. */
+    internal fun replaceCustomExercisesFromExport(db: SQLiteDatabase, payload: JSONArray) {
+        db.execSQL("DELETE FROM exercises WHERE is_post_install_llm_generated = 1")
+        for (index in 0 until payload.length()) {
+            insertFromSnapshot(db, payload.getJSONObject(index))
+        }
+    }
+
+    internal fun refreshSnapshot() = writeSnapshotFromDatabase()
+
     fun clearSnapshot() {
         if (snapshotFile.exists()) snapshotFile.delete()
     }
