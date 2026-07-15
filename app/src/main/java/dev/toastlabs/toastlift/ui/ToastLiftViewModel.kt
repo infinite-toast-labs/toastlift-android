@@ -2832,6 +2832,35 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
+    fun importPersonalData(contents: String) {
+        cancelRestTimer()
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { container.personalDataImporter.import(contents) }
+                .onSuccess { summary ->
+                    syncActiveWorkoutNotification(null)
+                    uiState = uiState.copy(
+                        activeSession = null,
+                        activeSessionExerciseIndex = null,
+                        pendingPersonalDataExport = null,
+                        message = "Imported ${summary.completedWorkouts} workouts and ${summary.customExercises} custom exercises.",
+                    )
+                    refreshAll()
+                    refreshDailyCoachMessage(force = true)
+                }
+                .onFailure { error ->
+                    android.util.Log.e("ToastLiftImport", "Personal-data import failed", error)
+                    uiState = uiState.copy(message = error.message ?: "Could not import this backup.")
+                }
+        }
+    }
+
+    fun reportPersonalDataImportReadFailure(error: Throwable) {
+        android.util.Log.e("ToastLiftImport", "Could not read selected personal-data export", error)
+        uiState = uiState.copy(
+            message = "Could not read the selected export: ${error.message ?: "unknown error"}",
+        )
+    }
+
     fun cancelPendingPersonalDataExport() {
         uiState = uiState.copy(pendingPersonalDataExport = null)
     }

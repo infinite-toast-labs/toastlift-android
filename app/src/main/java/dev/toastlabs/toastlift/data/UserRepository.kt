@@ -7,7 +7,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.time.Instant
 
-internal const val PERSONAL_DATA_EXPORT_SCHEMA_VERSION = 7
+internal const val PERSONAL_DATA_EXPORT_SCHEMA_VERSION = 8
 internal const val PERSONAL_DATA_EXPORT_KIND = "full_personal_data_backup"
 
 class UserRepository(private val database: ToastLiftDatabase) {
@@ -320,6 +320,7 @@ class UserRepository(private val database: ToastLiftDatabase) {
             .put("exercise_preferences", exportExercisePreferences(db))
             .put("exercise_generated_descriptions", exportExerciseGeneratedDescriptions(db))
             .put("exercise_user_video_links", exportExerciseUserVideoLinks(db))
+            .put("user_confirmed_exercise_aliases", exportUserConfirmedExerciseAliases(db))
             .put("movement_restrictions", exportMovementRestrictions(db))
             .put("custom_exercises", customExercises)
             .put("workout_templates", exportWorkoutTemplates(db))
@@ -626,6 +627,40 @@ class UserRepository(private val database: ToastLiftDatabase) {
                             .put("url", cursor.getString(4))
                             .put("created_at_utc", cursor.getString(5))
                             .put("updated_at_utc", cursor.getString(6)),
+                    )
+                }
+            }
+        }
+    }
+
+    private fun exportUserConfirmedExerciseAliases(db: SQLiteDatabase): JSONArray {
+        return db.rawQuery(
+            """
+            SELECT
+                exercise_id,
+                synonym_name,
+                synonym_name_normalized,
+                synonym_type,
+                source,
+                confidence_score,
+                created_at_utc
+            FROM exercise_synonyms
+            WHERE source = ?
+            ORDER BY synonym_id
+            """.trimIndent(),
+            arrayOf(USER_CONFIRMED_EXERCISE_SYNONYM_SOURCE),
+        ).use { cursor ->
+            JSONArray().apply {
+                while (cursor.moveToNext()) {
+                    put(
+                        JSONObject()
+                            .put("exercise_id", cursor.getLong(0))
+                            .put("synonym_name", cursor.getString(1))
+                            .put("synonym_name_normalized", cursor.getString(2))
+                            .put("synonym_type", cursor.getString(3))
+                            .put("source", cursor.getString(4))
+                            .put("confidence_score", cursor.getDouble(5))
+                            .put("created_at_utc", cursor.getString(6)),
                     )
                 }
             }

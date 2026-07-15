@@ -6,6 +6,8 @@ import java.text.Normalizer
 import java.time.Instant
 import java.util.Locale
 
+internal const val USER_CONFIRMED_EXERCISE_SYNONYM_SOURCE = "user_confirmed_ai_search"
+
 internal fun normalizeExerciseNote(rawValue: String): String? =
     rawValue.trim().takeIf { it.isNotEmpty() }
 
@@ -243,7 +245,11 @@ class CatalogRepository(private val database: ToastLiftDatabase) {
      * Persists a user-confirmed synonym. Returns false when the synonym is blank
      * or already exists for this exercise (matching the normalized unique key).
      */
-    fun addExerciseSynonym(exerciseId: Long, synonym: String, source: String = "user_confirmed_ai_search"): Boolean {
+    fun addExerciseSynonym(
+        exerciseId: Long,
+        synonym: String,
+        source: String = USER_CONFIRMED_EXERCISE_SYNONYM_SOURCE,
+    ): Boolean {
         val normalizedName = normalizeExerciseSynonym(synonym) ?: return false
         val normalizedKey = normalizedExerciseSynonymKey(normalizedName)
         if (normalizedKey.isBlank()) return false
