@@ -566,6 +566,22 @@ private val DarkHeatAccent = GlowAccent(
     color = Color(0xFFFF7A1A),
 )
 
+// Set logging is a dense, repeat-use surface. Keep its state colors cool and
+// quiet: blue means ready for input, lilac means the set has been recorded.
+// The app's high-energy lime stays reserved for the next primary action.
+private val DarkSetPendingAccent = GlowAccent(
+    color = Color(0xFF7795C7),
+    textOnAccent = Color(0xFF101A2B),
+)
+
+private val DarkSetLoggedAccent = GlowAccent(
+    color = Color(0xFFC7A8F5),
+    textOnAccent = Color(0xFF241633),
+)
+
+private val DarkSetPendingSurface = Color(0xFF1C222C)
+private val DarkSetLoggedSurface = Color(0xFF292536)
+
 private val LightEmberAccent = GlowAccent(
     color = Color(0xFFBA3E47),
     textOnAccent = Color(0xFFFFFFFF),
@@ -16184,6 +16200,12 @@ private fun SessionExerciseDetailScreen(
     val completedSets = exercise.sets.count { it.completed }
     val usesCustomWorkUnits = exercise.workUnits.isNotEmpty()
     val closeExerciseEnabled = !allSetsCompleted || usesCustomWorkUnits || exercise.lastSetRepsInReserve != null
+    val heroUtilityColor = if (LocalToastLiftIsDarkTheme.current) {
+        DarkSetPendingAccent.start
+    } else {
+        MaterialTheme.colorScheme.primary
+    }
+    val heroMetadataColor = MaterialTheme.colorScheme.onSurfaceVariant
     val currentSetNumbers = exercise.sets.associate { it.id to it.setNumber }
     val currentSetNumberSnapshot = exercise.sets.map { it.id to it.setNumber }
     var animatedSetNumbers by remember(exercise.exerciseId) { mutableStateOf(currentSetNumbers) }
@@ -16270,11 +16292,14 @@ private fun SessionExerciseDetailScreen(
                         Icon(
                             imageVector = if (hideTargetImpact) Icons.Rounded.CenterFocusWeak else Icons.Rounded.CenterFocusStrong,
                             contentDescription = if (hideTargetImpact) "Show Target Impact" else "Hide Target Impact",
-                            tint = if (hideTargetImpact) MaterialTheme.colorScheme.primary
-                                else MaterialTheme.colorScheme.onSurfaceVariant,
+                            tint = if (hideTargetImpact) heroUtilityColor else MaterialTheme.colorScheme.primary,
                         )
                     }
-                    OutlinedButton(onClick = onShowExerciseDetail) {
+                    OutlinedButton(
+                        onClick = onShowExerciseDetail,
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = heroUtilityColor),
+                        border = BorderStroke(1.dp, heroUtilityColor.copy(alpha = 0.58f)),
+                    ) {
                         Icon(
                             imageVector = Icons.Rounded.Info,
                             contentDescription = null,
@@ -16311,9 +16336,9 @@ private fun SessionExerciseDetailScreen(
                 ) {
                     Text(exercise.name, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Black)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        MiniTag("${exercise.restSeconds}s rest")
-                        MiniTag(exercise.targetMuscleGroup)
-                        MiniTag(exercise.equipment)
+                        MiniTag("${exercise.restSeconds}s rest", accent = heroMetadataColor)
+                        MiniTag(exercise.targetMuscleGroup, accent = heroMetadataColor)
+                        MiniTag(exercise.equipment, accent = heroMetadataColor)
                     }
                     performanceStats?.let { stats ->
                         ActiveExercisePerformanceStatsRow(
@@ -16669,26 +16694,30 @@ private fun DismissibleSessionSetRow(
     val actionWidthPx = with(LocalDensity.current) { actionWidth.toPx() }
     val focusManager = LocalFocusManager.current
     val isDarkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f
-    val rowAccent = if (set.completed) surgeAccent else heatAccent
+    val rowAccent = if (isDarkTheme) {
+        if (set.completed) DarkSetLoggedAccent else DarkSetPendingAccent
+    } else {
+        if (set.completed) surgeAccent else heatAccent
+    }
     val completedRowColor = if (isDarkTheme) {
-        MaterialTheme.colorScheme.secondaryContainer
+        DarkSetLoggedSurface
     } else {
         MaterialTheme.colorScheme.primaryContainer
     }
     val pendingRowColor = if (isDarkTheme) {
-        MaterialTheme.colorScheme.surfaceVariant
+        DarkSetPendingSurface
     } else {
         MaterialTheme.colorScheme.surface
     }
     val completedTextColor = if (set.completed) {
-        if (isDarkTheme) surgeAccent.start else MaterialTheme.colorScheme.onPrimaryContainer
+        if (isDarkTheme) rowAccent.start else MaterialTheme.colorScheme.onPrimaryContainer
     } else {
         MaterialTheme.colorScheme.onSurface
     }
     val rowBorderColor = if (set.completed) {
         rowAccent.start.copy(alpha = if (isDarkTheme) 0.5f else 0.42f)
     } else {
-        MaterialTheme.colorScheme.outline.copy(alpha = if (isDarkTheme) 0.18f else 0.26f)
+        rowAccent.start.copy(alpha = if (isDarkTheme) 0.38f else 0.26f)
     }
     val rowBottomDepthColor = if (isDarkTheme) {
         Color.Black.copy(alpha = if (set.completed) 0.32f else 0.22f)
@@ -16698,7 +16727,7 @@ private fun DismissibleSessionSetRow(
     val rowTopDepthColor = if (set.completed) {
         rowAccent.start.copy(alpha = if (isDarkTheme) 0.16f else 0.12f)
     } else {
-        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (isDarkTheme) 0.14f else 0.72f)
+        rowAccent.start.copy(alpha = if (isDarkTheme) 0.1f else 0.72f)
     }
     var horizontalOffset by remember { mutableFloatStateOf(0f) }
     val rowScale = remember(set.id) { Animatable(1f) }
@@ -16903,6 +16932,7 @@ private fun DismissibleSessionSetRow(
                             StrengthSessionSetFields(
                                 set = set,
                                 completedTextColor = completedTextColor,
+                                outlineColor = rowAccent.start.copy(alpha = if (isDarkTheme) 0.56f else 0.48f),
                                 exerciseIndex = exerciseIndex,
                                 setIndex = setIndex,
                                 onValueChange = onValueChange,
@@ -16912,6 +16942,7 @@ private fun DismissibleSessionSetRow(
                                 set = set,
                                 workUnits = workUnits,
                                 completedTextColor = completedTextColor,
+                                outlineColor = rowAccent.start.copy(alpha = if (isDarkTheme) 0.56f else 0.48f),
                                 exerciseIndex = exerciseIndex,
                                 setIndex = setIndex,
                                 onWorkUnitValueChange = onWorkUnitValueChange,
@@ -16951,6 +16982,7 @@ private fun DismissibleSessionSetRow(
 private fun StrengthSessionSetFields(
     set: SessionSet,
     completedTextColor: Color,
+    outlineColor: Color,
     exerciseIndex: Int,
     setIndex: Int,
     onValueChange: (Int, Int, String, Boolean) -> Unit,
@@ -16963,6 +16995,7 @@ private fun StrengthSessionSetFields(
                 modifier = Modifier.weight(1f),
                 label = "Reps",
                 textColor = completedTextColor,
+                outlineColor = outlineColor,
                 keyboardOptions = KeyboardOptions(
                     keyboardType = KeyboardType.Number,
                     imeAction = ImeAction.Next,
@@ -16975,6 +17008,7 @@ private fun StrengthSessionSetFields(
                 label = "Weight",
                 suffixText = "lb",
                 textColor = completedTextColor,
+                outlineColor = outlineColor,
                 keyboardOptions = KeyboardOptions(
                     keyboardType = KeyboardType.Decimal,
                     imeAction = ImeAction.Next,
@@ -17030,6 +17064,7 @@ private fun WorkUnitSessionSetFields(
     set: SessionSet,
     workUnits: List<WorkUnitDefinition>,
     completedTextColor: Color,
+    outlineColor: Color,
     exerciseIndex: Int,
     setIndex: Int,
     onWorkUnitValueChange: (Int, Int, String, String) -> Unit,
@@ -17047,6 +17082,7 @@ private fun WorkUnitSessionSetFields(
                     .width(132.dp),
                 label = workUnitLabel(unit),
                 textColor = completedTextColor,
+                outlineColor = outlineColor,
                 keyboardOptions = KeyboardOptions(
                     keyboardType = keyboardTypeForWorkUnit(unit),
                     imeAction = ImeAction.Next,
@@ -17262,11 +17298,19 @@ private fun PersistentLabelOutlinedTextField(
     modifier: Modifier = Modifier,
     suffixText: String? = null,
     textColor: Color = MaterialTheme.colorScheme.onSurface,
+    outlineColor: Color = MaterialTheme.colorScheme.outlineVariant,
     keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
     enabled: Boolean = true,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
-    val colors = OutlinedTextFieldDefaults.colors()
+    val colors = OutlinedTextFieldDefaults.colors(
+        focusedBorderColor = MaterialTheme.colorScheme.primary,
+        unfocusedBorderColor = outlineColor,
+        disabledBorderColor = outlineColor.copy(alpha = 0.56f),
+        focusedLabelColor = textColor,
+        unfocusedLabelColor = textColor,
+        disabledLabelColor = textColor.copy(alpha = 0.56f),
+    )
     var draftValue by remember { mutableStateOf(value) }
     var isFocused by remember { mutableStateOf(false) }
     val fieldValue = if (isFocused) draftValue else value
