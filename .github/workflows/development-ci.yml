@@ -1,0 +1,39 @@
+name: Development CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: development-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  conventional-pr-title:
+    if: github.event_name == 'pull_request'
+    name: conventional PR title
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Require a Conventional Commit-style title
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          pattern='^(build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test)(\([[:alnum:]_.@/-]+\))?!?: .+$'
+          if [[ ! "$PR_TITLE" =~ $pattern ]]; then
+            echo "PR title must follow Conventional Commits, for example: feat(workout): add rest timer" >&2
+            exit 1
+          fi
+
+  android:
+    name: Android development build
+    uses: ./.github/workflows/android-development.yml
+    with:
+      commit_sha: ${{ github.sha }}
+      build_label: ${{ github.sha }}

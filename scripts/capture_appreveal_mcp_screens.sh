@@ -8,8 +8,8 @@ Usage: capture_appreveal_mcp_screens.sh --group regular|sheets|all [options]
 Options:
   --adb PATH             ADB wrapper to use. Default: android-emulator-adb
   --serial SERIAL        Device serial. Default: emulator-5560
-  --app-id APP_ID        Android app id. Default: dev.toastlabs.toastlift
-  --activity COMPONENT   Launch component. Default: dev.toastlabs.toastlift/.MainActivity
+  --app-id APP_ID        Android app id. Default: dev.toastlabs.toastlift.debug
+  --activity COMPONENT   Launch component. Default: dev.toastlabs.toastlift.debug/dev.toastlabs.toastlift.MainActivity
   --out-root DIR         Artifact root. Default: android-e2e
   --startup-wait N       Delay after AppReveal starts before debug_begin. Default: 0
   --wait-seconds N       Delay after opening each screen. Default: 2
@@ -23,8 +23,8 @@ EOF
 group=""
 adb_bin="${EMULATOR_ADB:-android-emulator-adb}"
 serial="${ADB_SERIAL:-emulator-5560}"
-app_id="${APP_ID:-dev.toastlabs.toastlift}"
-activity="${MAIN_ACTIVITY:-dev.toastlabs.toastlift/.MainActivity}"
+app_id="${APP_ID:-dev.toastlabs.toastlift.debug}"
+activity="${MAIN_ACTIVITY:-dev.toastlabs.toastlift.debug/dev.toastlabs.toastlift.MainActivity}"
 out_root="${MCP_SCREEN_OUTPUT_ROOT:-android-e2e}"
 startup_wait_seconds="${MCP_SCREEN_STARTUP_WAIT_SECONDS:-0}"
 wait_seconds="${MCP_SCREEN_WAIT_SECONDS:-2}"

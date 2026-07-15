@@ -1,8 +1,8 @@
 SHELL := /bin/bash
 
-APP_ID := dev.toastlabs.toastlift
-MAIN_ACTIVITY := $(APP_ID)/.MainActivity
-STAGE_APP_ID := $(APP_ID).staging
+APP_ID := dev.toastlabs.toastlift.debug
+MAIN_ACTIVITY := $(APP_ID)/dev.toastlabs.toastlift.MainActivity
+STAGE_APP_ID := dev.toastlabs.toastlift.staging
 STAGE_MAIN_ACTIVITY := $(STAGE_APP_ID)/dev.toastlabs.toastlift.MainActivity
 DEBUG_APK := app/build/outputs/apk/debug/app-debug.apk
 STAGE_APK := app/build/outputs/apk/staging/app-staging.apk
@@ -26,7 +26,7 @@ GRADLE := ./gradlew --no-daemon --console=plain
 ADB := android-adb
 EMULATOR_ADB := android-emulator-adb
 
-.PHONY: help clean test lint build-debug build-stage build-release build-prod bundle-prod verify-release-no-internet verify-play-release assemble apk-paths devices \
+.PHONY: help clean test lint check-version build-debug build-stage build-release build-prod bundle-prod verify-release-no-internet verify-play-release assemble apk-paths devices \
 	check-emulator check-device install-debug install-debug-appreveal launch-debug launch-stage install-device-debug \
 	install-device-debug-no-build install-device-stage install-device-stage-no-build sync-device-custom-exercises live-ai-smoke-test \
 	install-stage-appreveal mcp-screens-regular mcp-screens-sheets mcp-screens-all mcp-stage-screens-all mcp-phone-screens-all \
@@ -35,13 +35,14 @@ EMULATOR_ADB := android-emulator-adb
 
 help:
 	@echo "Targets:"
+	@echo "  make check-version                - Validate version.txt and its Android versionCode mapping"
 	@echo "  make test                         - Run unit tests"
 	@echo "  make live-ai-smoke-test           - Run live Gemini/OpenCode custom exercise AI smoke tests and print outputs"
 	@echo "  make lint                         - Run Android lint for debug"
 	@echo "  make build-debug                  - Build debug APK"
 	@echo "  make build-stage                  - Build production-configured, debug-signed staging APK"
 	@echo "  make build-release                - Build unsigned release APK"
-	@echo "  make build-prod                   - Build release APK; signs it when TOASTLIFT_RELEASE_* values are configured"
+	@echo "  make build-prod                   - Build release APK; signs it when TOASTLIFT_PLAY_UPLOAD_* values are configured"
 	@echo "  make bundle-prod                  - Build Play Store Android App Bundle"
 	@echo "  make verify-release-no-internet   - Fail if the Play release manifest declares INTERNET"
 	@echo "  make verify-play-release          - Build and verify a signed Play Store bundle"
@@ -73,6 +74,9 @@ help:
 
 clean:
 	$(GRADLE) clean
+
+check-version:
+	scripts/check_version.sh
 
 test:
 	$(GRADLE) testDebugUnitTest
@@ -142,7 +146,7 @@ verify-play-release: verify-release-no-internet
 	fi; \
 	if ! jarsigner -verify -strict -certs "$(RELEASE_AAB)" >/dev/null 2>&1; then \
 		echo "Play bundle is unsigned or has an invalid signature." >&2; \
-		echo "Set TOASTLIFT_RELEASE_STORE_FILE, TOASTLIFT_RELEASE_STORE_PASSWORD, TOASTLIFT_RELEASE_KEY_ALIAS, and TOASTLIFT_RELEASE_KEY_PASSWORD, then retry." >&2; \
+		echo "Set TOASTLIFT_PLAY_UPLOAD_STORE_FILE, TOASTLIFT_PLAY_UPLOAD_STORE_PASSWORD, TOASTLIFT_PLAY_UPLOAD_KEY_ALIAS, and TOASTLIFT_PLAY_UPLOAD_KEY_PASSWORD, then retry." >&2; \
 		exit 1; \
 	fi; \
 	echo "Signed Play bundle verified: $(RELEASE_AAB)"
