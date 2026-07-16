@@ -15,6 +15,7 @@ Options:
   --wait-seconds N       Delay after opening each screen. Default: 2
   --capture-mode MODE    Capture mode: single or full. Default: single
   --screen-key KEY       Capture only one registered AppReveal screen/sheet key
+  --transport MODE       MCP transport: device-nc or adb-forward. Default: device-nc
   --scroll-max-pages N   Maximum scroll pages after the first capture. Default: 120
   --scroll-settle-ms N   Delay after each scroll before capture. Default: 40
 EOF
@@ -33,6 +34,7 @@ screen_key="${MCP_SCREEN_KEY:-}"
 scroll_max_pages="${MCP_SCROLL_MAX_PAGES:-120}"
 scroll_settle_ms="${MCP_SCROLL_SETTLE_MS:-40}"
 contact_sheet_max_images="${MCP_CONTACT_SHEET_MAX_IMAGES:-40}"
+transport="${MCP_TRANSPORT:-device-nc}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -76,6 +78,10 @@ while [[ $# -gt 0 ]]; do
       screen_key="${2:-}"
       shift 2
       ;;
+    --transport)
+      transport="${2:-}"
+      shift 2
+      ;;
     --scroll-max-pages)
       scroll_max_pages="${2:-}"
       shift 2
@@ -114,12 +120,25 @@ case "$capture_mode" in
     ;;
 esac
 
+case "$transport" in
+  device-nc|adb-forward) ;;
+  *)
+    echo "--transport must be device-nc or adb-forward." >&2
+    usage >&2
+    exit 2
+    ;;
+esac
+
 for tool in jq base64; do
   if ! command -v "$tool" >/dev/null 2>&1; then
     echo "Required tool not found on PATH: $tool" >&2
     exit 1
   fi
 done
+if [[ "$transport" == "adb-forward" ]] && ! command -v curl >/dev/null 2>&1; then
+  echo "Required tool not found on PATH: curl" >&2
+  exit 1
+fi
 
 if ! "$adb_bin" -s "$serial" get-state >/dev/null 2>&1; then
   echo "ADB device unavailable: expected $serial through $adb_bin." >&2
@@ -172,6 +191,18 @@ if [[ "$startup_wait_seconds" != "0" ]]; then
 fi
 
 request_id=0
+forward_port=""
+cleanup_forward() {
+  if [[ -n "$forward_port" ]]; then
+    "$adb_bin" -s "$serial" forward --remove "tcp:$forward_port" >/dev/null 2>&1 || true
+    forward_port=""
+  fi
+}
+if [[ "$transport" == "adb-forward" ]]; then
+  forward_port="$($adb_bin -s "$serial" forward tcp:0 "tcp:$port")"
+  trap cleanup_forward EXIT
+fi
+
 mcp_call() {
   local tool_name="$1"
   local args
@@ -187,12 +218,31 @@ mcp_call() {
     --arg name "$tool_name" \
     --argjson arguments "$args" \
     '{jsonrpc:"2.0", id:($id|tonumber), method:"tools/call", params:{name:$name, arguments:$arguments}}')"
-  local content_length
-  content_length="$(printf '%s' "$request" | wc -c)"
-  printf 'POST /?appreveal_session_token=%s HTTP/1.1\r\nHost: 127.0.0.1:%s\r\nAuthorization: Bearer %s\r\nContent-Type: application/json\r\nAccept: application/json\r\nContent-Length: %s\r\nConnection: close\r\n\r\n%s' \
-    "$token" "$port" "$token" "$content_length" "$request" |
-    "$adb_bin" -s "$serial" shell "toybox nc -w 15 -W 15 127.0.0.1 $port" |
-    awk 'BEGIN{body=0} /^\r?$/{body=1; next} body{print}'
+  if [[ "$transport" == "adb-forward" ]]; then
+    curl --fail --silent --show-error --max-time 30 \
+      -H "Authorization: Bearer $token" \
+      -H "Content-Type: application/json" \
+      -H "Accept: application/json" \
+      --data "$request" \
+      "http://127.0.0.1:$forward_port/?appreveal_session_token=$token"
+  else
+    local content_length
+    content_length="$(printf '%s' "$request" | wc -c)"
+    printf 'POST /?appreveal_session_token=%s HTTP/1.1\r\nHost: 127.0.0.1:%s\r\nAuthorization: Bearer %s\r\nContent-Type: application/json\r\nAccept: application/json\r\nContent-Length: %s\r\nConnection: close\r\n\r\n%s' \
+      "$token" "$port" "$token" "$content_length" "$request" |
+      "$adb_bin" -s "$serial" shell "toybox nc -w 15 -W 15 127.0.0.1 $port" |
+      awk 'BEGIN{body=0} /^\r?$/{body=1; next} body{print}'
+  fi
+}
+
+epoch_ms() {
+  local value
+  value="$(date +%s%3N)"
+  if [[ "$value" =~ ^[0-9]+$ ]]; then
+    printf '%s\n' "$value"
+  else
+    printf '%s000\n' "$(date +%s)"
+  fi
 }
 
 decode_tool_json() {
@@ -220,7 +270,10 @@ case "$group" in
     jq_filter='.screens[] | .key'
     ;;
 esac
-mapfile -t routes < <(jq -r "$jq_filter" "$out_dir/list_screens.json")
+routes=()
+while IFS= read -r route; do
+  routes+=("$route")
+done < <(jq -r "$jq_filter" "$out_dir/list_screens.json")
 
 if [[ -n "$screen_key" ]]; then
   if ! jq -e --arg screen_key "$screen_key" '.screens[] | select(.key == $screen_key)' "$out_dir/list_screens.json" >/dev/null; then
@@ -250,7 +303,11 @@ finish_debug_session() {
   printf '%s\n' "$end_rpc" > "$out_dir/debug_end.rpc.json"
   printf '%s\n' "$end_rpc" | decode_tool_json > "$out_dir/debug_end.json" 2>/dev/null || true
 }
-trap finish_debug_session EXIT
+finish_capture() {
+  finish_debug_session
+  cleanup_forward
+}
+trap finish_capture EXIT
 
 for route in "${routes[@]}"; do
   safe_route="${route//./_}"
@@ -273,9 +330,9 @@ for route in "${routes[@]}"; do
 
   sleep "$wait_seconds"
   if [[ "$capture_mode" == "single" ]]; then
-    capture_started_ms="$(date +%s%3N)"
+    capture_started_ms="$(epoch_ms)"
     screenshot_rpc="$(mcp_call screenshot '{}' || true)"
-    host_total_ms=$(( $(date +%s%3N) - capture_started_ms ))
+    host_total_ms=$(( $(epoch_ms) - capture_started_ms ))
     printf '%s\n' "$screenshot_rpc" > "$out_dir/$safe_route.screenshot.rpc.json"
     if ! printf '%s\n' "$screenshot_rpc" | decode_tool_json > "$out_dir/$safe_route.screenshot.json" 2>"$out_dir/$safe_route.screenshot.decode.err"; then
       printf '%s\tscreenshot_failed\t0\t\t\t%s\t\t\t\t\n' "$route" "$host_total_ms" >> "$out_dir/results.tsv"
@@ -295,9 +352,9 @@ for route in "${routes[@]}"; do
     --argjson max_pages "$scroll_max_pages" \
     --argjson settle_ms "$scroll_settle_ms" \
     '{direction:"down", format:"png", max_pages:$max_pages, settle_ms:$settle_ms}')"
-  capture_started_ms="$(date +%s%3N)"
+  capture_started_ms="$(epoch_ms)"
   capture_rpc="$(mcp_call capture_scrollable_region "$capture_args" || true)"
-  host_total_ms=$(( $(date +%s%3N) - capture_started_ms ))
+  host_total_ms=$(( $(epoch_ms) - capture_started_ms ))
   printf '%s\n' "$capture_rpc" > "$out_dir/$safe_route.capture_scrollable_region.rpc.json"
   if ! printf '%s\n' "$capture_rpc" | decode_tool_json > "$out_dir/$safe_route.capture_scrollable_region.json" 2>"$out_dir/$safe_route.capture_scrollable_region.decode.err"; then
     printf '%s\tcapture_failed\t0\t\t\t%s\t\t\t\t\n' "$route" "$host_total_ms" >> "$out_dir/results.tsv"
@@ -343,8 +400,11 @@ for route in "${routes[@]}"; do
     "$(jq -r '.timing.settleMs // empty' "$out_dir/$safe_route.capture_scrollable_region.json")" >> "$out_dir/results.tsv"
 done
 
-if command -v montage >/dev/null 2>&1 && compgen -G "$out_dir/*.png" >/dev/null; then
-  mapfile -t png_files < <(find "$out_dir" -maxdepth 1 -type f -name '*.png' | sort)
+if (( contact_sheet_max_images > 0 )) && command -v montage >/dev/null 2>&1 && compgen -G "$out_dir/*.png" >/dev/null; then
+  png_files=()
+  while IFS= read -r png_file; do
+    png_files+=("$png_file")
+  done < <(find "$out_dir" -maxdepth 1 -type f -name '*.png' | sort)
   if [[ ${#png_files[@]} -le "$contact_sheet_max_images" ]]; then
     montage "${png_files[@]}" \
       -thumbnail 240x520 \
@@ -362,7 +422,7 @@ if command -v montage >/dev/null 2>&1 && compgen -G "$out_dir/*.png" >/dev/null;
 fi
 
 trap - EXIT
-finish_debug_session
+finish_capture
 
 echo "$out_dir"
 cat "$out_dir/results.tsv"

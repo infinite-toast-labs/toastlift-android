@@ -179,6 +179,24 @@ Use staging screenshots to review the Play surface and to refresh the public
 site's screenshots when a visible production experience changes. The website
 currently stores them in `public/screenshots/`.
 
+For final Google Play uploads from a local Mac, use the host-native dedicated
+AVD targets. They intentionally do not use or modify the container-oriented
+emulator bridge targets:
+
+```bash
+make playstore-screenshots-phone
+make playstore-screenshots-tablets
+```
+
+Each device class captures exactly two production-configured staging routes
+into the committed `play-store/listing/en-US/screenshots/` tree, with fixed
+resolution, density, emulator port, locale/time zone, disabled animations,
+file-size checks, and alt-text metadata. Raw AppReveal responses and logs remain
+under ignored `artifacts/playstore/`.
+The polished default stops each dedicated AVD after capture. During visual
+iteration, set `PLAYSTORE_KEEP_EMULATOR=1` to reuse the already-booted AVD and
+avoid repeated cold boots.
+
 ### Produce the Play artifact
 
 Prefer the manually approved **Promote production AAB** GitHub workflow after

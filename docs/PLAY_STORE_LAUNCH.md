@@ -12,6 +12,26 @@ The production feature surface is in `app/src/main/assets/feature-config.product
 The debug version uses `app/src/debug/assets/feature-config.debug.json` and deliberately retains the full app.
 Use `make mcp-stage-screens-all` to capture the production-configured staging surface on the emulator; it does not change the Play release's permissions or dependencies.
 
+For upload-ready screenshots from a local Mac with Android Studio installed,
+use the dedicated Play AVD workflow instead of the sandbox bridge:
+
+```bash
+make playstore-screenshots-phone
+make playstore-screenshots-tablets
+```
+
+The targets build the production-configured staging APK, cold-boot dedicated
+API 36.1 AVDs with fixed display geometry, capture exactly two deterministic
+AppReveal routes, validate Play-compatible JPEGs under the committed
+`play-store/listing/en-US/screenshots/` tree, keep raw logs under ignored
+`artifacts/playstore/`, and stop the AVDs. While tuning a capture, keep the
+dedicated AVDs warm:
+
+```bash
+PLAYSTORE_KEEP_EMULATOR=1 make playstore-screenshots-phone
+PLAYSTORE_KEEP_EMULATOR=1 make playstore-screenshots-tablets
+```
+
 ## Signing
 
 The preferred path is the manually approved **Promote production AAB** GitHub

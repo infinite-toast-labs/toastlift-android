@@ -18,6 +18,11 @@ ADB_SERIAL ?= emulator-5560
 DEVICE_SERIAL ?=
 SCREEN_KEY ?=
 MCP_PHONE_STARTUP_WAIT ?= 10
+PLAYSTORE_ANDROID_SDK_ROOT ?= $(if $(ANDROID_SDK_ROOT),$(ANDROID_SDK_ROOT),$(if $(ANDROID_HOME),$(ANDROID_HOME),$(HOME)/Library/Android/sdk))
+PLAYSTORE_JAVA_HOME ?= /Applications/Android Studio.app/Contents/jbr/Contents/Home
+PLAYSTORE_OUTPUT_ROOT ?= play-store/listing/en-US/screenshots
+PLAYSTORE_WORK_ROOT ?= artifacts/playstore
+PLAYSTORE_KEEP_EMULATOR ?= 0
 export ANDROID_ADB_HOST := $(ADB_HOST)
 export ANDROID_ADB_PORT := $(ADB_PORT)
 export ANDROID_ADB_SERIAL := $(ADB_SERIAL)
@@ -31,7 +36,9 @@ EMULATOR_ADB := android-emulator-adb
 	install-device-debug-no-build install-device-stage install-device-stage-no-build sync-device-custom-exercises live-ai-smoke-test \
 	install-stage-appreveal mcp-screens-regular mcp-screens-sheets mcp-screens-all mcp-stage-screens-all mcp-phone-screens-all \
 	mcp-full-scroll-regular mcp-full-scroll-sheets mcp-full-scroll-all mcp-full-scroll-screen \
-	mcp-phone-full-scroll-all mcp-phone-full-scroll-screen
+	mcp-phone-full-scroll-all mcp-phone-full-scroll-screen playstore-build-stage \
+	playstore-screenshots-phone playstore-screenshots-tablet-7 playstore-screenshots-tablet-10 \
+	playstore-screenshots-tablets playstore-screenshots-all
 
 help:
 	@echo "Targets:"
@@ -65,6 +72,9 @@ help:
 	@echo "  make mcp-phone-screens-all       - Capture regular screens and bottom sheets from \$$DEVICE_SERIAL or the first physical adb device"
 	@echo "  make mcp-phone-full-scroll-all   - Full-scroll capture regular screens and bottom sheets from \$$DEVICE_SERIAL or the first physical adb device"
 	@echo "  make mcp-phone-full-scroll-screen SCREEN_KEY=<key> - Full-scroll capture one AppReveal screen or bottom sheet from \$$DEVICE_SERIAL or the first physical adb device"
+	@echo "  make playstore-screenshots-phone  - Capture exactly two Play phone screenshots on a dedicated local Mac AVD"
+	@echo "  make playstore-screenshots-tablets - Capture exactly two screenshots for each Play tablet class on local Mac AVDs"
+	@echo "    PLAYSTORE_KEEP_EMULATOR=1       - Keep dedicated Play AVDs running while iterating"
 	@echo "  make install-device-debug         - Build and install debug APK on \$$DEVICE_SERIAL or the first physical adb device"
 	@echo "  make install-device-debug-no-build - Install existing debug APK on \$$DEVICE_SERIAL or the first physical adb device"
 	@echo "  make install-device-stage         - Build and install production-configured staging APK on a physical device"
@@ -247,6 +257,72 @@ mcp-stage-screens-all: install-stage-appreveal
 		--serial "$(ADB_SERIAL)" \
 		--app-id "$(STAGE_APP_ID)" \
 		--activity "$(STAGE_MAIN_ACTIVITY)"
+
+playstore-build-stage: prepare-appreveal
+	@set -euo pipefail; \
+	if [[ ! -x "$(PLAYSTORE_JAVA_HOME)/bin/java" ]]; then \
+		echo "Android Studio JBR not found at $(PLAYSTORE_JAVA_HOME)." >&2; \
+		echo "Set PLAYSTORE_JAVA_HOME to a supported JDK 17 or 21 and retry." >&2; \
+		exit 1; \
+	fi; \
+	if [[ ! -d "$(PLAYSTORE_ANDROID_SDK_ROOT)" ]]; then \
+		echo "Android SDK not found at $(PLAYSTORE_ANDROID_SDK_ROOT)." >&2; \
+		echo "Set PLAYSTORE_ANDROID_SDK_ROOT and retry." >&2; \
+		exit 1; \
+	fi; \
+	JAVA_HOME="$(PLAYSTORE_JAVA_HOME)" \
+	ANDROID_HOME="$(PLAYSTORE_ANDROID_SDK_ROOT)" \
+	ANDROID_SDK_ROOT="$(PLAYSTORE_ANDROID_SDK_ROOT)" \
+	$(GRADLE) assembleStaging
+
+playstore-screenshots-phone: playstore-build-stage
+	ANDROID_SDK_ROOT="$(PLAYSTORE_ANDROID_SDK_ROOT)" \
+	PLAYSTORE_KEEP_EMULATOR="$(PLAYSTORE_KEEP_EMULATOR)" \
+		scripts/capture_playstore_screenshots.sh \
+		--device phone \
+		--out-root "$(PLAYSTORE_OUTPUT_ROOT)" \
+		--work-root "$(PLAYSTORE_WORK_ROOT)"
+
+playstore-screenshots-tablet-7: playstore-build-stage
+	ANDROID_SDK_ROOT="$(PLAYSTORE_ANDROID_SDK_ROOT)" \
+	PLAYSTORE_KEEP_EMULATOR="$(PLAYSTORE_KEEP_EMULATOR)" \
+		scripts/capture_playstore_screenshots.sh \
+		--device tablet-7 \
+		--out-root "$(PLAYSTORE_OUTPUT_ROOT)" \
+		--work-root "$(PLAYSTORE_WORK_ROOT)"
+
+playstore-screenshots-tablet-10: playstore-build-stage
+	ANDROID_SDK_ROOT="$(PLAYSTORE_ANDROID_SDK_ROOT)" \
+	PLAYSTORE_KEEP_EMULATOR="$(PLAYSTORE_KEEP_EMULATOR)" \
+		scripts/capture_playstore_screenshots.sh \
+		--device tablet-10 \
+		--out-root "$(PLAYSTORE_OUTPUT_ROOT)" \
+		--work-root "$(PLAYSTORE_WORK_ROOT)"
+
+playstore-screenshots-tablets: playstore-build-stage
+	ANDROID_SDK_ROOT="$(PLAYSTORE_ANDROID_SDK_ROOT)" \
+	PLAYSTORE_KEEP_EMULATOR="$(PLAYSTORE_KEEP_EMULATOR)" \
+		scripts/capture_playstore_screenshots.sh \
+		--device tablet-7 \
+		--out-root "$(PLAYSTORE_OUTPUT_ROOT)" \
+		--work-root "$(PLAYSTORE_WORK_ROOT)"
+	ANDROID_SDK_ROOT="$(PLAYSTORE_ANDROID_SDK_ROOT)" \
+	PLAYSTORE_KEEP_EMULATOR="$(PLAYSTORE_KEEP_EMULATOR)" \
+		scripts/capture_playstore_screenshots.sh \
+		--device tablet-10 \
+		--out-root "$(PLAYSTORE_OUTPUT_ROOT)" \
+		--work-root "$(PLAYSTORE_WORK_ROOT)"
+
+playstore-screenshots-all: playstore-build-stage
+	@set -euo pipefail; \
+	for device in phone tablet-7 tablet-10; do \
+		ANDROID_SDK_ROOT="$(PLAYSTORE_ANDROID_SDK_ROOT)" \
+		PLAYSTORE_KEEP_EMULATOR="$(PLAYSTORE_KEEP_EMULATOR)" \
+		scripts/capture_playstore_screenshots.sh \
+			--device "$$device" \
+			--out-root "$(PLAYSTORE_OUTPUT_ROOT)" \
+			--work-root "$(PLAYSTORE_WORK_ROOT)"; \
+	done
 
 mcp-full-scroll-regular: install-debug-appreveal
 	scripts/capture_appreveal_mcp_screens.sh \

@@ -1,0 +1,18 @@
+ToastLift is a focused workout generator that removes planning friction without hiding the signal behind your training.
+
+Generate a session
+Choose a duration, focus, and equipment. ToastLift builds a practical workout you can adjust before you begin.
+
+Train what matters now
+Training freshness uses your recent completed work to show what deserves attention next. Weekly muscle targets help you spot under-served areas without turning every workout into a spreadsheet.
+
+Explore with clarity
+Browse a structured exercise library with filters, favorites, experience levels, movement types, and training history.
+
+Keep momentum visible
+Log completed sets, review workout history, and use the lightweight token system as a record of showing up.
+
+Private by default
+The first release has no accounts, ads, analytics, AI features, cloud sync, or app network access. Workout data stays on your device. Export your data when you want a copy, or delete it from the app.
+
+ToastLift is deliberately small: focused training, useful context, and fewer decisions between you and your next session.
