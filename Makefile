@@ -26,7 +26,7 @@ GRADLE := ./gradlew --no-daemon --console=plain
 ADB := android-adb
 EMULATOR_ADB := android-emulator-adb
 
-.PHONY: help clean test lint check-version build-debug build-stage build-release build-prod bundle-prod verify-release-no-internet verify-play-release assemble apk-paths devices \
+.PHONY: help clean test lint check-version prepare-appreveal test-play-bundle-verifier build-debug build-stage build-release build-prod bundle-prod verify-release-no-internet verify-play-release assemble apk-paths devices \
 	check-emulator check-device install-debug install-debug-appreveal launch-debug launch-stage install-device-debug \
 	install-device-debug-no-build install-device-stage install-device-stage-no-build sync-device-custom-exercises live-ai-smoke-test \
 	install-stage-appreveal mcp-screens-regular mcp-screens-sheets mcp-screens-all mcp-stage-screens-all mcp-phone-screens-all \
@@ -36,6 +36,8 @@ EMULATOR_ADB := android-emulator-adb
 help:
 	@echo "Targets:"
 	@echo "  make check-version                - Validate version.txt and its Android versionCode mapping"
+	@echo "  make prepare-appreveal            - Clone/update the pinned local AppReveal composite build"
+	@echo "  make test-play-bundle-verifier    - Test signed/unsigned Play bundle verification"
 	@echo "  make test                         - Run unit tests"
 	@echo "  make live-ai-smoke-test           - Run live Gemini/OpenCode custom exercise AI smoke tests and print outputs"
 	@echo "  make lint                         - Run Android lint for debug"
@@ -77,6 +79,9 @@ clean:
 
 check-version:
 	scripts/check_version.sh
+
+prepare-appreveal:
+	scripts/prepare_appreveal_checkout.sh
 
 test:
 	$(GRADLE) testDebugUnitTest
@@ -139,17 +144,10 @@ verify-release-no-internet: bundle-prod
 	echo "Release manifest verified: android.permission.INTERNET is absent."
 
 verify-play-release: verify-release-no-internet
-	@set -euo pipefail; \
-	if [[ ! -f "$(RELEASE_AAB)" ]]; then \
-		echo "Release bundle not found at $(RELEASE_AAB)" >&2; \
-		exit 1; \
-	fi; \
-	if ! jarsigner -verify -strict -certs "$(RELEASE_AAB)" >/dev/null 2>&1; then \
-		echo "Play bundle is unsigned or has an invalid signature." >&2; \
-		echo "Set TOASTLIFT_PLAY_UPLOAD_STORE_FILE, TOASTLIFT_PLAY_UPLOAD_STORE_PASSWORD, TOASTLIFT_PLAY_UPLOAD_KEY_ALIAS, and TOASTLIFT_PLAY_UPLOAD_KEY_PASSWORD, then retry." >&2; \
-		exit 1; \
-	fi; \
-	echo "Signed Play bundle verified: $(RELEASE_AAB)"
+	scripts/verify_play_bundle_signature.sh "$(RELEASE_AAB)"
+
+test-play-bundle-verifier:
+	scripts/test_verify_play_bundle_signature.sh
 
 assemble: build-debug build-release
 

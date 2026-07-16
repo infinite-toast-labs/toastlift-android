@@ -7,8 +7,10 @@ signing material, or APK upload.
 
 `ci/android-ci.env` is the non-secret build contract: module/toolchain values,
 the full pinned AppReveal commit, variant task sets, artifacts, and retention.
-Local builds continue to use `../appreveal-toastlift/Android`; CI sets
-`APPREVEAL_COMPOSITE_BUILD` to the checked-out public AppReveal revision.
+Local builds continue to use `../appreveal-toastlift/Android`; run
+`make prepare-appreveal` to clone or update that checkout to the exact commit
+in `ci/android-ci.env`. The target refuses to alter a dirty AppReveal checkout.
+CI sets `APPREVEAL_COMPOSITE_BUILD` to its own checked-out revision.
 
 Release Please only creates or updates a version/changelog PR on `main`. It
 does not create a tag or GitHub Release. The `v1.0.0` entry is the reviewed
@@ -27,6 +29,11 @@ release checks and `make verify-play-release`, creates an immutable `v<SemVer>`
 tag and public GitHub Release, then attaches the signed AAB, checksum, and
 provenance. It does not upload to Play; upload the released AAB to the internal
 track manually and follow the production playbook.
+
+The production workflow is the preferred signing path. Upload the AAB attached
+to its GitHub Release rather than rebuilding the promoted commit locally. A
+local signed build remains available as a recovery path, but it requires the
+Play upload keystore and all four `TOASTLIFT_PLAY_UPLOAD_*` values.
 
 ## One-time administrator setup
 

@@ -25,7 +25,8 @@ val appRevealCompositeBuildDirectory = file(appRevealCompositeBuild)
 
 check(appRevealCompositeBuildDirectory.isDirectory) {
     "AppReveal composite build was not found at ${appRevealCompositeBuildDirectory.path}. " +
-        "Set APPREVEAL_COMPOSITE_BUILD (or -PapprevealCompositeBuild) to its Android directory."
+        "Run `make prepare-appreveal`, or set APPREVEAL_COMPOSITE_BUILD " +
+        "(or -PapprevealCompositeBuild) to its Android directory."
 }
 
 includeBuild(appRevealCompositeBuildDirectory) {

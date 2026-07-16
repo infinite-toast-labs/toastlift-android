@@ -181,9 +181,24 @@ currently stores them in `public/screenshots/`.
 
 ### Produce the Play artifact
 
-Set signing values only in the ignored Android-root `.env`, the environment, or
-Gradle properties. Never commit, print, paste into source, or pass signing
-passwords as a command-line argument.
+Prefer the manually approved **Promote production AAB** GitHub workflow after
+the same commit has a successful staging deployment. It restores the Play
+upload signer through AWS OIDC, runs release checks, creates the immutable
+version tag/GitHub Release, attaches the signed AAB/checksum/provenance, and
+removes temporary signing material. It deliberately stops short of Google Play;
+upload that released AAB to the internal track manually.
+
+For a local recovery build, prepare the pinned AppReveal checkout first:
+
+```bash
+make prepare-appreveal
+```
+
+Use a standard JDK 17 or 21 and configure the Android SDK through
+`ANDROID_HOME`, `ANDROID_SDK_ROOT`, or ignored `local.properties`. Then set
+signing values only in the ignored Android-root `.env`, the environment, or
+Gradle properties. Never commit, print, paste into source, or pass real signing
+passwords as command-line arguments.
 
 ```bash
 export TOASTLIFT_PLAY_UPLOAD_STORE_FILE=/absolute/path/to/toastlift-upload.keystore
@@ -204,8 +219,10 @@ app/build/outputs/bundle/release/app-release.aab
 
 `make build-release` alone can produce an unsigned release APK if signing is
 not configured; it is not the Play upload artifact. Always use
-`make verify-play-release` as the final artifact gate. It verifies both the
-signed AAB and that the merged release manifest has no `INTERNET` permission.
+`make verify-play-release` as the final local artifact gate. It requires a real
+JAR signature block, rejects unsigned or partially unsigned bundles, accepts a
+valid self-signed Play upload certificate, and verifies that the merged release
+manifest has no `INTERNET` permission.
 
 ## Signing-material backup
 
@@ -277,9 +294,10 @@ repository.
 6. **Capture visual evidence.** Run the staging AppReveal capture, inspect the
    generated reports/contact sheet, and update website screenshots if the public
    product page would otherwise be misleading.
-7. **Build the signed bundle.** Run `make verify-play-release`. Record the
-   artifact checksum/version outside the repository if desired; never record
-   signing passwords.
+7. **Build the signed bundle.** Prefer **Promote production AAB** for the staged
+   commit and use the AAB/checksum/provenance attached to its immutable GitHub
+   Release. For local recovery, run `make prepare-appreveal` followed by
+   `make verify-play-release`. Never record signing passwords.
 8. **Complete Play Console.** Use `docs/PLAY_STORE_LAUNCH.md`: privacy policy
    URL, Data safety, content rating, ads declaration, listing metadata, and
    screenshots. Upload the signed AAB to an internal testing track first.

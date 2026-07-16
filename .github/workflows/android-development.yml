@@ -38,12 +38,14 @@ jobs:
         run: |
           set -euo pipefail
           test ! -e .env
-          env | grep -q '^TOASTLIFT_\(RELEASE\|STAGING\)_' && {
+          env | grep -q '^TOASTLIFT_\(PLAY_UPLOAD\|RELEASE\|STAGING\)_' && {
             echo "Development CI must not receive signing configuration." >&2
             exit 1
           } || true
       - name: Validate version source
         run: make check-version
+      - name: Test Play bundle signature verifier
+        run: make test-play-bundle-verifier
       - name: Build and test Android development variant
         env:
           TOASTLIFT_BUILD_LABEL: ${{ inputs.build_label }}

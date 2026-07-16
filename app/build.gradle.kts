@@ -22,9 +22,12 @@ fun escapeBuildConfig(value: String): String = value.replace("\\", "\\\\").repla
 fun gradlePropertyOrEnv(name: String): String =
     providers.gradleProperty(name).orNull ?: System.getenv(name).orEmpty()
 
-fun playUploadPropertyOrEnv(suffix: String): String =
-    gradlePropertyOrEnv("TOASTLIFT_PLAY_UPLOAD_$suffix")
-        .ifBlank { gradlePropertyOrEnv("TOASTLIFT_RELEASE_$suffix") }
+fun signingPropertyEnvOrDotEnv(name: String, dotEnv: Map<String, String>): String =
+    gradlePropertyOrEnv(name).ifBlank { dotEnv[name].orEmpty() }
+
+fun playUploadPropertyEnvOrDotEnv(suffix: String, dotEnv: Map<String, String>): String =
+    signingPropertyEnvOrDotEnv("TOASTLIFT_PLAY_UPLOAD_$suffix", dotEnv)
+        .ifBlank { signingPropertyEnvOrDotEnv("TOASTLIFT_RELEASE_$suffix", dotEnv) }
 
 data class SemanticVersion(
     val major: Int,
@@ -69,10 +72,10 @@ val sourceVersion = readSemanticVersion(rootProject.projectDir)
 val sourceVersionName = rootProject.file("version.txt").readText().trim()
 val buildLabel = gradlePropertyOrEnv("TOASTLIFT_BUILD_LABEL")
     .ifBlank { System.getenv("GITHUB_SHA")?.take(12).orEmpty().ifBlank { "local" } }
-val stagingStoreFile = gradlePropertyOrEnv("TOASTLIFT_STAGING_STORE_FILE")
-val stagingStorePassword = gradlePropertyOrEnv("TOASTLIFT_STAGING_STORE_PASSWORD")
-val stagingKeyAlias = gradlePropertyOrEnv("TOASTLIFT_STAGING_KEY_ALIAS")
-val stagingKeyPassword = gradlePropertyOrEnv("TOASTLIFT_STAGING_KEY_PASSWORD")
+val stagingStoreFile = signingPropertyEnvOrDotEnv("TOASTLIFT_STAGING_STORE_FILE", dotEnv)
+val stagingStorePassword = signingPropertyEnvOrDotEnv("TOASTLIFT_STAGING_STORE_PASSWORD", dotEnv)
+val stagingKeyAlias = signingPropertyEnvOrDotEnv("TOASTLIFT_STAGING_KEY_ALIAS", dotEnv)
+val stagingKeyPassword = signingPropertyEnvOrDotEnv("TOASTLIFT_STAGING_KEY_PASSWORD", dotEnv)
 val hasStagingSigning = listOf(
     stagingStoreFile,
     stagingStorePassword,
@@ -81,10 +84,10 @@ val hasStagingSigning = listOf(
 ).all(String::isNotBlank)
 // This is the Play upload key. Google Play App Signing owns the distinct app-signing key.
 // The RELEASE aliases support existing local environments during migration.
-val playUploadStoreFile = playUploadPropertyOrEnv("STORE_FILE")
-val playUploadStorePassword = playUploadPropertyOrEnv("STORE_PASSWORD")
-val playUploadKeyAlias = playUploadPropertyOrEnv("KEY_ALIAS")
-val playUploadKeyPassword = playUploadPropertyOrEnv("KEY_PASSWORD")
+val playUploadStoreFile = playUploadPropertyEnvOrDotEnv("STORE_FILE", dotEnv)
+val playUploadStorePassword = playUploadPropertyEnvOrDotEnv("STORE_PASSWORD", dotEnv)
+val playUploadKeyAlias = playUploadPropertyEnvOrDotEnv("KEY_ALIAS", dotEnv)
+val playUploadKeyPassword = playUploadPropertyEnvOrDotEnv("KEY_PASSWORD", dotEnv)
 val hasPlayUploadSigning = listOf(
     playUploadStoreFile,
     playUploadStorePassword,
