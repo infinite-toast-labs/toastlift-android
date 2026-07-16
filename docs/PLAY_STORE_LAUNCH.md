@@ -74,6 +74,9 @@ does not declare `android.permission.INTERNET`.
 
 ## Play Console checklist
 
+- Run and retain the scorecard in `docs/INTERNAL_TESTER_RUBRIC.md`: staging must
+  pass first, followed by the Play-delivered internal-testing gate on a physical
+  phone.
 - Host the reviewed privacy policy at a public, non-geofenced URL, then add that URL both to Play Console and the in-app Privacy section.
 - Complete the Data safety form using the behavior of the production artifact. This release keeps workout data on-device and removes network access; re-check every third-party dependency before declaring that no data is collected or shared.
 - Complete the content rating questionnaire and the ads declaration (`No ads` if that remains true).

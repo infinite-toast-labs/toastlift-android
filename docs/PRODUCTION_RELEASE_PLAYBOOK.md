@@ -15,6 +15,7 @@ with them.
 | Android variants, package IDs, version, and signing | `app/build.gradle.kts` |
 | Reproducible build, install, and capture commands | `Makefile` and `AGENTS.md` |
 | Play Console checklist | `docs/PLAY_STORE_LAUNCH.md` |
+| Internal tester scoring and sign-off | `docs/INTERNAL_TESTER_RUBRIC.md` |
 | Privacy-policy wording to review | `docs/PRIVACY_POLICY_TEMPLATE.md` |
 | Public-site source | `../toastlift-support-website` and [its private GitHub repository](https://github.com/infinite-toast-labs/toastlift-support-website) |
 | Optional signing-material backup infrastructure | `iac-secrets/README.md` |
@@ -320,8 +321,9 @@ repository.
    URL, Data safety, content rating, ads declaration, listing metadata, and
    screenshots. Upload the signed AAB to an internal testing track first.
 9. **Test the Play-delivered build.** Install it from the internal track on a
-   real device before a production rollout. This catches differences between a
-   locally installed APK and Play's delivery/signing path.
+   real device before a production rollout. Complete and retain the result from
+   `docs/INTERNAL_TESTER_RUBRIC.md`. This catches differences between a locally
+   installed APK and Play's delivery/signing path.
 10. **Publish in a controlled rollout.** Monitor user support, crashes/ANRs,
     listing feedback, and the contact channel. Do not change policy claims or
     public screenshots independently of the artifact they describe.
