@@ -8,7 +8,7 @@ if [[ ! -f "$bundle" ]]; then
 fi
 
 signature_entries="$(unzip -Z1 "$bundle")"
-if ! rg -q '^META-INF/[^/]+\.(RSA|DSA|EC)$' <<< "$signature_entries"; then
+if ! grep -Eq '^META-INF/[^/]+\.(RSA|DSA|EC)$' <<< "$signature_entries"; then
   echo "Play bundle does not contain a JAR signature block." >&2
   echo "Configure all four TOASTLIFT_PLAY_UPLOAD_* signing values, then rebuild." >&2
   exit 1

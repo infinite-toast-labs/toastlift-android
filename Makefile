@@ -147,7 +147,7 @@ verify-release-no-internet: bundle-prod
 		echo "Merged release manifest not found at $(RELEASE_MERGED_MANIFEST)" >&2; \
 		exit 1; \
 	fi; \
-	if rg -q 'android\.permission\.INTERNET' "$(RELEASE_MERGED_MANIFEST)"; then \
+	if grep -qE 'android\.permission\.INTERNET' "$(RELEASE_MERGED_MANIFEST)"; then \
 		echo "Release manifest unexpectedly declares android.permission.INTERNET." >&2; \
 		exit 1; \
 	fi; \
