@@ -2290,20 +2290,6 @@ private fun TodayScreen(
         onDispose { onFullscreenFlowChange(false) }
     }
 
-    if (!features.home.programs && !features.home.templates) {
-        MinimalTodayScreen(
-            state = state,
-            showTrainingFreshness = features.home.trainingFreshness,
-            showCompletionReceipt = features.home.completionReceipt,
-            onGenerate = onGenerate,
-            onStartFreshnessReEntry = onStartFreshnessReEntry,
-            onOpenFreshness = { showTrainingFreshnessDashboard = true },
-            onViewReceipt = onViewReceipt,
-            onRestoreAbandonedWorkout = onRestoreAbandonedWorkout,
-        )
-        return
-    }
-
     if (showTemplateAddScreen && state.todayEditingTemplateId != null) {
         AddExercisesFlowScreen(
             state = state,
@@ -2353,6 +2339,20 @@ private fun TodayScreen(
             onSortChange = onTrainingFreshnessSortChange,
             onOpenLibraryFreshnessMuscle = onOpenLibraryFreshnessMuscle,
             onBack = { showTrainingFreshnessDashboard = false },
+        )
+        return
+    }
+
+    if (!features.home.programs && !features.home.templates) {
+        MinimalTodayScreen(
+            state = state,
+            showTrainingFreshness = features.home.trainingFreshness,
+            showCompletionReceipt = features.home.completionReceipt,
+            onGenerate = onGenerate,
+            onStartFreshnessReEntry = onStartFreshnessReEntry,
+            onOpenFreshness = { showTrainingFreshnessDashboard = true },
+            onViewReceipt = onViewReceipt,
+            onRestoreAbandonedWorkout = onRestoreAbandonedWorkout,
         )
         return
     }
