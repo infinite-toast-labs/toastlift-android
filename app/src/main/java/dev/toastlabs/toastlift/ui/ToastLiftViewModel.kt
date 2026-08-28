@@ -5965,7 +5965,7 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     fun openDebugSheetSurface(surface: String?) {
-        if (!BuildConfig.DEBUG) return
+        if (!BuildConfig.INTERNAL_TOOLS_ENABLED) return
         when (surface?.lowercase()) {
             "sheet.exercise_detail",
             "sheet.exercise_description",
@@ -5987,7 +5987,7 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     fun openDebugHistorySurface(surface: String?) {
-        if (!BuildConfig.DEBUG) return
+        if (!BuildConfig.INTERNAL_TOOLS_ENABLED) return
         when (surface?.lowercase()) {
             "history.calendar" -> ensureDebugHistoryFixture()
         }
@@ -6368,7 +6368,7 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     fun applyDebugReceiptLaunch(launch: CompletionReceiptDebugLaunch) {
-        if (!BuildConfig.DEBUG) return
+        if (!BuildConfig.INTERNAL_TOOLS_ENABLED) return
         val fixture = buildDebugReceiptFixture(launch)
         uiState = uiState.copy(
             completionReceipt = fixture.receipt,

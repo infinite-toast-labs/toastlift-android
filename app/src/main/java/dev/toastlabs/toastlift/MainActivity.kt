@@ -49,7 +49,7 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         applyDebugLaunchOverrides(intent)
-        if (BuildConfig.DEBUG && intent.hasDebugLaunchOverride()) {
+        if (BuildConfig.INTERNAL_TOOLS_ENABLED && intent.hasDebugLaunchOverride()) {
             viewModel.refreshAll()
         }
     }
@@ -60,7 +60,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun applyDebugLaunchOverrides(launchIntent: Intent?) {
-        if (!BuildConfig.DEBUG || launchIntent == null) {
+        if (!BuildConfig.INTERNAL_TOOLS_ENABLED || launchIntent == null) {
             debugSelectedTab = null
             debugThemePreference = null
             debugReceiptLaunch = null

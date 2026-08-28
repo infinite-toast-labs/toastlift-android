@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!--
+      Zstore distributes the production-v1 product as a debuggable private APK,
+      but ToastLift itself remains offline. Remove both the main permission and
+      any network permissions a future transitive debug dependency might add.
+    -->
+    <uses-permission
+        android:name="android.permission.INTERNET"
+        tools:node="remove" />
+    <uses-permission
+        android:name="android.permission.ACCESS_WIFI_STATE"
+        tools:node="remove" />
+    <uses-permission
+        android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE"
+        tools:node="remove" />
+</manifest>

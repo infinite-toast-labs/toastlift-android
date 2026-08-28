@@ -15,6 +15,7 @@ with them.
 | Android variants, package IDs, version, and signing | `app/build.gradle.kts` |
 | Reproducible build, install, and capture commands | `Makefile` and `AGENTS.md` |
 | Play Console checklist | `docs/PLAY_STORE_LAUNCH.md` |
+| Internal tester scoring and sign-off | `docs/INTERNAL_TESTER_RUBRIC.md` |
 | Privacy-policy wording to review | `docs/PRIVACY_POLICY_TEMPLATE.md` |
 | Public-site source | `../toastlift-support-website` and [its private GitHub repository](https://github.com/infinite-toast-labs/toastlift-support-website) |
 | Optional signing-material backup infrastructure | `iac-secrets/README.md` |
@@ -179,11 +180,44 @@ Use staging screenshots to review the Play surface and to refresh the public
 site's screenshots when a visible production experience changes. The website
 currently stores them in `public/screenshots/`.
 
+For final Google Play uploads from a local Mac, use the host-native dedicated
+AVD targets. They intentionally do not use or modify the container-oriented
+emulator bridge targets:
+
+```bash
+make playstore-screenshots-phone
+make playstore-screenshots-tablets
+```
+
+Each device class captures exactly two production-configured staging routes
+into the committed `play-store/listing/en-US/screenshots/` tree, with fixed
+resolution, density, emulator port, locale/time zone, disabled animations,
+file-size checks, and alt-text metadata. Raw AppReveal responses and logs remain
+under ignored `artifacts/playstore/`.
+The polished default stops each dedicated AVD after capture. During visual
+iteration, set `PLAYSTORE_KEEP_EMULATOR=1` to reuse the already-booted AVD and
+avoid repeated cold boots.
+
 ### Produce the Play artifact
 
-Set signing values only in the ignored Android-root `.env`, the environment, or
-Gradle properties. Never commit, print, paste into source, or pass signing
-passwords as a command-line argument.
+Prefer the manually approved **Promote production AAB** GitHub workflow after
+the same commit has a successful staging deployment. It restores the Play
+upload signer through AWS OIDC, runs release checks, creates the immutable
+version tag/GitHub Release, attaches the signed AAB/checksum/provenance, and
+removes temporary signing material. It deliberately stops short of Google Play;
+upload that released AAB to the internal track manually.
+
+For a local recovery build, prepare the pinned AppReveal checkout first:
+
+```bash
+make prepare-appreveal
+```
+
+Use a standard JDK 17 or 21 and configure the Android SDK through
+`ANDROID_HOME`, `ANDROID_SDK_ROOT`, or ignored `local.properties`. Then set
+signing values only in the ignored Android-root `.env`, the environment, or
+Gradle properties. Never commit, print, paste into source, or pass real signing
+passwords as command-line arguments.
 
 ```bash
 export TOASTLIFT_PLAY_UPLOAD_STORE_FILE=/absolute/path/to/toastlift-upload.keystore
@@ -204,8 +238,10 @@ app/build/outputs/bundle/release/app-release.aab
 
 `make build-release` alone can produce an unsigned release APK if signing is
 not configured; it is not the Play upload artifact. Always use
-`make verify-play-release` as the final artifact gate. It verifies both the
-signed AAB and that the merged release manifest has no `INTERNET` permission.
+`make verify-play-release` as the final local artifact gate. It requires a real
+JAR signature block, rejects unsigned or partially unsigned bundles, accepts a
+valid self-signed Play upload certificate, and verifies that the merged release
+manifest has no `INTERNET` permission.
 
 ## Signing-material backup
 
@@ -277,15 +313,17 @@ repository.
 6. **Capture visual evidence.** Run the staging AppReveal capture, inspect the
    generated reports/contact sheet, and update website screenshots if the public
    product page would otherwise be misleading.
-7. **Build the signed bundle.** Run `make verify-play-release`. Record the
-   artifact checksum/version outside the repository if desired; never record
-   signing passwords.
+7. **Build the signed bundle.** Prefer **Promote production AAB** for the staged
+   commit and use the AAB/checksum/provenance attached to its immutable GitHub
+   Release. For local recovery, run `make prepare-appreveal` followed by
+   `make verify-play-release`. Never record signing passwords.
 8. **Complete Play Console.** Use `docs/PLAY_STORE_LAUNCH.md`: privacy policy
    URL, Data safety, content rating, ads declaration, listing metadata, and
    screenshots. Upload the signed AAB to an internal testing track first.
 9. **Test the Play-delivered build.** Install it from the internal track on a
-   real device before a production rollout. This catches differences between a
-   locally installed APK and Play's delivery/signing path.
+   real device before a production rollout. Complete and retain the result from
+   `docs/INTERNAL_TESTER_RUBRIC.md`. This catches differences between a locally
+   installed APK and Play's delivery/signing path.
 10. **Publish in a controlled rollout.** Monitor user support, crashes/ANRs,
     listing feedback, and the contact channel. Do not change policy claims or
     public screenshots independently of the artifact they describe.

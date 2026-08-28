@@ -8,6 +8,7 @@ DEBUG_APK := app/build/outputs/apk/debug/app-debug.apk
 STAGE_APK := app/build/outputs/apk/staging/app-staging.apk
 RELEASE_APK := app/build/outputs/apk/release/app-release-unsigned.apk
 RELEASE_AAB := app/build/outputs/bundle/release/app-release.aab
+ZSTORE_APK := app/build/outputs/apk/zstore/app-zstore-unsigned.apk
 RELEASE_MERGED_MANIFEST := app/build/intermediates/merged_manifests/release/processReleaseManifest/AndroidManifest.xml
 LIVE_AI_SMOKE_TEST_REPORT := app/build/test-results/testDebugUnitTest/TEST-dev.toastlabs.toastlift.data.ExerciseMetadataGeneratorTest.xml
 LIVE_AI_SEARCH_SMOKE_TEST_REPORT := app/build/test-results/testDebugUnitTest/TEST-dev.toastlabs.toastlift.data.ExerciseAiSearchServiceTest.xml
@@ -18,6 +19,11 @@ ADB_SERIAL ?= emulator-5560
 DEVICE_SERIAL ?=
 SCREEN_KEY ?=
 MCP_PHONE_STARTUP_WAIT ?= 10
+PLAYSTORE_ANDROID_SDK_ROOT ?= $(if $(ANDROID_SDK_ROOT),$(ANDROID_SDK_ROOT),$(if $(ANDROID_HOME),$(ANDROID_HOME),$(HOME)/Library/Android/sdk))
+PLAYSTORE_JAVA_HOME ?= /Applications/Android Studio.app/Contents/jbr/Contents/Home
+PLAYSTORE_OUTPUT_ROOT ?= play-store/listing/en-US/screenshots
+PLAYSTORE_WORK_ROOT ?= artifacts/playstore
+PLAYSTORE_KEEP_EMULATOR ?= 0
 export ANDROID_ADB_HOST := $(ADB_HOST)
 export ANDROID_ADB_PORT := $(ADB_PORT)
 export ANDROID_ADB_SERIAL := $(ADB_SERIAL)
@@ -26,22 +32,28 @@ GRADLE := ./gradlew --no-daemon --console=plain
 ADB := android-adb
 EMULATOR_ADB := android-emulator-adb
 
-.PHONY: help clean test lint check-version build-debug build-stage build-release build-prod bundle-prod verify-release-no-internet verify-play-release assemble apk-paths devices \
+.PHONY: help clean test lint check-version prepare-appreveal test-play-bundle-verifier build-debug build-stage build-release build-zstore verify-zstore-candidate build-prod bundle-prod verify-release-no-internet verify-play-release assemble apk-paths devices \
 	check-emulator check-device install-debug install-debug-appreveal launch-debug launch-stage install-device-debug \
 	install-device-debug-no-build install-device-stage install-device-stage-no-build sync-device-custom-exercises live-ai-smoke-test \
 	install-stage-appreveal mcp-screens-regular mcp-screens-sheets mcp-screens-all mcp-stage-screens-all mcp-phone-screens-all \
 	mcp-full-scroll-regular mcp-full-scroll-sheets mcp-full-scroll-all mcp-full-scroll-screen \
-	mcp-phone-full-scroll-all mcp-phone-full-scroll-screen
+	mcp-phone-full-scroll-all mcp-phone-full-scroll-screen playstore-build-stage \
+	playstore-screenshots-phone playstore-screenshots-tablet-7 playstore-screenshots-tablet-10 \
+	playstore-screenshots-tablets playstore-screenshots-all
 
 help:
 	@echo "Targets:"
 	@echo "  make check-version                - Validate version.txt and its Android versionCode mapping"
+	@echo "  make prepare-appreveal            - Clone/update the pinned local AppReveal composite build"
+	@echo "  make test-play-bundle-verifier    - Test signed/unsigned Play bundle verification"
 	@echo "  make test                         - Run unit tests"
 	@echo "  make live-ai-smoke-test           - Run live Gemini/OpenCode custom exercise AI smoke tests and print outputs"
 	@echo "  make lint                         - Run Android lint for debug"
 	@echo "  make build-debug                  - Build debug APK"
 	@echo "  make build-stage                  - Build production-configured, debug-signed staging APK"
 	@echo "  make build-release                - Build unsigned release APK"
+	@echo "  make build-zstore                 - Build the unsigned, production-surface Zstore APK"
+	@echo "  make verify-zstore-candidate      - Build and verify the secret-free Zstore candidate"
 	@echo "  make build-prod                   - Build release APK; signs it when TOASTLIFT_PLAY_UPLOAD_* values are configured"
 	@echo "  make bundle-prod                  - Build Play Store Android App Bundle"
 	@echo "  make verify-release-no-internet   - Fail if the Play release manifest declares INTERNET"
@@ -63,6 +75,9 @@ help:
 	@echo "  make mcp-phone-screens-all       - Capture regular screens and bottom sheets from \$$DEVICE_SERIAL or the first physical adb device"
 	@echo "  make mcp-phone-full-scroll-all   - Full-scroll capture regular screens and bottom sheets from \$$DEVICE_SERIAL or the first physical adb device"
 	@echo "  make mcp-phone-full-scroll-screen SCREEN_KEY=<key> - Full-scroll capture one AppReveal screen or bottom sheet from \$$DEVICE_SERIAL or the first physical adb device"
+	@echo "  make playstore-screenshots-phone  - Capture exactly two Play phone screenshots on a dedicated local Mac AVD"
+	@echo "  make playstore-screenshots-tablets - Capture exactly two screenshots for each Play tablet class on local Mac AVDs"
+	@echo "    PLAYSTORE_KEEP_EMULATOR=1       - Keep dedicated Play AVDs running while iterating"
 	@echo "  make install-device-debug         - Build and install debug APK on \$$DEVICE_SERIAL or the first physical adb device"
 	@echo "  make install-device-debug-no-build - Install existing debug APK on \$$DEVICE_SERIAL or the first physical adb device"
 	@echo "  make install-device-stage         - Build and install production-configured staging APK on a physical device"
@@ -77,6 +92,9 @@ clean:
 
 check-version:
 	scripts/check_version.sh
+
+prepare-appreveal:
+	scripts/prepare_appreveal_checkout.sh
 
 test:
 	$(GRADLE) testDebugUnitTest
@@ -121,6 +139,13 @@ build-stage:
 build-release:
 	$(GRADLE) assembleRelease
 
+build-zstore:
+	$(GRADLE) testZstoreUnitTest lintZstore assembleZstore
+
+verify-zstore-candidate: build-zstore
+	scripts/verify_zstore_dependencies.sh
+	scripts/verify_zstore_candidate.sh "$(ZSTORE_APK)"
+
 build-prod: build-release
 
 bundle-prod:
@@ -132,24 +157,17 @@ verify-release-no-internet: bundle-prod
 		echo "Merged release manifest not found at $(RELEASE_MERGED_MANIFEST)" >&2; \
 		exit 1; \
 	fi; \
-	if rg -q 'android\.permission\.INTERNET' "$(RELEASE_MERGED_MANIFEST)"; then \
+	if grep -qE 'android\.permission\.INTERNET' "$(RELEASE_MERGED_MANIFEST)"; then \
 		echo "Release manifest unexpectedly declares android.permission.INTERNET." >&2; \
 		exit 1; \
 	fi; \
 	echo "Release manifest verified: android.permission.INTERNET is absent."
 
 verify-play-release: verify-release-no-internet
-	@set -euo pipefail; \
-	if [[ ! -f "$(RELEASE_AAB)" ]]; then \
-		echo "Release bundle not found at $(RELEASE_AAB)" >&2; \
-		exit 1; \
-	fi; \
-	if ! jarsigner -verify -strict -certs "$(RELEASE_AAB)" >/dev/null 2>&1; then \
-		echo "Play bundle is unsigned or has an invalid signature." >&2; \
-		echo "Set TOASTLIFT_PLAY_UPLOAD_STORE_FILE, TOASTLIFT_PLAY_UPLOAD_STORE_PASSWORD, TOASTLIFT_PLAY_UPLOAD_KEY_ALIAS, and TOASTLIFT_PLAY_UPLOAD_KEY_PASSWORD, then retry." >&2; \
-		exit 1; \
-	fi; \
-	echo "Signed Play bundle verified: $(RELEASE_AAB)"
+	scripts/verify_play_bundle_signature.sh "$(RELEASE_AAB)"
+
+test-play-bundle-verifier:
+	scripts/test_verify_play_bundle_signature.sh
 
 assemble: build-debug build-release
 
@@ -158,6 +176,7 @@ apk-paths:
 	@echo "Stage APK:   $(STAGE_APK)"
 	@echo "Release APK: $(RELEASE_APK)"
 	@echo "Release AAB: $(RELEASE_AAB)"
+	@echo "Zstore APK:  $(ZSTORE_APK)"
 
 devices:
 	$(ADB) devices -l
@@ -249,6 +268,72 @@ mcp-stage-screens-all: install-stage-appreveal
 		--serial "$(ADB_SERIAL)" \
 		--app-id "$(STAGE_APP_ID)" \
 		--activity "$(STAGE_MAIN_ACTIVITY)"
+
+playstore-build-stage: prepare-appreveal
+	@set -euo pipefail; \
+	if [[ ! -x "$(PLAYSTORE_JAVA_HOME)/bin/java" ]]; then \
+		echo "Android Studio JBR not found at $(PLAYSTORE_JAVA_HOME)." >&2; \
+		echo "Set PLAYSTORE_JAVA_HOME to a supported JDK 17 or 21 and retry." >&2; \
+		exit 1; \
+	fi; \
+	if [[ ! -d "$(PLAYSTORE_ANDROID_SDK_ROOT)" ]]; then \
+		echo "Android SDK not found at $(PLAYSTORE_ANDROID_SDK_ROOT)." >&2; \
+		echo "Set PLAYSTORE_ANDROID_SDK_ROOT and retry." >&2; \
+		exit 1; \
+	fi; \
+	JAVA_HOME="$(PLAYSTORE_JAVA_HOME)" \
+	ANDROID_HOME="$(PLAYSTORE_ANDROID_SDK_ROOT)" \
+	ANDROID_SDK_ROOT="$(PLAYSTORE_ANDROID_SDK_ROOT)" \
+	$(GRADLE) assembleStaging
+
+playstore-screenshots-phone: playstore-build-stage
+	ANDROID_SDK_ROOT="$(PLAYSTORE_ANDROID_SDK_ROOT)" \
+	PLAYSTORE_KEEP_EMULATOR="$(PLAYSTORE_KEEP_EMULATOR)" \
+		scripts/capture_playstore_screenshots.sh \
+		--device phone \
+		--out-root "$(PLAYSTORE_OUTPUT_ROOT)" \
+		--work-root "$(PLAYSTORE_WORK_ROOT)"
+
+playstore-screenshots-tablet-7: playstore-build-stage
+	ANDROID_SDK_ROOT="$(PLAYSTORE_ANDROID_SDK_ROOT)" \
+	PLAYSTORE_KEEP_EMULATOR="$(PLAYSTORE_KEEP_EMULATOR)" \
+		scripts/capture_playstore_screenshots.sh \
+		--device tablet-7 \
+		--out-root "$(PLAYSTORE_OUTPUT_ROOT)" \
+		--work-root "$(PLAYSTORE_WORK_ROOT)"
+
+playstore-screenshots-tablet-10: playstore-build-stage
+	ANDROID_SDK_ROOT="$(PLAYSTORE_ANDROID_SDK_ROOT)" \
+	PLAYSTORE_KEEP_EMULATOR="$(PLAYSTORE_KEEP_EMULATOR)" \
+		scripts/capture_playstore_screenshots.sh \
+		--device tablet-10 \
+		--out-root "$(PLAYSTORE_OUTPUT_ROOT)" \
+		--work-root "$(PLAYSTORE_WORK_ROOT)"
+
+playstore-screenshots-tablets: playstore-build-stage
+	ANDROID_SDK_ROOT="$(PLAYSTORE_ANDROID_SDK_ROOT)" \
+	PLAYSTORE_KEEP_EMULATOR="$(PLAYSTORE_KEEP_EMULATOR)" \
+		scripts/capture_playstore_screenshots.sh \
+		--device tablet-7 \
+		--out-root "$(PLAYSTORE_OUTPUT_ROOT)" \
+		--work-root "$(PLAYSTORE_WORK_ROOT)"
+	ANDROID_SDK_ROOT="$(PLAYSTORE_ANDROID_SDK_ROOT)" \
+	PLAYSTORE_KEEP_EMULATOR="$(PLAYSTORE_KEEP_EMULATOR)" \
+		scripts/capture_playstore_screenshots.sh \
+		--device tablet-10 \
+		--out-root "$(PLAYSTORE_OUTPUT_ROOT)" \
+		--work-root "$(PLAYSTORE_WORK_ROOT)"
+
+playstore-screenshots-all: playstore-build-stage
+	@set -euo pipefail; \
+	for device in phone tablet-7 tablet-10; do \
+		ANDROID_SDK_ROOT="$(PLAYSTORE_ANDROID_SDK_ROOT)" \
+		PLAYSTORE_KEEP_EMULATOR="$(PLAYSTORE_KEEP_EMULATOR)" \
+		scripts/capture_playstore_screenshots.sh \
+			--device "$$device" \
+			--out-root "$(PLAYSTORE_OUTPUT_ROOT)" \
+			--work-root "$(PLAYSTORE_WORK_ROOT)"; \
+	done
 
 mcp-full-scroll-regular: install-debug-appreveal
 	scripts/capture_appreveal_mcp_screens.sh \

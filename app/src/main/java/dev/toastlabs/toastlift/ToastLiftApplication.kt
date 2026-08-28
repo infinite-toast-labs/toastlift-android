@@ -13,10 +13,10 @@ class ToastLiftApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         container = AppContainer(this)
-        // Staging deliberately keeps this debug-only server so its production
-        // feature configuration can be captured and reviewed. Release uses the
-        // no-op AppReveal dependency and never enters this branch.
-        if (BuildConfig.DEBUG) {
+        // Debug and staging deliberately keep this internal server for visual
+        // review. The debuggable Zstore build uses the no-op dependency and is
+        // independently gated off, just like release.
+        if (BuildConfig.INTERNAL_TOOLS_ENABLED) {
             AppReveal.start(this)
             ToastLiftAppRevealBindings.install(this)
         }

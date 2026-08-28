@@ -1,0 +1,10 @@
+Use case: ads-marketing
+Asset type: Google Play feature graphic, final canvas 1024x500
+Primary request: Create a premium abstract marketing illustration for ToastLift, a focused workout generator that helps people train what matters now.
+Scene/backdrop: saturated violet-to-indigo gradient with layered depth; avoid pure black, white, or dark gray as the dominant background.
+Subject: a centered kinetic training path made from luminous neon-lime arcs and modular bars, with subtle electric-blue and emerald freshness signals; suggest strength, direction, recovery, and momentum without literal device frames or UI screenshots.
+Style/medium: polished editorial tech-fitness illustration, crisp geometric forms, tasteful soft 3D depth, energetic but disciplined.
+Composition/framing: very wide 1024x500 layout; keep the focal point and all meaningful content in the center safe area; background texture may extend to edges; generous breathing room; readable at small sizes.
+Color palette: saturated violet and purple, neon lime, electric blue, small emerald accents.
+Constraints: no text, no letters, no app name, no logo, no shield, no device imagery, no human figures, no third-party marks, no store badges, no watermark.
+Avoid: generic stock-fitness photography, dumbbell clip art, busy fine detail, dark gray background, duplicated icon imagery.

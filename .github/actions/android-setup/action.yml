@@ -11,12 +11,18 @@ outputs:
     value: ${{ steps.config.outputs.staging_gradle_tasks }}
   production-gradle-tasks:
     value: ${{ steps.config.outputs.production_gradle_tasks }}
+  zstore-gradle-tasks:
+    value: ${{ steps.config.outputs.zstore_gradle_tasks }}
   debug-apk-path:
     value: ${{ steps.config.outputs.debug_apk_path }}
   staging-apk-path:
     value: ${{ steps.config.outputs.staging_apk_path }}
   release-aab-path:
     value: ${{ steps.config.outputs.release_aab_path }}
+  zstore-apk-path:
+    value: ${{ steps.config.outputs.zstore_apk_path }}
+  zstore-package-name:
+    value: ${{ steps.config.outputs.zstore_package_name }}
   staging-artifact-retention-days:
     value: ${{ steps.config.outputs.staging_artifact_retention_days }}
   production-artifact-retention-days:
@@ -43,8 +49,9 @@ runs:
         required=(
           ANDROID_MODULE JAVA_VERSION ANDROID_COMPILE_SDK ANDROID_BUILD_TOOLS
           APPREVEAL_REPOSITORY APPREVEAL_COMMIT DEBUG_APK_PATH STAGING_APK_PATH
-          RELEASE_AAB_PATH STAGING_ARTIFACT_RETENTION_DAYS PRODUCTION_ARTIFACT_RETENTION_DAYS DEBUG_GRADLE_TASKS
-          STAGING_GRADLE_TASKS PRODUCTION_GRADLE_TASKS
+          RELEASE_AAB_PATH ZSTORE_APK_PATH ZSTORE_PACKAGE_NAME STAGING_ARTIFACT_RETENTION_DAYS
+          PRODUCTION_ARTIFACT_RETENTION_DAYS DEBUG_GRADLE_TASKS
+          STAGING_GRADLE_TASKS PRODUCTION_GRADLE_TASKS ZSTORE_GRADLE_TASKS
         )
         for name in "${required[@]}"; do
           if [[ -z "${!name:-}" ]]; then
@@ -66,11 +73,14 @@ runs:
           echo "debug_apk_path=$DEBUG_APK_PATH"
           echo "staging_apk_path=$STAGING_APK_PATH"
           echo "release_aab_path=$RELEASE_AAB_PATH"
+          echo "zstore_apk_path=$ZSTORE_APK_PATH"
+          echo "zstore_package_name=$ZSTORE_PACKAGE_NAME"
           echo "staging_artifact_retention_days=$STAGING_ARTIFACT_RETENTION_DAYS"
           echo "production_artifact_retention_days=$PRODUCTION_ARTIFACT_RETENTION_DAYS"
           echo "debug_gradle_tasks=$DEBUG_GRADLE_TASKS"
           echo "staging_gradle_tasks=$STAGING_GRADLE_TASKS"
           echo "production_gradle_tasks=$PRODUCTION_GRADLE_TASKS"
+          echo "zstore_gradle_tasks=$ZSTORE_GRADLE_TASKS"
         } >> "$GITHUB_OUTPUT"
 
     - name: Check out pinned AppReveal composite build
