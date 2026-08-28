@@ -200,13 +200,16 @@ internal fun buildDefaultLearningSnapshot(
 internal fun buildReceiptAchievementSnapshot(
     session: ActiveSession,
     workoutTitle: String,
-    completedAtUtc: String,
+    workoutStartedAtUtc: String,
     exerciseHistories: List<ExerciseHistoryDetail>,
 ): CompletionReceiptAchievementSnapshot {
+    val workoutStartedAt = runCatching { Instant.parse(workoutStartedAtUtc) }.getOrNull()
     val chips = buildList {
         exerciseHistories.forEach { history ->
             val currentEntry = history.entries.firstOrNull { entry ->
-                entry.workoutTitle == workoutTitle && entry.completedAtUtc == completedAtUtc
+                entry.workoutTitle == workoutTitle &&
+                    workoutStartedAt != null &&
+                    runCatching { Instant.parse(entry.workoutOccurredAtUtc) }.getOrNull() == workoutStartedAt
             } ?: history.entries.firstOrNull()
             if (currentEntry == null) return@forEach
 
@@ -369,14 +372,13 @@ internal fun selectReceiptReferenceCandidate(
     session: ActiveSession,
     candidates: List<ReceiptReferenceCandidate>,
     now: Instant = Instant.now(),
-    zoneId: ZoneId = ZoneId.systemDefault(),
 ): ReceiptReferenceCandidate? {
     val currentExerciseIds = session.exercises.map { it.exerciseId }.toSet()
     val maxAgeDays = 56L
     return candidates
         .mapNotNull { candidate ->
-            val completedAt = runCatching { Instant.parse(candidate.completedAtUtc) }.getOrNull() ?: return@mapNotNull null
-            val ageDays = Duration.between(completedAt, now).toDays().coerceAtLeast(0)
+            val occurredAt = runCatching { Instant.parse(candidate.workoutOccurredAtUtc) }.getOrNull() ?: return@mapNotNull null
+            val ageDays = Duration.between(occurredAt, now).toDays().coerceAtLeast(0)
             val ageAllowed = ageDays <= maxAgeDays || session.origin.contains("history_reuse", ignoreCase = true)
             if (!ageAllowed) return@mapNotNull null
 
@@ -485,8 +487,8 @@ internal fun buildWeeklyPromiseSnapshot(
     val today = now.atZone(zoneId).toLocalDate()
     val startOfWeek = today.minusDays(today.dayOfWeek.value.toLong() % 7L)
     val completedSessions = history.count { entry ->
-        val completedDate = runCatching { Instant.parse(entry.completedAtUtc).atZone(zoneId).toLocalDate() }.getOrNull()
-        completedDate != null && !completedDate.isBefore(startOfWeek) && !completedDate.isAfter(today)
+        val workoutDate = runCatching { Instant.parse(entry.workoutOccurredAtUtc).atZone(zoneId).toLocalDate() }.getOrNull()
+        workoutDate != null && !workoutDate.isBefore(startOfWeek) && !workoutDate.isAfter(today)
     }
     return WeeklyPromiseSnapshot(
         weekStartLocal = startOfWeek.toString(),
@@ -502,8 +504,8 @@ internal fun buildTodayReceiptRecapState(
 ): TodayReceiptRecapState? {
     val today = now.atZone(zoneId).toLocalDate()
     val todayEntries = history.filter { entry ->
-        val completedDate = runCatching { Instant.parse(entry.completedAtUtc).atZone(zoneId).toLocalDate() }.getOrNull()
-        completedDate == today && entry.completionReceipt != null
+        val workoutDate = runCatching { Instant.parse(entry.workoutOccurredAtUtc).atZone(zoneId).toLocalDate() }.getOrNull()
+        workoutDate == today && entry.completionReceipt != null
     }
     if (todayEntries.isEmpty()) return null
 

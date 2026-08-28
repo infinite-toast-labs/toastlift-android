@@ -46,7 +46,7 @@ internal fun buildFreshnessReEntryState(
 
     val lastWorkoutDate = history
         .mapNotNull { summary ->
-            runCatching { Instant.parse(summary.completedAtUtc).atZone(zoneId).toLocalDate() }.getOrNull()
+            runCatching { Instant.parse(summary.workoutOccurredAtUtc).atZone(zoneId).toLocalDate() }.getOrNull()
         }
         .maxOrNull()
         ?: return null
@@ -173,7 +173,13 @@ internal fun shapeFreshnessReEntryWorkout(
 
 internal fun currentReturnStreak(history: List<HistorySummary>): Int {
     return history
-        .sortedByDescending { it.startedAtUtc.ifBlank { it.completedAtUtc } }
+        .mapNotNull { summary ->
+            runCatching { Instant.parse(summary.workoutOccurredAtUtc) }.getOrNull()?.let { occurredAt ->
+                occurredAt to summary
+            }
+        }
+        .sortedByDescending { (occurredAt, _) -> occurredAt }
+        .map { (_, summary) -> summary }
         .takeWhile { it.origin == FRESHNESS_REENTRY_ORIGIN }
         .size
 }

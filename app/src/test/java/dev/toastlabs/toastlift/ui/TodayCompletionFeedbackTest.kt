@@ -46,6 +46,24 @@ class TodayCompletionFeedbackTest {
     }
 
     @Test
+    fun buildTodayWorkoutCompletionState_doesNotCountStaleStartFinishedToday() {
+        val state = buildTodayWorkoutCompletionState(
+            history = listOf(
+                historySummary(
+                    title = "Forgotten Upper Workout",
+                    startedAtUtc = "2026-03-10T07:30:00Z",
+                    completedAtUtc = "2026-03-20T07:30:00Z",
+                ),
+            ),
+            now = Instant.parse("2026-03-20T18:00:00Z"),
+            zoneId = ZoneId.of("UTC"),
+        )
+
+        assertFalse(state.isCompletedToday)
+        assertEquals(0f, state.progressFraction, 0.0001f)
+    }
+
+    @Test
     fun buildTodayCompletionFeedbackModel_showsBadgeOnlyForBadgeVariant() {
         val model = buildTodayCompletionFeedbackModel(
             variant = TodayCompletionFeedbackVariant.DONE_TODAY_BADGE,
@@ -82,11 +100,13 @@ class TodayCompletionFeedbackTest {
     private fun historySummary(
         title: String,
         completedAtUtc: String,
+        startedAtUtc: String = completedAtUtc,
     ): HistorySummary {
         return HistorySummary(
             id = 1L,
             title = title,
             completedAtUtc = completedAtUtc,
+            startedAtUtc = startedAtUtc,
             durationSeconds = 1800,
             totalVolume = 1200.0,
             exerciseCount = 5,

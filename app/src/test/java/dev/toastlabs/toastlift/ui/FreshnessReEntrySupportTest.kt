@@ -82,6 +82,40 @@ class FreshnessReEntrySupportTest {
     }
 
     @Test
+    fun buildFreshnessReEntryState_usesWorkoutStartForGapWhenFinishedToday() {
+        val now = Instant.parse("2026-06-19T12:00:00Z")
+        val startedAt = "2026-06-09T12:00:00Z"
+        val summary = buildTrainingFreshnessSummary(
+            profile = profile(),
+            rows = listOf(
+                row(
+                    startedAtUtc = startedAt,
+                    completedAtUtc = now.toString(),
+                    exerciseId = 101L,
+                    completedSetCount = 3,
+                ),
+            ),
+            exerciseDetailsById = mapOf(101L to detail(101L, target = "Chest", prime = "Chest")),
+            nowUtc = now,
+            zoneId = ZoneOffset.UTC,
+        )
+
+        val state = requireNotNull(
+            buildFreshnessReEntryState(
+                profile = profile(),
+                history = listOf(history(completedAtUtc = now.toString(), startedAtUtc = startedAt)),
+                trainingFreshness = summary,
+                locationLabel = "Home",
+                nowUtc = now,
+                zoneId = ZoneOffset.UTC,
+            ),
+        )
+
+        assertEquals(10L, state.gapDays)
+        assertEquals(FreshnessReEntryMode.ReEntry, state.mode)
+    }
+
+    @Test
     fun shapeFreshnessReEntryWorkout_marksOriginAndTrimsVolume() {
         val state = FreshnessReEntryState(
             mode = FreshnessReEntryMode.ReEntry,
@@ -134,6 +168,23 @@ class FreshnessReEntrySupportTest {
         assertEquals(2, streak)
     }
 
+    @Test
+    fun currentReturnStreak_fallsBackToCompletionForMalformedImportedStart() {
+        val streak = currentReturnStreak(
+            listOf(
+                history(
+                    completedAtUtc = "2026-06-17T12:00:00Z",
+                    startedAtUtc = "!malformed",
+                    origin = FRESHNESS_REENTRY_ORIGIN,
+                ),
+                history("2026-06-16T12:00:00Z", origin = "generated"),
+                history("2026-06-15T12:00:00Z", origin = FRESHNESS_REENTRY_ORIGIN),
+            ),
+        )
+
+        assertEquals(1, streak)
+    }
+
     private fun profile(): UserProfile {
         return UserProfile(
             goal = "Hypertrophy",
@@ -149,21 +200,31 @@ class FreshnessReEntrySupportTest {
         )
     }
 
-    private fun row(completedAtUtc: String, exerciseId: Long, completedSetCount: Int): WeeklyMuscleTargetWorkoutRow {
+    private fun row(
+        startedAtUtc: String,
+        exerciseId: Long,
+        completedSetCount: Int,
+        completedAtUtc: String = startedAtUtc,
+    ): WeeklyMuscleTargetWorkoutRow {
         return WeeklyMuscleTargetWorkoutRow(
+            startedAtUtc = startedAtUtc,
             completedAtUtc = completedAtUtc,
             exerciseId = exerciseId,
             completedSetCount = completedSetCount,
         )
     }
 
-    private fun history(completedAtUtc: String, origin: String = "generated"): HistorySummary {
+    private fun history(
+        completedAtUtc: String,
+        origin: String = "generated",
+        startedAtUtc: String = completedAtUtc,
+    ): HistorySummary {
         return HistorySummary(
             id = completedAtUtc.hashCode().toLong(),
             title = "Workout",
             origin = origin,
             completedAtUtc = completedAtUtc,
-            startedAtUtc = completedAtUtc,
+            startedAtUtc = startedAtUtc,
             durationSeconds = 1200,
             totalVolume = 1000.0,
             exerciseCount = 2,

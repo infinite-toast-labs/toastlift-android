@@ -77,8 +77,39 @@ class ProgramWeeklyMuscleTargetsTest {
         assertEquals(0.0, summary.overallCompletionRatio, 0.001)
     }
 
-    private fun row(completedAtUtc: String, exerciseId: Long, completedSetCount: Int): WeeklyMuscleTargetWorkoutRow {
+    @Test
+    fun buildWeeklyMuscleTargetSummary_attributesStaleFinishToStartWeek() {
+        val summary = buildWeeklyMuscleTargetSummary(
+            profile = profile(),
+            rows = listOf(
+                row(
+                    startedAtUtc = "2026-03-14T10:00:00Z",
+                    completedAtUtc = "2026-03-20T10:00:00Z",
+                    exerciseId = 101L,
+                    completedSetCount = 4,
+                ),
+            ),
+            exerciseDetailsById = mapOf(
+                101L to detail(exerciseId = 101L, target = "Chest", prime = "Chest"),
+            ),
+            now = LocalDate.of(2026, 3, 20),
+            zoneId = ZoneOffset.UTC,
+            historyLimit = 2,
+        )
+
+        assertEquals(0.0, summary.completedSets, 0.001)
+        assertTrue(summary.history.first().completionRatio > 0.0)
+        assertEquals(0.0, summary.history.last().completionRatio, 0.001)
+    }
+
+    private fun row(
+        startedAtUtc: String,
+        exerciseId: Long,
+        completedSetCount: Int,
+        completedAtUtc: String = startedAtUtc,
+    ): WeeklyMuscleTargetWorkoutRow {
         return WeeklyMuscleTargetWorkoutRow(
+            startedAtUtc = startedAtUtc,
             completedAtUtc = completedAtUtc,
             exerciseId = exerciseId,
             completedSetCount = completedSetCount,

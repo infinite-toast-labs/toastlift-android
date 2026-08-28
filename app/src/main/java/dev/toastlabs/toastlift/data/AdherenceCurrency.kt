@@ -57,7 +57,7 @@ internal data class AdherenceSessionSignal(
 
 internal data class CompletedWorkoutAdherenceSignal(
     val workoutId: Long,
-    val completedAtUtc: String,
+    val occurredAtUtc: String,
     val plannedSetCount: Int,
     val completedSetCount: Int,
 )
@@ -176,8 +176,8 @@ internal fun buildGlobalAdherenceCurrencyTrend(
         completedWorkouts.forEach { workout ->
             add(
                 SequencedAdherenceEvent(
-                    occurredAtUtc = workout.completedAtUtc,
-                    parsedInstant = runCatching { Instant.parse(workout.completedAtUtc) }.getOrNull(),
+                    occurredAtUtc = workout.occurredAtUtc,
+                    parsedInstant = runCatching { Instant.parse(workout.occurredAtUtc) }.getOrNull(),
                     fallbackSequenceNumber = workout.workoutId.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
                     tieBreaker = "workout:${workout.workoutId}",
                     status = SessionStatus.COMPLETED,

@@ -10,13 +10,13 @@ class StrengthScoreTest {
     fun buildStrengthScoreSummary_blendsStrengthVolumeAndRepOnlyWorkIntoSmoothedTrend() {
         val summary = buildStrengthScoreSummary(
             listOf(
-                row(workoutId = 1L, workoutTitle = "Session 1", completedAtUtc = "2026-03-01T12:00:00Z", exerciseId = 10L, reps = 5, weight = 100.0),
-                row(workoutId = 1L, workoutTitle = "Session 1", completedAtUtc = "2026-03-01T12:00:00Z", exerciseId = 10L, reps = 5, weight = 100.0),
-                row(workoutId = 1L, workoutTitle = "Session 1", completedAtUtc = "2026-03-01T12:00:00Z", exerciseId = 10L, reps = 0, weight = 1000.0),
-                row(workoutId = 1L, workoutTitle = "Session 1", completedAtUtc = "2026-03-01T12:00:00Z", exerciseId = 20L, reps = 8, weight = 60.0),
-                row(workoutId = 2L, workoutTitle = "Session 2", completedAtUtc = "2026-03-03T12:00:00Z", exerciseId = 10L, reps = 5, weight = 110.0),
-                row(workoutId = 2L, workoutTitle = "Session 2", completedAtUtc = "2026-03-03T12:00:00Z", exerciseId = 20L, reps = 8, weight = 62.0),
-                row(workoutId = 2L, workoutTitle = "Session 2", completedAtUtc = "2026-03-03T12:00:00Z", exerciseId = 30L, reps = 20, weight = null),
+                row(workoutId = 1L, workoutTitle = "Session 1", workoutOccurredAtUtc = "2026-03-01T12:00:00Z", exerciseId = 10L, reps = 5, weight = 100.0),
+                row(workoutId = 1L, workoutTitle = "Session 1", workoutOccurredAtUtc = "2026-03-01T12:00:00Z", exerciseId = 10L, reps = 5, weight = 100.0),
+                row(workoutId = 1L, workoutTitle = "Session 1", workoutOccurredAtUtc = "2026-03-01T12:00:00Z", exerciseId = 10L, reps = 0, weight = 1000.0),
+                row(workoutId = 1L, workoutTitle = "Session 1", workoutOccurredAtUtc = "2026-03-01T12:00:00Z", exerciseId = 20L, reps = 8, weight = 60.0),
+                row(workoutId = 2L, workoutTitle = "Session 2", workoutOccurredAtUtc = "2026-03-03T12:00:00Z", exerciseId = 10L, reps = 5, weight = 110.0),
+                row(workoutId = 2L, workoutTitle = "Session 2", workoutOccurredAtUtc = "2026-03-03T12:00:00Z", exerciseId = 20L, reps = 8, weight = 62.0),
+                row(workoutId = 2L, workoutTitle = "Session 2", workoutOccurredAtUtc = "2026-03-03T12:00:00Z", exerciseId = 30L, reps = 20, weight = null),
             ),
         )
 
@@ -47,14 +47,14 @@ class StrengthScoreTest {
                 StrengthScorePoint(
                     workoutId = 1L,
                     workoutTitle = "Session 1",
-                    completedAtUtc = "2026-03-01T12:00:00Z",
+                    workoutOccurredAtUtc = "2026-03-01T12:00:00Z",
                     sessionScore = 247,
                     runningScore = 247,
                 ),
                 StrengthScorePoint(
                     workoutId = 2L,
                     workoutTitle = "Session 2",
-                    completedAtUtc = "2026-03-03T12:00:00Z",
+                    workoutOccurredAtUtc = "2026-03-03T12:00:00Z",
                     sessionScore = 264,
                     runningScore = 253,
                 ),
@@ -71,7 +71,7 @@ class StrengthScoreTest {
     private fun row(
         workoutId: Long,
         workoutTitle: String,
-        completedAtUtc: String,
+        workoutOccurredAtUtc: String,
         exerciseId: Long,
         reps: Int?,
         weight: Double?,
@@ -79,7 +79,7 @@ class StrengthScoreTest {
     ) = StrengthScoreSetRow(
         workoutId = workoutId,
         workoutTitle = workoutTitle,
-        completedAtUtc = completedAtUtc,
+        workoutOccurredAtUtc = workoutOccurredAtUtc,
         exerciseId = exerciseId,
         reps = reps,
         weight = weight,

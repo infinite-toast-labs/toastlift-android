@@ -6,6 +6,47 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ExerciseHistoryDetailTest {
+
+    @Test
+    fun resolveWorkoutOccurrenceAtUtc_prefersValidStartAndFallsBackToFinish() {
+        assertEquals(
+            "2026-03-01T12:00:00Z",
+            resolveWorkoutOccurrenceAtUtc(
+                startedAtUtc = "2026-03-01T12:00:00Z",
+                completedAtUtc = "2026-03-11T12:00:00Z",
+            ),
+        )
+        assertEquals(
+            "2026-03-11T12:00:00Z",
+            resolveWorkoutOccurrenceAtUtc(
+                startedAtUtc = "not-a-timestamp",
+                completedAtUtc = "2026-03-11T12:00:00Z",
+            ),
+        )
+    }
+
+    @Test
+    fun buildExerciseHistoryDetail_preservesFinishButAttributesEntryToWorkoutStart() {
+        val detail = buildExerciseHistoryDetail(
+            exerciseId = 42L,
+            fallbackName = "Bench Press",
+            rows = listOf(
+                row(
+                    startedAtUtc = "2026-03-01T12:00:00Z",
+                    completedAtUtc = "2026-03-11T12:00:00Z",
+                    workoutTitle = "Forgotten Upper Workout",
+                    setNumber = 1,
+                    reps = 5,
+                    weight = 100.0,
+                ),
+            ),
+            prOnly = false,
+        )
+
+        val entry = detail.entries.single()
+        assertEquals("2026-03-01T12:00:00Z", entry.workoutOccurredAtUtc)
+        assertEquals("2026-03-11T12:00:00Z", entry.completedAtUtc)
+    }
     @Test
     fun buildExerciseHistoryDetail_filtersToPrSessionsAndPreservesCounts() {
         val rows = listOf(
@@ -180,6 +221,7 @@ class ExerciseHistoryDetailTest {
         reps: Int?,
         weight: Double?,
         isCompleted: Boolean = true,
+        startedAtUtc: String = completedAtUtc,
     ): ExerciseHistoryRow {
         return ExerciseHistoryRow(
             completedAtUtc = completedAtUtc,
@@ -191,6 +233,7 @@ class ExerciseHistoryDetailTest {
             reps = reps,
             weight = weight,
             isCompleted = isCompleted,
+            startedAtUtc = startedAtUtc,
         )
     }
 }

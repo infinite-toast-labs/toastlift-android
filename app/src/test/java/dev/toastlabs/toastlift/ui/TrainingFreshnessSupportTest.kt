@@ -68,6 +68,29 @@ class TrainingFreshnessSupportTest {
     }
 
     @Test
+    fun buildTrainingFreshnessSummary_attributesStaleFinishToWorkoutStart() {
+        val startedAt = "2026-05-05T12:00:00Z"
+        val summary = buildTrainingFreshnessSummary(
+            profile = profile(minBucketExercises = 1),
+            rows = listOf(
+                row(
+                    startedAtUtc = startedAt,
+                    completedAtUtc = "2026-05-15T12:00:00Z",
+                    exerciseId = 101L,
+                    completedSetCount = 3,
+                ),
+            ),
+            exerciseDetailsById = mapOf(101L to detail(101L, target = "Chest", prime = "Chest")),
+            nowUtc = Instant.parse("2026-05-15T12:00:00Z"),
+            zoneId = ZoneOffset.UTC,
+        )
+
+        val upper = summary.bucketRows.first { it.key == "upper" }
+        assertEquals(TrainingFreshnessStatus.Overdue, upper.status)
+        assertEquals(Instant.parse(startedAt), upper.lastStimulusAtUtc)
+    }
+
+    @Test
     fun buildTrainingFreshnessSummary_ignoresSecondaryOnlyWorkBelowBucketResetThreshold() {
         val summary = buildTrainingFreshnessSummary(
             profile = profile(),
@@ -277,8 +300,14 @@ class TrainingFreshnessSupportTest {
         }).toMap()
     }
 
-    private fun row(completedAtUtc: String, exerciseId: Long, completedSetCount: Int): WeeklyMuscleTargetWorkoutRow {
+    private fun row(
+        startedAtUtc: String,
+        exerciseId: Long,
+        completedSetCount: Int,
+        completedAtUtc: String = startedAtUtc,
+    ): WeeklyMuscleTargetWorkoutRow {
         return WeeklyMuscleTargetWorkoutRow(
+            startedAtUtc = startedAtUtc,
             completedAtUtc = completedAtUtc,
             exerciseId = exerciseId,
             completedSetCount = completedSetCount,

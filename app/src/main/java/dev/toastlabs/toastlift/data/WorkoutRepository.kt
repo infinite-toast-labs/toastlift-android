@@ -18,16 +18,24 @@ internal data class ExerciseHistoryRow(
     val reps: Int?,
     val weight: Double?,
     val isCompleted: Boolean,
-)
+    val startedAtUtc: String = completedAtUtc,
+) {
+    val workoutOccurredAtUtc: String
+        get() = resolveWorkoutOccurrenceAtUtc(startedAtUtc, completedAtUtc)
+}
 
 private fun ExerciseHistoryRow.hasLoggedRepSignal(): Boolean =
     isCompleted && (reps ?: 0) > 0
 
 internal data class WeeklyMuscleTargetWorkoutRow(
+    val startedAtUtc: String,
     val completedAtUtc: String,
     val exerciseId: Long,
     val completedSetCount: Int,
-)
+) {
+    val workoutOccurredAtUtc: String
+        get() = resolveWorkoutOccurrenceAtUtc(startedAtUtc, completedAtUtc)
+}
 
 internal fun buildExerciseHistoryDetail(
     exerciseId: Long,
@@ -52,7 +60,7 @@ internal fun buildExerciseHistoryDetail(
     var maxVolume = Double.NEGATIVE_INFINITY
 
     val allEntries = loggedRows
-        .groupBy { it.completedAtUtc to it.workoutTitle }
+        .groupBy { Triple(it.workoutOccurredAtUtc, it.completedAtUtc, it.workoutTitle) }
         .map { (header, sets) ->
             val workingSets = sets
                 .sortedBy { it.setNumber }
@@ -83,8 +91,8 @@ internal fun buildExerciseHistoryDetail(
             }.maxOrNull()
             val hasPersonalRecord = workingSets.any { it.isRepPr || it.isWeightPr || it.isVolumePr }
             ExerciseHistoryEntry(
-                completedAtUtc = header.first,
-                workoutTitle = header.second,
+                completedAtUtc = header.second,
+                workoutTitle = header.third,
                 targetReps = sets.firstOrNull()?.targetReps.orEmpty(),
                 estimatedOneRepMax = estimatedOneRepMax,
                 totalVolume = workingSets.sumOf { (it.reps ?: 0) * (it.weight ?: 0.0) },
@@ -93,6 +101,7 @@ internal fun buildExerciseHistoryDetail(
                 lastSetRpe = sets.firstOrNull()?.lastSetRpe,
                 workingSets = displayWorkingSets,
                 hasPersonalRecord = hasPersonalRecord,
+                startedAtUtc = header.first,
             )
         }
         .reversed()
@@ -122,26 +131,26 @@ internal fun buildExercisePerformanceStats(
     val maxRow = weightedRows.maxWith(
         compareBy<ExerciseHistoryRow> { it.weight ?: 0.0 }
             .thenBy { it.reps ?: 0 }
-            .thenBy { it.completedAtUtc },
+            .thenBy { it.workoutOccurredAtUtc },
     )
     val recentSessionKeys = weightedRows
-        .groupBy { it.completedAtUtc to it.workoutTitle }
+        .groupBy { it.workoutOccurredAtUtc to it.workoutTitle }
         .keys
         .sortedByDescending { it.first }
         .take(recentSessionLimit.coerceAtLeast(1))
         .toSet()
     val recentWeights = weightedRows
-        .filter { row -> row.completedAtUtc to row.workoutTitle in recentSessionKeys }
+        .filter { row -> row.workoutOccurredAtUtc to row.workoutTitle in recentSessionKeys }
         .mapNotNull(ExerciseHistoryRow::weight)
         .filter { it > 0.0 }
     val previousSessionKey = weightedRows
-        .groupBy { it.completedAtUtc to it.workoutTitle }
+        .groupBy { it.workoutOccurredAtUtc to it.workoutTitle }
         .keys
         .maxByOrNull { it.first }
     val previousSessionSets = previousSessionKey
         ?.let { sessionKey ->
             weightedRows
-                .filter { row -> row.completedAtUtc to row.workoutTitle == sessionKey }
+                .filter { row -> row.workoutOccurredAtUtc to row.workoutTitle == sessionKey }
                 .groupBy(ExerciseHistoryRow::setNumber)
                 .mapValues { (setNumber, setRows) ->
                     val bestRow = setRows.maxWith(
@@ -1196,8 +1205,6 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
                 pw.focus_key,
                 pw.completion_receipt_snapshot_json
             HAVING logged_exercise_count > 0
-            ORDER BY pw.started_at_utc DESC
-            LIMIT 20
             """.trimIndent(),
             null,
         ).use { cursor ->
@@ -1215,15 +1222,24 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
                             totalVolume = cursor.getDouble(6),
                             exerciseCount = cursor.getInt(7),
                             setCount = cursor.getInt(8),
-                            exerciseNames = loadExerciseNamesForWorkout(workoutId),
+                            exerciseNames = emptyList(),
                             focusKey = cursor.getStringOrNull(9),
                             completionReceipt = deserializeCompletionReceiptSnapshot(cursor.getStringOrNull(10)),
-                            averageTimeBetweenSetCompletionsSeconds = loadAverageSetCompletionIntervalSeconds(db, workoutId),
+                            averageTimeBetweenSetCompletionsSeconds = null,
                         ),
                     )
                 }
             }
-        }
+        }.mapNotNull { summary ->
+            parseWorkoutOccurrenceAtUtc(summary.startedAtUtc, summary.completedAtUtc)?.let { occurredAt -> occurredAt to summary }
+        }.sortedByDescending { (occurredAt, _) -> occurredAt }
+            .take(20)
+            .map { (_, summary) ->
+                summary.copy(
+                    exerciseNames = loadExerciseNamesForWorkout(summary.id),
+                    averageTimeBetweenSetCompletionsSeconds = loadAverageSetCompletionIntervalSeconds(db, summary.id),
+                )
+            }
         return applyStrengthScores(
             history = history,
             strengthScoreSummary = strengthScoreSummary,
@@ -1278,36 +1294,43 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
         }
     }
 
-    internal fun loadWeeklyMuscleTargetRows(sinceUtcInclusive: String): List<WeeklyMuscleTargetWorkoutRow> {
+    internal fun loadWeeklyMuscleTargetRows(sinceStartedAtUtcInclusive: String): List<WeeklyMuscleTargetWorkoutRow> {
         val db = database.open()
-        return db.rawQuery(
+        val sinceInstant = Instant.parse(sinceStartedAtUtcInclusive)
+        val rows = db.rawQuery(
             """
             SELECT
+                pw.started_at_utc,
                 pw.completed_at_utc,
                 pe.exercise_id,
                 COALESCE(SUM(CASE WHEN ${loggedRepSignalClause()} THEN 1 ELSE 0 END), 0) AS completed_set_count
             FROM performed_workouts pw
             INNER JOIN performed_exercises pe ON pe.performed_workout_id = pw.performed_workout_id
             INNER JOIN performed_sets ps ON ps.performed_exercise_id = pe.performed_exercise_id
-            WHERE pw.completed_at_utc IS NOT NULL
-              AND pw.completed_at_utc >= ?
-            GROUP BY pw.completed_at_utc, pe.exercise_id
+            WHERE pw.started_at_utc >= ? OR pw.completed_at_utc >= ?
+            GROUP BY pw.started_at_utc, pw.completed_at_utc, pe.exercise_id
             HAVING completed_set_count > 0
-            ORDER BY pw.completed_at_utc DESC
+            ORDER BY pw.started_at_utc DESC
             """.trimIndent(),
-            arrayOf(sinceUtcInclusive),
+            arrayOf(sinceStartedAtUtcInclusive, sinceStartedAtUtcInclusive),
         ).use { cursor ->
             buildList {
                 while (cursor.moveToNext()) {
                     add(
                         WeeklyMuscleTargetWorkoutRow(
-                            completedAtUtc = cursor.getString(0),
-                            exerciseId = cursor.getLong(1),
-                            completedSetCount = cursor.getInt(2),
+                            startedAtUtc = cursor.getString(0),
+                            completedAtUtc = cursor.getString(1),
+                            exerciseId = cursor.getLong(2),
+                            completedSetCount = cursor.getInt(3),
                         ),
                     )
                 }
             }
+        }
+        return rows.filter { row ->
+            parseWorkoutOccurrenceAtUtc(row.startedAtUtc, row.completedAtUtc)
+                ?.let { occurredAt -> !occurredAt.isBefore(sinceInstant) }
+                ?: false
         }
     }
 
@@ -1343,14 +1366,14 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
         return distinctIds.associateWith { workoutId -> counts[workoutId] ?: 0 }
     }
 
-    fun loadCompletedWorkoutTimestamps(workoutIds: Collection<Long>): Map<Long, String> {
+    fun loadWorkoutOccurrenceTimestamps(workoutIds: Collection<Long>): Map<Long, String> {
         val distinctIds = workoutIds.distinct()
         if (distinctIds.isEmpty()) return emptyMap()
 
         val placeholders = distinctIds.joinToString(",") { "?" }
         return database.open().rawQuery(
             """
-            SELECT performed_workout_id, completed_at_utc
+            SELECT performed_workout_id, started_at_utc, completed_at_utc
             FROM performed_workouts
             WHERE performed_workout_id IN ($placeholders)
             """.trimIndent(),
@@ -1358,7 +1381,11 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
         ).use { cursor ->
             buildMap {
                 while (cursor.moveToNext()) {
-                    put(cursor.getLong(0), cursor.getString(1))
+                    val occurredAt = parseWorkoutOccurrenceAtUtc(
+                        startedAtUtc = cursor.getString(1),
+                        completedAtUtc = cursor.getString(2),
+                    ) ?: continue
+                    put(cursor.getLong(0), occurredAt.toString())
                 }
             }
         }
@@ -1369,6 +1396,7 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
             """
             SELECT
                 pw.performed_workout_id,
+                pw.started_at_utc,
                 pw.completed_at_utc,
                 COALESCE(MAX(psn.planned_sets), COUNT(ps.performed_set_id)) AS planned_set_count,
                 COALESCE(SUM(CASE WHEN ${loggedRepSignalClause()} THEN 1 ELSE 0 END), 0) AS completed_set_count
@@ -1378,20 +1406,23 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
                AND psn.status = 'COMPLETED'
             LEFT JOIN performed_exercises pe ON pe.performed_workout_id = pw.performed_workout_id
             LEFT JOIN performed_sets ps ON ps.performed_exercise_id = pe.performed_exercise_id
-            WHERE pw.completed_at_utc IS NOT NULL
-            GROUP BY pw.performed_workout_id, pw.completed_at_utc
-            ORDER BY pw.completed_at_utc ASC, pw.performed_workout_id ASC
+            GROUP BY pw.performed_workout_id, pw.started_at_utc, pw.completed_at_utc
+            ORDER BY pw.started_at_utc ASC, pw.performed_workout_id ASC
             """.trimIndent(),
             null,
         ).use { cursor ->
             buildList {
                 while (cursor.moveToNext()) {
+                    val occurredAt = parseWorkoutOccurrenceAtUtc(
+                        startedAtUtc = cursor.getString(1),
+                        completedAtUtc = cursor.getString(2),
+                    ) ?: continue
                     add(
                         CompletedWorkoutAdherenceSignal(
                             workoutId = cursor.getLong(0),
-                            completedAtUtc = cursor.getString(1),
-                            plannedSetCount = cursor.getInt(2),
-                            completedSetCount = cursor.getInt(3),
+                            occurredAtUtc = occurredAt.toString(),
+                            plannedSetCount = cursor.getInt(3),
+                            completedSetCount = cursor.getInt(4),
                         ),
                     )
                 }
@@ -1629,13 +1660,14 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
         limit: Int = 24,
     ): List<ReceiptReferenceCandidate> {
         val db = database.open()
-        return db.rawQuery(
+        val candidates = db.rawQuery(
             """
             SELECT
                 pw.performed_workout_id,
                 pw.title,
                 pw.origin_type,
                 pw.focus_key,
+                pw.started_at_utc,
                 pw.completed_at_utc,
                 pw.actual_duration_seconds,
                 COALESCE(SUM(CASE WHEN ${loggedRepSignalClause()} THEN 1 ELSE 0 END), 0) AS completed_set_count
@@ -1648,13 +1680,12 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
                 pw.title,
                 pw.origin_type,
                 pw.focus_key,
+                pw.started_at_utc,
                 pw.completed_at_utc,
                 pw.actual_duration_seconds
             HAVING completed_set_count > 0
-            ORDER BY pw.completed_at_utc DESC
-            LIMIT ?
             """.trimIndent(),
-            arrayOf(excludeWorkoutId.toString(), limit.toString()),
+            arrayOf(excludeWorkoutId.toString()),
         ).use { cursor ->
             buildList {
                 while (cursor.moveToNext()) {
@@ -1665,15 +1696,24 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
                             title = cursor.getString(1),
                             origin = cursor.getString(2),
                             focusKey = cursor.getStringOrNull(3),
-                            completedAtUtc = cursor.getString(4),
-                            durationSeconds = cursor.getInt(5),
-                            completedSetCount = cursor.getInt(6),
-                            exerciseIds = loadExerciseIdsForWorkout(workoutId),
+                            startedAtUtc = cursor.getString(4),
+                            completedAtUtc = cursor.getString(5),
+                            durationSeconds = cursor.getInt(6),
+                            completedSetCount = cursor.getInt(7),
+                            exerciseIds = emptyList(),
                         ),
                     )
                 }
             }
         }
+        return candidates.mapNotNull { candidate ->
+            parseWorkoutOccurrenceAtUtc(candidate.startedAtUtc, candidate.completedAtUtc)
+                ?.let { occurredAt -> occurredAt to candidate }
+        }.sortedByDescending { (occurredAt, _) -> occurredAt }
+            .take(limit.coerceAtLeast(0))
+            .map { (_, candidate) ->
+                candidate.copy(exerciseIds = loadExerciseIdsForWorkout(candidate.workoutId))
+            }
     }
 
     fun loadHistoryWorkoutShareDetail(workoutId: Long): HistoryWorkoutShareDetail? {
@@ -2419,26 +2459,31 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
             SELECT
                 pw.performed_workout_id,
                 pw.title,
-                pw.completed_at_utc,
+                pw.started_at_utc,
                 pe.exercise_id,
                 ps.actual_reps,
                 ps.weight_value,
-                ps.is_completed
+                ps.is_completed,
+                pw.completed_at_utc
             FROM performed_workouts pw
             INNER JOIN performed_exercises pe ON pe.performed_workout_id = pw.performed_workout_id
             INNER JOIN performed_sets ps ON ps.performed_exercise_id = pe.performed_exercise_id
             WHERE ${loggedRepSignalClause()}
-            ORDER BY pw.completed_at_utc ASC, pe.sort_order ASC, ps.set_number ASC
+            ORDER BY pw.started_at_utc ASC, pe.sort_order ASC, ps.set_number ASC
             """.trimIndent(),
             null,
         ).use { cursor ->
             buildList {
                 while (cursor.moveToNext()) {
+                    val occurredAt = parseWorkoutOccurrenceAtUtc(
+                        startedAtUtc = cursor.getString(2),
+                        completedAtUtc = cursor.getString(7),
+                    ) ?: continue
                     add(
                         StrengthScoreSetRow(
                             workoutId = cursor.getLong(0),
                             workoutTitle = cursor.getString(1),
-                            completedAtUtc = cursor.getString(2),
+                            workoutOccurredAtUtc = occurredAt.toString(),
                             exerciseId = cursor.getLong(3),
                             reps = if (cursor.isNull(4)) null else cursor.getInt(4),
                             weight = if (cursor.isNull(5)) null else cursor.getDouble(5),
@@ -2465,9 +2510,10 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
     }
 
     private fun loadExerciseHistoryRows(exerciseId: Long): List<ExerciseHistoryRow> {
-        return database.open().rawQuery(
+        val rows = database.open().rawQuery(
             """
             SELECT
+                pw.started_at_utc,
                 pw.completed_at_utc,
                 pw.title,
                 COALESCE(ps.target_reps, ''),
@@ -2482,7 +2528,7 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
             INNER JOIN performed_sets ps ON ps.performed_exercise_id = pe.performed_exercise_id
             WHERE pe.exercise_id = ?
               AND ${loggedRepSignalClause()}
-            ORDER BY pw.completed_at_utc ASC, pe.sort_order ASC, ps.set_number ASC
+            ORDER BY pw.started_at_utc ASC, pe.sort_order ASC, ps.set_number ASC
             """.trimIndent(),
             arrayOf(exerciseId.toString()),
         ).use { cursor ->
@@ -2490,20 +2536,25 @@ class WorkoutRepository(private val database: ToastLiftDatabase, private val cat
                 while (cursor.moveToNext()) {
                     add(
                         ExerciseHistoryRow(
-                            completedAtUtc = cursor.getString(0),
-                            workoutTitle = cursor.getString(1),
-                            targetReps = cursor.getString(2),
-                            lastSetRepsInReserve = if (cursor.isNull(3)) null else cursor.getInt(3),
-                            lastSetRpe = if (cursor.isNull(4)) null else cursor.getDouble(4),
-                            setNumber = cursor.getInt(5),
-                            reps = if (cursor.isNull(6)) null else cursor.getInt(6),
-                            weight = if (cursor.isNull(7)) null else cursor.getDouble(7),
-                            isCompleted = cursor.getInt(8) == 1,
+                            startedAtUtc = cursor.getString(0),
+                            completedAtUtc = cursor.getString(1),
+                            workoutTitle = cursor.getString(2),
+                            targetReps = cursor.getString(3),
+                            lastSetRepsInReserve = if (cursor.isNull(4)) null else cursor.getInt(4),
+                            lastSetRpe = if (cursor.isNull(5)) null else cursor.getDouble(5),
+                            setNumber = cursor.getInt(6),
+                            reps = if (cursor.isNull(7)) null else cursor.getInt(7),
+                            weight = if (cursor.isNull(8)) null else cursor.getDouble(8),
+                            isCompleted = cursor.getInt(9) == 1,
                         ),
                     )
                 }
             }
         }
+        return rows.mapNotNull { row ->
+            parseWorkoutOccurrenceAtUtc(row.startedAtUtc, row.completedAtUtc)?.let { occurredAt -> occurredAt to row }
+        }.sortedBy { (occurredAt, _) -> occurredAt }
+            .map { (_, row) -> row }
     }
 
     private fun loadTemplateExercises(templateId: Long): List<WorkoutExercise> {

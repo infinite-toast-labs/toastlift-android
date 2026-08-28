@@ -135,13 +135,13 @@ class AdherenceCurrencyTest {
             completedWorkouts = listOf(
                 CompletedWorkoutAdherenceSignal(
                     workoutId = 101L,
-                    completedAtUtc = "2026-03-20T12:00:00Z",
+                    occurredAtUtc = "2026-03-20T12:00:00Z",
                     plannedSetCount = 12,
                     completedSetCount = 12,
                 ),
                 CompletedWorkoutAdherenceSignal(
                     workoutId = 102L,
-                    completedAtUtc = "2026-03-22T12:00:00Z",
+                    occurredAtUtc = "2026-03-22T12:00:00Z",
                     plannedSetCount = 10,
                     completedSetCount = 5,
                 ),
@@ -168,6 +168,8 @@ class AdherenceCurrencyTest {
         assertEquals(1, trend.monthlyDelta)
         assertEquals(1, trend.latestDelta)
         assertEquals(1, trend.dailyPoints.last().balance)
+        assertEquals(1, trend.dailyPoints.first { it.date == LocalDate.parse("2026-03-20") }.completedSessions)
+        assertEquals(1, trend.dailyPoints.first { it.date == LocalDate.parse("2026-03-22") }.completedSessions)
     }
 
     @Test

@@ -429,7 +429,7 @@ class GeneratorRepository(
             """
             SELECT
                 pe.performed_exercise_id,
-                pw.completed_at_utc,
+                pw.started_at_utc,
                 pe.exercise_id,
                 pe.exercise_name,
                 COALESCE(ps.target_reps, ''),
@@ -457,19 +457,20 @@ class GeneratorRepository(
                     SELECT group_concat(po.plane_of_motion, '|')
                     FROM exercise_planes_of_motion po
                     WHERE po.exercise_id = pe.exercise_id
-                )
+                ),
+                pw.completed_at_utc
             FROM performed_workouts pw
             INNER JOIN performed_exercises pe ON pe.performed_workout_id = pw.performed_workout_id
             INNER JOIN performed_sets ps ON ps.performed_exercise_id = pe.performed_exercise_id
             LEFT JOIN exercises e ON e.exercise_id = pe.exercise_id
             WHERE ${loggedRepSignalClause()}
-            ORDER BY pw.completed_at_utc DESC, pe.sort_order ASC, ps.set_number ASC
+            ORDER BY pw.started_at_utc DESC, pe.sort_order ASC, ps.set_number ASC
             """.trimIndent(),
             null,
         ).use { cursor ->
             data class HistoryRow(
                 val performedExerciseId: Long,
-                val completedAtUtc: Instant,
+                val workoutOccurredAtUtc: Instant,
                 val exerciseId: Long,
                 val exerciseName: String,
                 val targetReps: String,
@@ -494,11 +495,14 @@ class GeneratorRepository(
 
             val rows = buildList {
                 while (cursor.moveToNext()) {
-                    val completedAt = cursor.getString(1)?.let(Instant::parse) ?: continue
+                    val workoutOccurredAt = parseWorkoutOccurrenceAtUtc(
+                        startedAtUtc = cursor.getString(1),
+                        completedAtUtc = cursor.getString(22),
+                    ) ?: continue
                     add(
                         HistoryRow(
                             performedExerciseId = cursor.getLong(0),
-                            completedAtUtc = completedAt,
+                            workoutOccurredAtUtc = workoutOccurredAt,
                             exerciseId = cursor.getLong(2),
                             exerciseName = cursor.getString(3),
                             targetReps = cursor.getString(4),
@@ -522,14 +526,14 @@ class GeneratorRepository(
                         ),
                     )
                 }
-            }
+            }.sortedByDescending(HistoryRow::workoutOccurredAtUtc)
             val maxLoggedSetByExerciseSession = rows
                 .groupBy { row -> row.performedExerciseId }
                 .mapValues { (_, groupedRows) -> groupedRows.maxOf { it.setNumber } }
 
             rows.map { row ->
                 HistoricalExerciseSet(
-                    completedAtUtc = row.completedAtUtc,
+                    completedAtUtc = row.workoutOccurredAtUtc,
                     exerciseId = row.exerciseId,
                     exerciseName = row.exerciseName,
                     targetReps = row.targetReps,

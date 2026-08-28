@@ -307,18 +307,18 @@ private fun collectTrainingFreshnessEvents(
 
     rows.filter { it.completedSetCount > 0 }
         .forEach { row ->
-            val completedAtUtc = normalizedInstantString(row.completedAtUtc, zoneId) ?: return@forEach
+            val occurredAtUtc = normalizedInstantString(row.workoutOccurredAtUtc, zoneId) ?: return@forEach
             val detail = exerciseDetailsById[row.exerciseId]
             val contributions = resolveTrainingFreshnessContributions(detail)
             contributions.forEach { contribution ->
-                val muscleKey = completedAtUtc to contribution.key
+                val muscleKey = occurredAtUtc to contribution.key
                 val muscleAccumulator = muscleEvents.getOrPut(muscleKey) { StimulusAccumulator() }
                 val weightedSets = row.completedSetCount * contribution.weight
                 muscleAccumulator.weightedSets += weightedSets
                 muscleAccumulator.exerciseNames += contribution.exerciseName
                 muscleAccumulator.exerciseIds += row.exerciseId
 
-                val bucketKey = completedAtUtc to contribution.family.bucketKey()
+                val bucketKey = occurredAtUtc to contribution.family.bucketKey()
                 val bucketAccumulator = bucketEvents.getOrPut(bucketKey) { StimulusAccumulator() }
                 bucketAccumulator.weightedSets += weightedSets
                 bucketAccumulator.muscleLabels += contribution.label
