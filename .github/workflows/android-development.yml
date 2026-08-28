@@ -58,3 +58,18 @@ jobs:
           scripts/verify_zstore_candidate.sh \
             '${{ steps.setup.outputs.zstore-apk-path }}' \
             '${{ steps.setup.outputs.zstore-package-name }}'
+      - name: Verify Zstore provenance binding
+        env:
+          HANDOFF_OUTPUT: ${{ runner.temp }}/toastlift-zstore-provenance
+        run: |
+          set -euo pipefail
+          scripts/write_zstore_provenance.sh \
+            '${{ steps.setup.outputs.zstore-apk-path }}' \
+            '${{ inputs.commit_sha }}' \
+            '${{ steps.setup.outputs.appreveal-commit }}' \
+            "$HANDOFF_OUTPUT"
+          jq -e \
+            --arg source '${{ inputs.commit_sha }}' \
+            --arg dependency '${{ steps.setup.outputs.appreveal-commit }}' \
+            '.source.commit == $source and .dependency.appReveal.commit == $dependency' \
+            "$HANDOFF_OUTPUT/toastlift-zstore-provenance.json" >/dev/null

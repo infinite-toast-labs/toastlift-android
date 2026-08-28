@@ -1,6 +1,7 @@
 # Gradle
 .gradle/
 **/build/
+/third_party/
 
 # Local SDK configuration
 local.properties

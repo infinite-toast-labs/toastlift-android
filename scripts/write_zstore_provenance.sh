@@ -5,9 +5,40 @@ artifact="${1:?Usage: $0 <apk> <source-commit> <appreveal-commit> <output-direct
 source_commit="${2:?}"
 appreveal_commit="${3:?}"
 output_directory="${4:?}"
+repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 [[ "$source_commit" =~ ^[0-9a-f]{40}$ ]] || { echo "Source commit must be a full lowercase SHA." >&2; exit 1; }
 [[ "$appreveal_commit" =~ ^[0-9a-f]{40}$ ]] || { echo "AppReveal commit must be a full lowercase SHA." >&2; exit 1; }
+
+actual_source_commit="$(git -C "$repository_root" rev-parse HEAD)"
+[[ "$source_commit" == "$actual_source_commit" ]] || {
+  echo "Source commit does not match the checked-out ToastLift HEAD." >&2
+  exit 1
+}
+[[ -z "$(git -C "$repository_root" status --porcelain --untracked-files=normal)" ]] || {
+  echo "ToastLift checkout must be clean before provenance is written." >&2
+  exit 1
+}
+
+appreveal_android_directory="${APPREVEAL_COMPOSITE_BUILD:-$repository_root/../appreveal-toastlift/Android}"
+if [[ "$appreveal_android_directory" != /* ]]; then
+  appreveal_android_directory="$repository_root/$appreveal_android_directory"
+fi
+appreveal_checkout="$(git -C "$appreveal_android_directory" rev-parse --show-toplevel 2>/dev/null)" || {
+  echo "AppReveal checkout is unavailable at $appreveal_android_directory." >&2
+  exit 1
+}
+actual_appreveal_commit="$(git -C "$appreveal_checkout" rev-parse HEAD)"
+[[ "$appreveal_commit" == "$actual_appreveal_commit" ]] || {
+  echo "AppReveal commit does not match the checked-out dependency HEAD." >&2
+  exit 1
+}
+[[ -z "$(git -C "$appreveal_checkout" status --porcelain --untracked-files=normal)" ]] || {
+  echo "AppReveal checkout must be clean before provenance is written." >&2
+  exit 1
+}
+
+cd "$repository_root"
 scripts/verify_zstore_candidate.sh "$artifact"
 
 sdk_root="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-$HOME/Library/Android/sdk}}"
