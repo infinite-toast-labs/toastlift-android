@@ -1914,14 +1914,14 @@ internal fun buildWeeklyMuscleTargetSummary(
     val weekStarts = (historyLimit - 1 downTo 0).map { offset ->
         currentWeekStart.minusWeeks(offset.toLong())
     }
-    val rowsByWeekStart = rows.groupBy { row ->
+    val rowsByWeekStart = rows.mapNotNull { row ->
         runCatching {
-            Instant.parse(row.completedAtUtc)
+            Instant.parse(row.workoutOccurredAtUtc)
                 .atZone(zoneId)
                 .toLocalDate()
                 .with(TemporalAdjusters.previousOrSame(DayOfWeek.SUNDAY))
-        }.getOrElse { currentWeekStart }
-    }
+        }.getOrNull()?.let { weekStart -> weekStart to row }
+    }.groupBy(keySelector = { it.first }, valueTransform = { it.second })
     val weekSummaries = weekStarts.mapIndexed { index, weekStart ->
         buildWeeklyMuscleTargetWeekSummary(
             profile = profile,
@@ -2336,14 +2336,8 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
                 )
             }
             val trainingFreshness = profile?.let { activeProfile ->
-                val now = LocalDate.now()
                 val zoneId = ZoneId.systemDefault()
-                val historyStart = now
-                    .minusDays((activeProfile.trainingFreshnessThresholdDays.coerceAtLeast(1).toLong() * 3L).coerceAtLeast(14L))
-                    .atStartOfDay(zoneId)
-                    .toInstant()
-                    .toString()
-                val freshnessRows = container.workoutRepository.loadWeeklyMuscleTargetRows(historyStart)
+                val freshnessRows = container.workoutRepository.loadWeeklyMuscleTargetRows(Instant.EPOCH.toString())
                 val exerciseDetailsById = freshnessRows
                     .map { it.exerciseId }
                     .distinct()
@@ -5436,7 +5430,6 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
                     }
                 buildCompletionReceiptSnapshot(
                     workoutId = workoutId,
-                    completedAtUtc = currentDetail.completedAtUtc,
                     session = session,
                     durationSeconds = currentDetail.durationSeconds,
                     totalVolume = currentDetail.totalVolume.takeIf { it > 0.0 },
@@ -5609,7 +5602,6 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
 
     private fun buildCompletionReceiptSnapshot(
         workoutId: Long,
-        completedAtUtc: String,
         session: ActiveSession,
         durationSeconds: Int,
         totalVolume: Double?,
@@ -5648,7 +5640,7 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
         val achievements = buildReceiptAchievementSnapshot(
             session = session,
             workoutTitle = session.title,
-            completedAtUtc = completedAtUtc,
+            workoutStartedAtUtc = session.startedAtUtc,
             exerciseHistories = exerciseHistories,
         )
         val splitProgress = buildReceiptSplitProgressSnapshot(
@@ -6956,7 +6948,7 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
             val completedSetCountsByWorkoutId = container.workoutRepository.loadCompletedSetCountsForWorkouts(
                 allSessions.mapNotNull { it.actualWorkoutId },
             )
-            val completedWorkoutTimestampsById = container.workoutRepository.loadCompletedWorkoutTimestamps(
+            val workoutOccurrenceTimestampsById = container.workoutRepository.loadWorkoutOccurrenceTimestamps(
                 allSessions.mapNotNull { it.actualWorkoutId },
             )
             val adherenceSignals = allSessions.map { session ->
@@ -6965,8 +6957,8 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
                     status = session.status,
                     plannedSets = session.plannedSets,
                     completedSetCount = session.actualWorkoutId?.let { completedSetCountsByWorkoutId[it] } ?: 0,
-                    occurredAtUtc = session.statusUpdatedAtUtc
-                        ?: session.actualWorkoutId?.let { completedWorkoutTimestampsById[it] },
+                    occurredAtUtc = session.actualWorkoutId?.let { workoutOccurrenceTimestampsById[it] }
+                        ?: session.statusUpdatedAtUtc,
                 )
             }
             val adherenceSnapshot = buildAdherenceCurrencySnapshot(

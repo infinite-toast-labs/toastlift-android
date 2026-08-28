@@ -8,7 +8,7 @@ private const val STRENGTH_SCORE_SMOOTHING_FACTOR = 0.35
 internal data class StrengthScoreSetRow(
     val workoutId: Long,
     val workoutTitle: String,
-    val completedAtUtc: String,
+    val workoutOccurredAtUtc: String,
     val exerciseId: Long,
     val reps: Int?,
     val weight: Double?,
@@ -18,7 +18,7 @@ internal data class StrengthScoreSetRow(
 data class StrengthScorePoint(
     val workoutId: Long,
     val workoutTitle: String,
-    val completedAtUtc: String,
+    val workoutOccurredAtUtc: String,
     val sessionScore: Int,
     val runningScore: Int,
 )
@@ -37,9 +37,9 @@ internal fun buildStrengthScoreSummary(rows: List<StrengthScoreSetRow>): Strengt
 
     var runningScore: Double? = null
     val timeline = rows
-        .groupBy { Triple(it.workoutId, it.workoutTitle, it.completedAtUtc) }
+        .groupBy { Triple(it.workoutId, it.workoutTitle, it.workoutOccurredAtUtc) }
         .toList()
-        .sortedBy { (_, workoutRows) -> workoutRows.first().completedAtUtc }
+        .sortedBy { (_, workoutRows) -> workoutRows.first().workoutOccurredAtUtc }
         .mapNotNull { (header, workoutRows) ->
             val sessionScore = calculateSessionStrengthScore(workoutRows)
             if (sessionScore <= 0) return@mapNotNull null
@@ -51,7 +51,7 @@ internal fun buildStrengthScoreSummary(rows: List<StrengthScoreSetRow>): Strengt
             StrengthScorePoint(
                 workoutId = header.first,
                 workoutTitle = header.second,
-                completedAtUtc = header.third,
+                workoutOccurredAtUtc = header.third,
                 sessionScore = sessionScore,
                 runningScore = runningScore!!.roundToInt(),
             )

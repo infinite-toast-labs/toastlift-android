@@ -9778,9 +9778,7 @@ internal fun historyStartedLocalDate(
     zoneId: ZoneId = ZoneId.systemDefault(),
 ): LocalDate? {
     return runCatching {
-        Instant.parse(summary.startedAtUtc).atZone(zoneId).toLocalDate()
-    }.getOrNull() ?: runCatching {
-        Instant.parse(summary.completedAtUtc).atZone(zoneId).toLocalDate()
+        Instant.parse(summary.workoutOccurredAtUtc).atZone(zoneId).toLocalDate()
     }.getOrNull()
 }
 
@@ -18652,7 +18650,7 @@ private fun ExerciseVideosSheet(detail: ExerciseVideoLinks, onDismiss: () -> Uni
 private fun ExerciseHistoryEntryCard(entry: dev.toastlabs.toastlift.data.ExerciseHistoryEntry) {
     FeatureCard(containerColor = MaterialTheme.colorScheme.surface) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text(formatEntryDate(entry.completedAtUtc), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text(formatEntryDate(entry.workoutOccurredAtUtc), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             val prCount = entry.workingSets.sumOf { set ->
                 listOf(set.isRepPr, set.isWeightPr, set.isVolumePr).count { it }
             }

@@ -31,14 +31,14 @@ class StrengthScorePresentationTest {
             StrengthScorePoint(
                 workoutId = 1L,
                 workoutTitle = "Session 1",
-                completedAtUtc = "2026-03-01T12:00:00Z",
+                workoutOccurredAtUtc = "2026-03-01T12:00:00Z",
                 sessionScore = 240,
                 runningScore = 240,
             ),
             StrengthScorePoint(
                 workoutId = 2L,
                 workoutTitle = "Session 2",
-                completedAtUtc = "2026-03-03T12:00:00Z",
+                workoutOccurredAtUtc = "2026-03-03T12:00:00Z",
                 sessionScore = 248,
                 runningScore = 248,
             ),

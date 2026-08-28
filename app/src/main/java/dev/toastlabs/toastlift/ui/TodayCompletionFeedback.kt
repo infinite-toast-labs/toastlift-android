@@ -27,7 +27,7 @@ internal fun buildTodayWorkoutCompletionState(
 ): TodayWorkoutCompletionState {
     val today = now.atZone(zoneId).toLocalDate()
     val completedToday = history.firstOrNull { entry ->
-        runCatching { Instant.parse(entry.completedAtUtc).atZone(zoneId).toLocalDate() }.getOrNull() == today
+        runCatching { Instant.parse(entry.workoutOccurredAtUtc).atZone(zoneId).toLocalDate() }.getOrNull() == today
     }
     return if (completedToday != null) {
         TodayWorkoutCompletionState(

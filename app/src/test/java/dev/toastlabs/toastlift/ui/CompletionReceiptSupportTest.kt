@@ -5,6 +5,7 @@ import dev.toastlabs.toastlift.data.AdherenceSessionSignal
 import dev.toastlabs.toastlift.data.ExerciseHistoryDetail
 import dev.toastlabs.toastlift.data.ExerciseHistoryEntry
 import dev.toastlabs.toastlift.data.ExerciseHistorySet
+import dev.toastlabs.toastlift.data.HistorySummary
 import dev.toastlabs.toastlift.data.SessionStatus
 import dev.toastlabs.toastlift.data.SessionExercise
 import dev.toastlabs.toastlift.data.SessionSet
@@ -13,7 +14,9 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.time.Instant
 import java.time.LocalDate
+import java.time.ZoneOffset
 
 class CompletionReceiptSupportTest {
 
@@ -26,7 +29,7 @@ class CompletionReceiptSupportTest {
                 weight = "185",
             ),
             workoutTitle = "Upper Push",
-            completedAtUtc = "2026-03-28T12:00:00Z",
+            workoutStartedAtUtc = "2026-03-28T12:00:00Z",
             exerciseHistories = listOf(
                 exerciseHistoryDetail(
                     exerciseName = "Bench Press",
@@ -62,7 +65,7 @@ class CompletionReceiptSupportTest {
                 weight = "225",
             ),
             workoutTitle = "Upper Push",
-            completedAtUtc = "2026-03-28T12:00:00Z",
+            workoutStartedAtUtc = "2026-03-28T12:00:00Z",
             exerciseHistories = listOf(
                 exerciseHistoryDetail(
                     exerciseName = "Bench Press",
@@ -86,6 +89,65 @@ class CompletionReceiptSupportTest {
         assertEquals("Best Set Today", snapshot.title)
         assertEquals("Bench Press", snapshot.fallbackLabel)
         assertEquals("225 x 3", snapshot.fallbackValue)
+    }
+
+    @Test
+    fun buildReceiptAchievementSnapshot_matchesLateFinishedWorkoutByCanonicalStartTime() {
+        val noPrEntry = exerciseHistoryEntry(
+            workoutTitle = "Upper Push",
+            startedAtUtc = "2026-03-27T12:00:00Z",
+            completedAtUtc = "2026-03-27T13:00:00Z",
+            bestWeight = 175.0,
+            isWeightPr = false,
+        )
+        val lateFinishedPrEntry = exerciseHistoryEntry(
+            workoutTitle = "Upper Push",
+            startedAtUtc = "2026-03-18T12:00:00Z",
+            completedAtUtc = "2026-03-28T12:00:00Z",
+            bestWeight = 185.0,
+            isWeightPr = true,
+        )
+
+        val snapshot = buildReceiptAchievementSnapshot(
+            session = session(exerciseName = "Bench Press", reps = "5", weight = "185"),
+            workoutTitle = "Upper Push",
+            workoutStartedAtUtc = "2026-03-18T07:00:00-05:00",
+            exerciseHistories = listOf(
+                ExerciseHistoryDetail(
+                    exerciseId = 11L,
+                    exerciseName = "Bench Press",
+                    entries = listOf(noPrEntry, lateFinishedPrEntry),
+                    isPrOnlyFilterEnabled = false,
+                    totalEntries = 2,
+                    prEntryCount = 1,
+                ),
+            ),
+        )
+
+        assertTrue(snapshot.chips.contains("Bench Press 185 lb PR"))
+    }
+
+    @Test
+    fun buildWeeklyPromiseSnapshot_doesNotMoveLateFinishedWorkoutIntoCurrentWeek() {
+        val snapshot = buildWeeklyPromiseSnapshot(
+            history = listOf(
+                HistorySummary(
+                    id = 1L,
+                    title = "Forgotten Upper Workout",
+                    completedAtUtc = "2026-03-28T12:00:00Z",
+                    startedAtUtc = "2026-03-21T12:00:00Z",
+                    durationSeconds = 1_800,
+                    totalVolume = 1_000.0,
+                    exerciseCount = 2,
+                    exerciseNames = listOf("Bench Press"),
+                ),
+            ),
+            targetSessions = 3,
+            now = Instant.parse("2026-03-28T18:00:00Z"),
+            zoneId = ZoneOffset.UTC,
+        )
+
+        assertEquals(0, snapshot.completedSessions)
     }
 
     @Test
@@ -248,6 +310,37 @@ class CompletionReceiptSupportTest {
             isPrOnlyFilterEnabled = false,
             totalEntries = 1,
             prEntryCount = if (workingSets.any { it.isRepPr || it.isWeightPr || it.isVolumePr }) 1 else 0,
+        )
+    }
+
+    private fun exerciseHistoryEntry(
+        workoutTitle: String,
+        startedAtUtc: String,
+        completedAtUtc: String,
+        bestWeight: Double,
+        isWeightPr: Boolean,
+    ): ExerciseHistoryEntry {
+        return ExerciseHistoryEntry(
+            completedAtUtc = completedAtUtc,
+            workoutTitle = workoutTitle,
+            targetReps = "5",
+            estimatedOneRepMax = null,
+            totalVolume = bestWeight * 5,
+            bestWeight = bestWeight,
+            lastSetRepsInReserve = null,
+            lastSetRpe = null,
+            workingSets = listOf(
+                ExerciseHistorySet(
+                    setNumber = 1,
+                    reps = 5,
+                    weight = bestWeight,
+                    isRepPr = false,
+                    isWeightPr = isWeightPr,
+                    isVolumePr = false,
+                ),
+            ),
+            hasPersonalRecord = isWeightPr,
+            startedAtUtc = startedAtUtc,
         )
     }
 

@@ -9,6 +9,13 @@ private val sessionSetIdGenerator = AtomicLong(1L)
 
 fun nextSessionSetId(): Long = sessionSetIdGenerator.getAndIncrement()
 
+internal fun parseWorkoutOccurrenceAtUtc(startedAtUtc: String, completedAtUtc: String): Instant? =
+    runCatching { Instant.parse(startedAtUtc) }.getOrNull()
+        ?: runCatching { Instant.parse(completedAtUtc) }.getOrNull()
+
+internal fun resolveWorkoutOccurrenceAtUtc(startedAtUtc: String, completedAtUtc: String): String =
+    parseWorkoutOccurrenceAtUtc(startedAtUtc, completedAtUtc)?.toString() ?: completedAtUtc
+
 internal const val RECOMMENDATION_BIAS_THRESHOLD = 0.5
 
 enum class RecommendationBias(val scoreDelta: Double) {
@@ -444,7 +451,10 @@ data class HistorySummary(
     val completionReceipt: CompletionReceiptSnapshot? = null,
     val strengthScore: Int? = null,
     val averageTimeBetweenSetCompletionsSeconds: Int? = null,
-)
+) {
+    val workoutOccurredAtUtc: String
+        get() = resolveWorkoutOccurrenceAtUtc(startedAtUtc, completedAtUtc)
+}
 
 data class HistoryWorkoutMetric(
     val id: Long,
@@ -711,11 +721,15 @@ data class ReceiptReferenceCandidate(
     val title: String,
     val origin: String,
     val focusKey: String?,
+    val startedAtUtc: String,
     val completedAtUtc: String,
     val durationSeconds: Int,
     val completedSetCount: Int,
     val exerciseIds: List<Long>,
-)
+) {
+    val workoutOccurredAtUtc: String
+        get() = resolveWorkoutOccurrenceAtUtc(startedAtUtc, completedAtUtc)
+}
 
 data class ExerciseHistorySet(
     val setNumber: Int,
@@ -737,7 +751,11 @@ data class ExerciseHistoryEntry(
     val lastSetRpe: Double?,
     val workingSets: List<ExerciseHistorySet>,
     val hasPersonalRecord: Boolean,
-)
+    val startedAtUtc: String = completedAtUtc,
+) {
+    val workoutOccurredAtUtc: String
+        get() = resolveWorkoutOccurrenceAtUtc(startedAtUtc, completedAtUtc)
+}
 
 data class ExerciseHistoryDetail(
     val exerciseId: Long,

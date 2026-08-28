@@ -476,7 +476,7 @@ class DailyCoachService internal constructor(
         val profile = userRepository.loadProfile()
         val history = workoutRepository.loadHistory()
         val recentWorkouts = history.mapNotNull { summary ->
-            val localDate = runCatching { Instant.parse(summary.completedAtUtc).atZone(zoneId).toLocalDate() }.getOrNull() ?: return@mapNotNull null
+            val localDate = runCatching { Instant.parse(summary.workoutOccurredAtUtc).atZone(zoneId).toLocalDate() }.getOrNull() ?: return@mapNotNull null
             DailyCoachRecentWorkout(
                 title = summary.title,
                 localDate = localDate,
