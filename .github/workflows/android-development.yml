@@ -50,3 +50,11 @@ jobs:
         env:
           TOASTLIFT_BUILD_LABEL: ${{ inputs.build_label }}
         run: ./gradlew --no-daemon --console=plain ${{ steps.setup.outputs.debug-gradle-tasks }}
+      - name: Build and verify Zstore contract
+        run: |
+          set -euo pipefail
+          ./gradlew --no-daemon --console=plain ${{ steps.setup.outputs.zstore-gradle-tasks }}
+          scripts/verify_zstore_dependencies.sh
+          scripts/verify_zstore_candidate.sh \
+            '${{ steps.setup.outputs.zstore-apk-path }}' \
+            '${{ steps.setup.outputs.zstore-package-name }}'

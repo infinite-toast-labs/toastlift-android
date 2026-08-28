@@ -26,12 +26,25 @@ package/versionCode pair is immutable.
 
 ## Candidate handoff
 
-After this workflow exists on the default branch, run **Build private Zstore
-candidate** with a full immutable commit SHA. The workflow runs only while this
-repository is private, receives no signing configuration, and retains the
-unsigned APK, checksum, and JSON provenance for seven days. The trusted Zstore
-host verifies that bundle without executing source from it, signs with the
-managed per-app key, and creates a draft release.
+The public ToastLift CI builds and verifies this variant but deliberately never
+uploads its APK. Candidate artifacts belong only on the private Zstore operator
+host. From a clean checkout at the reviewed immutable commit, build and verify
+the candidate, then write its checksum and provenance into a protected handoff
+directory:
+
+```bash
+make verify-zstore-candidate
+scripts/write_zstore_provenance.sh \
+  app/build/outputs/apk/zstore/app-zstore-unsigned.apk \
+  "$(git rev-parse HEAD)" \
+  "$(sed -n 's/^APPREVEAL_COMMIT=//p' ci/android-ci.env)" \
+  /path/to/private-zstore-handoff
+cp app/build/outputs/apk/zstore/app-zstore-unsigned.apk \
+  /path/to/private-zstore-handoff/
+```
+
+The trusted Zstore host independently verifies that bundle without executing
+source from it, signs with the managed per-app key, and creates a draft release.
 
 Promotion is deliberately staged: draft, then canary, device verification, and
 only then stable. The first managed install may require uninstalling an older

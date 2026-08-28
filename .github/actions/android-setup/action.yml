@@ -27,8 +27,6 @@ outputs:
     value: ${{ steps.config.outputs.staging_artifact_retention_days }}
   production-artifact-retention-days:
     value: ${{ steps.config.outputs.production_artifact_retention_days }}
-  zstore-artifact-retention-days:
-    value: ${{ steps.config.outputs.zstore_artifact_retention_days }}
   appreveal-commit:
     value: ${{ steps.config.outputs.appreveal_commit }}
 runs:
@@ -52,7 +50,7 @@ runs:
           ANDROID_MODULE JAVA_VERSION ANDROID_COMPILE_SDK ANDROID_BUILD_TOOLS
           APPREVEAL_REPOSITORY APPREVEAL_COMMIT DEBUG_APK_PATH STAGING_APK_PATH
           RELEASE_AAB_PATH ZSTORE_APK_PATH ZSTORE_PACKAGE_NAME STAGING_ARTIFACT_RETENTION_DAYS
-          PRODUCTION_ARTIFACT_RETENTION_DAYS ZSTORE_ARTIFACT_RETENTION_DAYS DEBUG_GRADLE_TASKS
+          PRODUCTION_ARTIFACT_RETENTION_DAYS DEBUG_GRADLE_TASKS
           STAGING_GRADLE_TASKS PRODUCTION_GRADLE_TASKS ZSTORE_GRADLE_TASKS
         )
         for name in "${required[@]}"; do
@@ -79,7 +77,6 @@ runs:
           echo "zstore_package_name=$ZSTORE_PACKAGE_NAME"
           echo "staging_artifact_retention_days=$STAGING_ARTIFACT_RETENTION_DAYS"
           echo "production_artifact_retention_days=$PRODUCTION_ARTIFACT_RETENTION_DAYS"
-          echo "zstore_artifact_retention_days=$ZSTORE_ARTIFACT_RETENTION_DAYS"
           echo "debug_gradle_tasks=$DEBUG_GRADLE_TASKS"
           echo "staging_gradle_tasks=$STAGING_GRADLE_TASKS"
           echo "production_gradle_tasks=$PRODUCTION_GRADLE_TASKS"
