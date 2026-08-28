@@ -137,6 +137,7 @@ android {
             versionNameSuffix = "-dev.$buildLabel"
             buildConfigField("String", "FEATURE_CONFIG_ASSET", "\"feature-config.debug.json\"")
             buildConfigField("boolean", "PRODUCTION_FEATURE_CONFIG", "false")
+            buildConfigField("boolean", "INTERNAL_TOOLS_ENABLED", "true")
             buildConfigField("String", "GEMINI_API_KEY", "\"${escapeBuildConfig(dotEnv["GEMINI_API_KEY"].orEmpty())}\"")
             buildConfigField("String", "GEMINI_PRIMARY_MODEL", "\"${escapeBuildConfig(dotEnv["GEMINI_PRIMARY_MODEL"].orEmpty())}\"")
             buildConfigField("String", "CUSTOM_EXERCISE_AI_PROVIDER", "\"${escapeBuildConfig(customExerciseAiProvider)}\"")
@@ -162,6 +163,7 @@ android {
 
             buildConfigField("String", "FEATURE_CONFIG_ASSET", "\"feature-config.production.json\"")
             buildConfigField("boolean", "PRODUCTION_FEATURE_CONFIG", "true")
+            buildConfigField("boolean", "INTERNAL_TOOLS_ENABLED", "true")
             buildConfigField("String", "GEMINI_API_KEY", "\"\"")
             buildConfigField("String", "GEMINI_PRIMARY_MODEL", "\"\"")
             buildConfigField("String", "CUSTOM_EXERCISE_AI_PROVIDER", "\"\"")
@@ -180,6 +182,7 @@ android {
             }
             buildConfigField("String", "FEATURE_CONFIG_ASSET", "\"feature-config.production.json\"")
             buildConfigField("boolean", "PRODUCTION_FEATURE_CONFIG", "true")
+            buildConfigField("boolean", "INTERNAL_TOOLS_ENABLED", "false")
             buildConfigField("String", "GEMINI_API_KEY", "\"\"")
             buildConfigField("String", "GEMINI_PRIMARY_MODEL", "\"\"")
             buildConfigField("String", "CUSTOM_EXERCISE_AI_PROVIDER", "\"\"")
@@ -194,6 +197,31 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
+        }
+        create("zstore") {
+            // Zstore receives a debuggable APK so its private client can validate
+            // and install it, but the app itself keeps the exact offline,
+            // production-v1 surface. The trusted Zstore host applies the only
+            // signing identity after this unsigned candidate is verified.
+            initWith(getByName("release"))
+            applicationIdSuffix = ".zstore"
+            isDebuggable = true
+            signingConfig = null
+            matchingFallbacks += listOf("release")
+
+            buildConfigField("String", "FEATURE_CONFIG_ASSET", "\"feature-config.production.json\"")
+            buildConfigField("boolean", "PRODUCTION_FEATURE_CONFIG", "true")
+            buildConfigField("boolean", "INTERNAL_TOOLS_ENABLED", "false")
+            buildConfigField("String", "GEMINI_API_KEY", "\"\"")
+            buildConfigField("String", "GEMINI_PRIMARY_MODEL", "\"\"")
+            buildConfigField("String", "CUSTOM_EXERCISE_AI_PROVIDER", "\"\"")
+            buildConfigField("String", "OPENCODE_API_KEY", "\"\"")
+            buildConfigField("String", "OPENCODE_MODEL", "\"\"")
+            buildConfigField("String", "OPENCODE_CHAT_COMPLETIONS_URL", "\"\"")
+            buildConfigField("String", "OPENROUTER_API_KEY", "\"\"")
+            buildConfigField("String", "OPENROUTER_MODEL", "\"\"")
+            buildConfigField("String", "OPENROUTER_CHAT_COMPLETIONS_URL", "\"\"")
+            buildConfigField("String", "OPENROUTER_GENERATION_URL", "\"\"")
         }
     }
 
@@ -265,6 +293,7 @@ dependencies {
     // solely so it can be visually audited before the Play artifact is built.
     add("stagingImplementation", "com.appreveal:appreveal:0.10.0")
     releaseImplementation("com.appreveal:appreveal-noop:0.10.0")
+    add("zstoreImplementation", "com.appreveal:appreveal-noop:0.10.0")
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")

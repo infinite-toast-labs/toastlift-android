@@ -8,6 +8,7 @@ DEBUG_APK := app/build/outputs/apk/debug/app-debug.apk
 STAGE_APK := app/build/outputs/apk/staging/app-staging.apk
 RELEASE_APK := app/build/outputs/apk/release/app-release-unsigned.apk
 RELEASE_AAB := app/build/outputs/bundle/release/app-release.aab
+ZSTORE_APK := app/build/outputs/apk/zstore/app-zstore-unsigned.apk
 RELEASE_MERGED_MANIFEST := app/build/intermediates/merged_manifests/release/processReleaseManifest/AndroidManifest.xml
 LIVE_AI_SMOKE_TEST_REPORT := app/build/test-results/testDebugUnitTest/TEST-dev.toastlabs.toastlift.data.ExerciseMetadataGeneratorTest.xml
 LIVE_AI_SEARCH_SMOKE_TEST_REPORT := app/build/test-results/testDebugUnitTest/TEST-dev.toastlabs.toastlift.data.ExerciseAiSearchServiceTest.xml
@@ -31,7 +32,7 @@ GRADLE := ./gradlew --no-daemon --console=plain
 ADB := android-adb
 EMULATOR_ADB := android-emulator-adb
 
-.PHONY: help clean test lint check-version prepare-appreveal test-play-bundle-verifier build-debug build-stage build-release build-prod bundle-prod verify-release-no-internet verify-play-release assemble apk-paths devices \
+.PHONY: help clean test lint check-version prepare-appreveal test-play-bundle-verifier build-debug build-stage build-release build-zstore verify-zstore-candidate build-prod bundle-prod verify-release-no-internet verify-play-release assemble apk-paths devices \
 	check-emulator check-device install-debug install-debug-appreveal launch-debug launch-stage install-device-debug \
 	install-device-debug-no-build install-device-stage install-device-stage-no-build sync-device-custom-exercises live-ai-smoke-test \
 	install-stage-appreveal mcp-screens-regular mcp-screens-sheets mcp-screens-all mcp-stage-screens-all mcp-phone-screens-all \
@@ -51,6 +52,8 @@ help:
 	@echo "  make build-debug                  - Build debug APK"
 	@echo "  make build-stage                  - Build production-configured, debug-signed staging APK"
 	@echo "  make build-release                - Build unsigned release APK"
+	@echo "  make build-zstore                 - Build the unsigned, production-surface Zstore APK"
+	@echo "  make verify-zstore-candidate      - Build and verify the secret-free Zstore candidate"
 	@echo "  make build-prod                   - Build release APK; signs it when TOASTLIFT_PLAY_UPLOAD_* values are configured"
 	@echo "  make bundle-prod                  - Build Play Store Android App Bundle"
 	@echo "  make verify-release-no-internet   - Fail if the Play release manifest declares INTERNET"
@@ -136,6 +139,13 @@ build-stage:
 build-release:
 	$(GRADLE) assembleRelease
 
+build-zstore:
+	$(GRADLE) testZstoreUnitTest lintZstore assembleZstore
+
+verify-zstore-candidate: build-zstore
+	scripts/verify_zstore_dependencies.sh
+	scripts/verify_zstore_candidate.sh "$(ZSTORE_APK)"
+
 build-prod: build-release
 
 bundle-prod:
@@ -166,6 +176,7 @@ apk-paths:
 	@echo "Stage APK:   $(STAGE_APK)"
 	@echo "Release APK: $(RELEASE_APK)"
 	@echo "Release AAB: $(RELEASE_AAB)"
+	@echo "Zstore APK:  $(ZSTORE_APK)"
 
 devices:
 	$(ADB) devices -l

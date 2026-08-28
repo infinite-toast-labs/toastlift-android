@@ -7,6 +7,11 @@ Before changing the production product surface or preparing a Play release, read
 It documents the debug/staging/release modes, feature-config discipline,
 signing, visual QA, companion website, and Play Store procedure.
 
+For the private Zstore path, also read
+[`docs/ZSTORE_PUBLISHING.md`](docs/ZSTORE_PUBLISHING.md). Zstore candidates are
+unsigned, secret-free, production-surface APKs; signing and promotion stay on the
+trusted Zstore host.
+
 ## AppReveal MCP Visual Debugging
 
 ToastLift's visual-debug MCP server is dynamic. It is not registered as a static

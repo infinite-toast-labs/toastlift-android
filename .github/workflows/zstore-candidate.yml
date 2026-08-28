@@ -1,0 +1,78 @@
+name: Build private Zstore candidate
+
+on:
+  workflow_dispatch:
+    inputs:
+      commit_sha:
+        description: Full immutable ToastLift commit SHA to build.
+        required: true
+        type: string
+
+concurrency:
+  group: zstore-candidate-${{ inputs.commit_sha }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  candidate:
+    if: github.event.repository.private == true
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Validate immutable source input
+        env:
+          SOURCE_COMMIT: ${{ inputs.commit_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$SOURCE_COMMIT" =~ ^[0-9a-f]{40}$ ]] || {
+            echo "commit_sha must be a full lowercase commit SHA." >&2
+            exit 2
+          }
+      - name: Check out ToastLift source
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          ref: ${{ inputs.commit_sha }}
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Confirm checkout identity and secret-free builder
+        env:
+          SOURCE_COMMIT: ${{ inputs.commit_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_COMMIT"
+          test ! -e .env
+          env | grep -q '^TOASTLIFT_\(PLAY_UPLOAD\|RELEASE\|STAGING\)_' && {
+            echo "Zstore candidate builds must not receive signing configuration." >&2
+            exit 1
+          } || true
+      - id: setup
+        uses: ./.github/actions/android-setup
+        with:
+          commit-sha: ${{ inputs.commit_sha }}
+      - name: Build and verify unsigned Zstore candidate
+        run: |
+          set -euo pipefail
+          ./gradlew --no-daemon --console=plain ${{ steps.setup.outputs.zstore-gradle-tasks }}
+          scripts/verify_zstore_candidate.sh '${{ steps.setup.outputs.zstore-apk-path }}' '${{ steps.setup.outputs.zstore-package-name }}'
+      - name: Write candidate provenance
+        env:
+          RUNNER_OUTPUT: ${{ runner.temp }}/toastlift-zstore
+        run: |
+          set -euo pipefail
+          scripts/write_zstore_provenance.sh \
+            '${{ steps.setup.outputs.zstore-apk-path }}' \
+            '${{ inputs.commit_sha }}' \
+            '${{ steps.setup.outputs.appreveal-commit }}' \
+            "$RUNNER_OUTPUT"
+          cp '${{ steps.setup.outputs.zstore-apk-path }}' "$RUNNER_OUTPUT/"
+      - name: Upload private unsigned candidate
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: toastlift-zstore-${{ inputs.commit_sha }}
+          path: ${{ runner.temp }}/toastlift-zstore/
+          retention-days: ${{ steps.setup.outputs.zstore-artifact-retention-days }}
+          if-no-files-found: error
