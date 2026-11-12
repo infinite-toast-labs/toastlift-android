@@ -434,6 +434,7 @@ private fun AppFeatureConfig.mainTabs(): List<MainTab> = buildList {
 @Composable
 private fun GlobalOverflowMenu(
     onOpenProfile: () -> Unit,
+    onSaveProfile: (() -> Unit)?,
     modifier: Modifier = Modifier,
 ) {
     var expanded by remember { mutableStateOf(false) }
@@ -447,6 +448,15 @@ private fun GlobalOverflowMenu(
             )
         }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            if (onSaveProfile != null) {
+                DropdownMenuItem(
+                    text = { Text("Save changes") },
+                    onClick = {
+                        expanded = false
+                        onSaveProfile()
+                    },
+                )
+            }
             DropdownMenuItem(
                 text = { Text("Open profile") },
                 onClick = {
@@ -1666,6 +1676,7 @@ fun ToastLiftApp(
                             if (!isTodayFullscreenFlow && !isGenerateFullscreenFlow) {
                                 GlobalOverflowMenu(
                                     onOpenProfile = { isProfileHiddenScreen = true },
+                                    onSaveProfile = (viewModel::saveProfile).takeIf { isProfileHiddenScreen },
                                     modifier = Modifier
                                         .align(Alignment.TopEnd)
                                         .padding(top = 4.dp, end = 20.dp),

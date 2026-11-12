@@ -4,6 +4,12 @@ All notable changes to ToastLift are documented here. Releases follow
 [Semantic Versioning](https://semver.org/), and entries are generated from
 Conventional Commit-style pull-request titles.
 
+## [1.0.2] - 2026-11-12
+
+### Added
+
+- Save profile changes from the overflow menu.
+
 ## [1.0.1] - 2026-08-28
 
 ### Fixed
