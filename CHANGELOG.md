@@ -4,6 +4,12 @@ All notable changes to ToastLift are documented here. Releases follow
 [Semantic Versioning](https://semver.org/), and entries are generated from
 Conventional Commit-style pull-request titles.
 
+## [1.0.3] - 2026-11-12
+
+### Fixed
+
+- Correct the Zstore release notes for the profile save shortcut.
+
 ## [1.0.2] - 2026-11-12
 
 ### Added
