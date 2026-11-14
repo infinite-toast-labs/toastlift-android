@@ -27,7 +27,7 @@ generator. It favors a small, coherent experience over exhaustive settings.
 
 The production JSON currently keeps these core capabilities:
 
-- Ad-hoc workout generation and editing.
+- Ad-hoc workout generation and editing, including the manual workout builder.
 - Training freshness.
 - Workout history and the token system.
 - Weekly muscle targets.
@@ -38,7 +38,7 @@ The production JSON currently keeps these core capabilities:
 The production JSON deliberately removes or disables:
 
 - All AI features and their configuration UI.
-- Workout plans/programs, saved templates, and the manual workout builder.
+- Workout plans/programs and saved templates.
 - Custom exercises.
 - Exercise Family Tree / "Explore family".
 - Advanced history dashboards, bounty cards, and most developer settings.

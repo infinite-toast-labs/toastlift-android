@@ -1,10 +1,23 @@
 package dev.toastlabs.toastlift.config
 
+import java.io.File
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class FeatureConfigTest {
+    @Test
+    fun productionAsset_enablesManualBuilderWithoutTemplates() {
+        val config = FeatureConfigLoader.fromJson(
+            File("src/main/assets/feature-config.production.json").readText(),
+            productionDefaults = true,
+        )
+        assertTrue(config.global.manualWorkoutBuilder)
+        assertTrue(config.generate.manualBuilder)
+        assertFalse(config.global.workoutTemplates)
+        assertFalse(config.generate.savedTemplates)
+    }
+
     @Test
     fun productionConfig_keepsCoreSignalsAndDisablesAiAndPlans() {
         val config = FeatureConfigLoader.fromJson(

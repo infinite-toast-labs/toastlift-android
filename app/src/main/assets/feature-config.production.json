@@ -12,7 +12,7 @@
     "customExercises": false,
     "workoutPrograms": false,
     "workoutTemplates": false,
-    "manualWorkoutBuilder": false
+    "manualWorkoutBuilder": true
   },
   "screens": {
     "home": {
@@ -27,7 +27,7 @@
     "generate": {
       "adHocGenerator": true,
       "workoutEditing": true,
-      "manualBuilder": false,
+      "manualBuilder": true,
       "savedTemplates": false,
       "customExercises": false,
       "aiSearch": false,

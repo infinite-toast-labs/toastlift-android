@@ -4916,7 +4916,7 @@ private fun GenerateScreen(
                 workout = workout,
                 recommendationBiasByExerciseId = state.recommendationBiasByExerciseId,
                 onSwapGenerated = { showSwapSheet = true },
-                onSaveGenerated = { showGeneratedSaveDialog = true },
+                onSaveGenerated = if (features.global.workoutTemplates && features.generate.savedTemplates) ({ showGeneratedSaveDialog = true }) else null,
                 onStartGenerated = onStartGenerated,
                 onShowExerciseDetail = onShowExerciseDetail,
                 onAddExercise = { showGeneratedAddScreen = true },
@@ -4983,11 +4983,13 @@ private fun GenerateScreen(
         CompactSectionCard(
             title = builderCardTitle,
             subtitle = builderCardSubtitle,
-            menuItems = listOf(
-                "Open builder" to { showBuilderSheet = true },
-                "Start manual workout" to onStartManualWorkout,
-                (if (state.editingTemplateId != null) "Update template" else "Save template") to onSaveManualTemplate,
-            ),
+            menuItems = buildList {
+                add("Open builder" to { showBuilderSheet = true })
+                add("Start manual workout" to onStartManualWorkout)
+                if (features.global.workoutTemplates && features.generate.savedTemplates) {
+                    add((if (state.editingTemplateId != null) "Update template" else "Save template") to onSaveManualTemplate)
+                }
+            },
         ) {
             OutlinedTextField(
                 value = state.manualWorkoutName,
@@ -4999,7 +5001,7 @@ private fun GenerateScreen(
             if (state.manualWorkoutItems.isEmpty()) {
                 SuggestionRow(
                     title = "Builder is empty",
-                    subtitle = "Use Library > Add to send exercises here, then launch or save from the sheet.",
+                    subtitle = "Use Library > Add to send exercises here, then start your workout from the sheet.",
                     badge = "Build",
                 )
             } else {
@@ -5029,10 +5031,10 @@ private fun GenerateScreen(
             },
             onOpenExerciseHistory = onOpenExerciseHistory,
             onOpenExerciseVideos = onOpenExerciseVideos,
-            onSaveTemplate = {
+            onSaveTemplate = if (features.global.workoutTemplates && features.generate.savedTemplates) ({
                 showBuilderSheet = false
                 onSaveManualTemplate()
-            },
+            }) else null,
             onStartWorkout = {
                 showBuilderSheet = false
                 onStartManualWorkout()
@@ -10876,7 +10878,7 @@ private fun GeneratedWorkoutCard(
     workout: WorkoutPlan,
     recommendationBiasByExerciseId: Map<Long, RecommendationBias>,
     onSwapGenerated: () -> Unit,
-    onSaveGenerated: () -> Unit,
+    onSaveGenerated: (() -> Unit)?,
     onStartGenerated: () -> Unit,
     onShowExerciseDetail: (Long) -> Unit,
     onAddExercise: () -> Unit,
@@ -10919,8 +10921,10 @@ private fun GeneratedWorkoutCard(
                             Text("Swap")
                         }
                     }
-                    OutlinedButton(onClick = onSaveGenerated) {
-                        Text("Save")
+                    if (onSaveGenerated != null) {
+                        OutlinedButton(onClick = onSaveGenerated) {
+                            Text("Save")
+                        }
                     }
                 }
             }
@@ -11075,7 +11079,7 @@ private fun ManualBuilderSheet(
     onAddExercise: () -> Unit,
     onOpenExerciseHistory: (Long, String) -> Unit,
     onOpenExerciseVideos: (Long, String) -> Unit,
-    onSaveTemplate: () -> Unit,
+    onSaveTemplate: (() -> Unit)?,
     onStartWorkout: () -> Unit,
 ) {
     ToastLiftModalBottomSheet(onDismissRequest = onDismiss) {
@@ -11128,8 +11132,10 @@ private fun ManualBuilderSheet(
                 }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
-                OutlinedButton(onClick = onSaveTemplate, modifier = Modifier.weight(1f)) {
-                    Text(if (isEditingTemplate) "Update" else "Save")
+                if (onSaveTemplate != null) {
+                    OutlinedButton(onClick = onSaveTemplate, modifier = Modifier.weight(1f)) {
+                        Text(if (isEditingTemplate) "Update" else "Save")
+                    }
                 }
                 Button(onClick = onStartWorkout, modifier = Modifier.weight(1f)) {
                     Text("Start")
