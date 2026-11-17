@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 1,
+  "releaseName": "zstore-gemini-search",
+  "navigation": {
+    "home": true,
+    "generate": true,
+    "explore": true,
+    "profile": true
+  },
+  "global": {
+    "ai": true,
+    "customExercises": false,
+    "workoutPrograms": false,
+    "workoutTemplates": false,
+    "manualWorkoutBuilder": true
+  },
+  "screens": {
+    "home": {
+      "adHocGenerator": true,
+      "trainingFreshness": true,
+      "recoveryStory": false,
+      "completionReceipt": true,
+      "programs": false,
+      "templates": false,
+      "dailyCoach": false
+    },
+    "generate": {
+      "adHocGenerator": true,
+      "workoutEditing": true,
+      "manualBuilder": true,
+      "savedTemplates": false,
+      "customExercises": false,
+      "aiSearch": true,
+      "aiDiscovery": false
+    },
+    "explore": {
+      "library": {
+        "search": true,
+        "favorites": true,
+        "filters": true,
+        "exerciseFamily": false,
+        "customExercises": false,
+        "aiSearch": true,
+        "aiDiscovery": false
+      },
+      "history": {
+        "workouts": true,
+        "tokenSystem": true,
+        "weeklyMuscleTargets": true,
+        "overviewDashboard": false,
+        "advancedStats": false,
+        "muscleIndex": false,
+        "movementBalance": false,
+        "bountyCards": false
+      }
+    },
+    "profile": {
+      "aiSettings": false,
+      "programSettings": false,
+      "smartPickerTarget": false,
+      "developerSettings": false,
+      "dataControls": true
+    }
+  }
+}

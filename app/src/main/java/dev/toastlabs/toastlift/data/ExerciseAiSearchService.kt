@@ -92,13 +92,14 @@ internal class GeminiExerciseAiSearchRemoteGenerator(
                     .put("responseMimeType", "application/json"),
             )
 
-        val url = URL("https://generativelanguage.googleapis.com/v1beta/models/$configuredModel:generateContent?key=$apiKey")
+        val url = URL("https://generativelanguage.googleapis.com/v1beta/models/$configuredModel:generateContent")
         val connection = (url.openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
             doOutput = true
             connectTimeout = 20_000
             readTimeout = 60_000
             setRequestProperty("Content-Type", "application/json")
+            setRequestProperty("x-goog-api-key", apiKey)
         }
 
         try {

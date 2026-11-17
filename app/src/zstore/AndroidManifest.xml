@@ -2,14 +2,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!--
-      Zstore distributes the production-v1 product as a debuggable private APK,
-      but ToastLift itself remains offline. Remove both the main permission and
-      any network permissions a future transitive debug dependency might add.
-    -->
+    <!-- Gemini search sends the query and exercise catalog to Google. -->
     <uses-permission
         android:name="android.permission.INTERNET"
-        tools:node="remove" />
+        tools:node="replace" />
     <uses-permission
         android:name="android.permission.ACCESS_WIFI_STATE"
         tools:node="remove" />

@@ -1,6 +1,7 @@
 package dev.toastlabs.toastlift.data
 
 import android.content.Context
+import dev.toastlabs.toastlift.BuildConfig
 import dev.toastlabs.toastlift.config.AppFeatureConfig
 import dev.toastlabs.toastlift.config.FeatureConfigLoader
 
@@ -26,7 +27,16 @@ class AppContainer(
     )
     val personalDataImporter = PersonalDataImporter(toastLiftDatabase, customExerciseRepository)
     internal val exerciseDiscoveryService = ExerciseDiscoveryService()
-    internal val exerciseAiSearchService = ExerciseAiSearchService()
+    internal val geminiSearchCredentials = GeminiSearchCredentials(context.applicationContext)
+    internal val exerciseAiSearchService = if (BuildConfig.BUILD_TYPE == "zstore") {
+        ExerciseAiSearchService(object : ExerciseAiSearchRemoteGenerator {
+            override val model = "gemini-3.5-flash-lite"
+            override fun generate(prompt: String): String = GeminiExerciseAiSearchRemoteGenerator(
+                apiKey = geminiSearchCredentials.read().orEmpty(),
+                configuredModel = model,
+            ).generate(prompt)
+        })
+    } else ExerciseAiSearchService()
     val experimentRepository = ExperimentRepository(toastLiftDatabase)
     val workoutRepository = WorkoutRepository(toastLiftDatabase, catalogRepository)
     val restTimerNotifier = RestTimerNotifier(context.applicationContext).also { it.ensureNotificationChannel() }

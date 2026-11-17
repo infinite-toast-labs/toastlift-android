@@ -2782,8 +2782,10 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     fun deleteAllPersonalData() {
+        exerciseAiSearchJob?.cancel()
         cancelRestTimer()
         viewModelScope.launch(Dispatchers.IO) {
+            container.geminiSearchCredentials.clear()
             container.userRepository.deleteAllPersonalData()
             container.customExerciseRepository.deleteAllCustomExercisesAndSnapshot()
             container.workoutRepository.clearActiveSession()

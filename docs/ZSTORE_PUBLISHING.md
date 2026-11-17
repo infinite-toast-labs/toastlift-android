@@ -2,8 +2,9 @@
 
 Zstore receives its own Android variant rather than repackaging `debug`,
 `staging`, or Play `release`. The result is a debuggable universal APK with the
-production-v1 feature configuration, no embedded AI credentials, no AppReveal
-server, and no network permission. Its package is
+Zstore-specific feature configuration, no embedded AI credentials, and no AppReveal
+server. Gemini search uses an API key entered on the device and sends the search
+query and exercise catalog to Google; the variant declares INTERNET permission. Its package is
 `dev.toastlabs.toastlift.zstore`, so a Zstore install can coexist with both local
 development and a future Google Play install.
 

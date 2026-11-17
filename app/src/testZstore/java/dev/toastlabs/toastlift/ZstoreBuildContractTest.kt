@@ -7,11 +7,11 @@ import org.junit.Test
 
 class ZstoreBuildContractTest {
     @Test
-    fun zstoreCandidateKeepsProductionBehaviorWithoutEmbeddedServices() {
+    fun zstoreCandidateUsesZstoreConfigWithoutEmbeddedCredentials() {
         assertTrue(BuildConfig.DEBUG)
         assertTrue(BuildConfig.PRODUCTION_FEATURE_CONFIG)
         assertFalse(BuildConfig.INTERNAL_TOOLS_ENABLED)
-        assertEquals("feature-config.production.json", BuildConfig.FEATURE_CONFIG_ASSET)
+        assertEquals("feature-config.zstore.json", BuildConfig.FEATURE_CONFIG_ASSET)
         assertEquals("", BuildConfig.GEMINI_API_KEY)
         assertEquals("", BuildConfig.GEMINI_PRIMARY_MODEL)
         assertEquals("", BuildConfig.CUSTOM_EXERCISE_AI_PROVIDER)

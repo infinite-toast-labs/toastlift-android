@@ -6120,11 +6120,55 @@ private fun ExerciseAiSearchPanel(
     matchCard: @Composable (ExerciseAiSearchMatch) -> Unit,
 ) {
     val trimmedQuery = query.trim()
+    val context = LocalContext.current
+    val credentials = remember(context) { dev.toastlabs.toastlift.data.GeminiSearchCredentials(context) }
+    val requiresOwnKey = dev.toastlabs.toastlift.BuildConfig.BUILD_TYPE == "zstore"
+    var showKeyDialog by remember { mutableStateOf(false) }
+    var keyInput by remember { mutableStateOf("") }
+    var keyError by remember { mutableStateOf<String?>(null) }
+    val startSearch = {
+        if (requiresOwnKey && credentials.read().isNullOrBlank()) showKeyDialog = true else onSearch()
+    }
+    if (showKeyDialog) {
+        AlertDialog(
+            onDismissRequest = { showKeyDialog = false; keyInput = ""; keyError = null },
+            title = { Text("Gemini API key") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("AI search sends your search text and the exercise catalog to Google Gemini. Your key is stored encrypted on this device.")
+                    OutlinedTextField(value = keyInput, onValueChange = { keyInput = it },
+                        label = { Text("API key") }, singleLine = true,
+                        visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation())
+                    keyError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    if (runCatching { credentials.save(keyInput) }.isSuccess) {
+                        keyInput = ""; keyError = null; showKeyDialog = false; onSearch()
+                    } else keyError = "Could not save the key. Check the value and try again."
+                }, enabled = keyInput.isNotBlank()) { Text("Save and search") }
+            },
+            dismissButton = {
+                Row {
+                    TextButton(onClick = {
+                        if (runCatching { credentials.clear() }.isSuccess) {
+                            keyInput = ""; keyError = null; showKeyDialog = false; onClear()
+                        } else keyError = "Could not remove the key. Try again."
+                    }) { Text("Remove key") }
+                    TextButton(onClick = { keyInput = ""; showKeyDialog = false }) { Text("Cancel") }
+                }
+            },
+        )
+    }
     if (trimmedQuery.isBlank() && result == null && !isLoading && errorMessage == null) return
     Column(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
+        if (requiresOwnKey && !isLoading) {
+            TextButton(onClick = { keyInput = ""; keyError = null; showKeyDialog = true }) { Text("Set or change Gemini key") }
+        }
         when {
             isLoading -> {
                 Row(
@@ -6158,14 +6202,14 @@ private fun ExerciseAiSearchPanel(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    OutlinedButton(onClick = onSearch) {
+                    OutlinedButton(onClick = startSearch) {
                         Text("Retry")
                     }
                 }
             }
             result == null -> {
                 OutlinedButton(
-                    onClick = onSearch,
+                    onClick = startSearch,
                     modifier = Modifier.fillMaxWidth(),
                     enabled = trimmedQuery.isNotBlank(),
                     shape = RoundedCornerShape(16.dp),
@@ -6196,7 +6240,7 @@ private fun ExerciseAiSearchPanel(
                             MiniTag("${result.matches.size} match${if (result.matches.size == 1) "" else "es"}")
                         }
                     }
-                    IconButton(onClick = onSearch) {
+                    IconButton(onClick = startSearch) {
                         Icon(
                             imageVector = Icons.Rounded.AutoAwesome,
                             contentDescription = "Run AI search again",

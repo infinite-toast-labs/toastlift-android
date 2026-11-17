@@ -7,6 +7,19 @@ import org.junit.Test
 
 class FeatureConfigTest {
     @Test
+    fun zstoreAsset_enablesOnlyGeminiSearch() {
+        val config = FeatureConfigLoader.fromJson(
+            File("src/zstore/assets/feature-config.zstore.json").readText(), productionDefaults = true,
+        )
+        assertTrue(config.aiEnabled)
+        assertTrue(config.library.aiSearch)
+        assertTrue(config.generate.aiSearch)
+        assertFalse(config.library.aiDiscovery)
+        assertFalse(config.global.customExercises)
+        assertFalse(config.global.workoutTemplates)
+    }
+
+    @Test
     fun productionAsset_enablesManualBuilderWithoutTemplates() {
         val config = FeatureConfigLoader.fromJson(
             File("src/main/assets/feature-config.production.json").readText(),
