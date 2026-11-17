@@ -172,11 +172,11 @@ internal fun buildExerciseAiSearchPrompt(
 ): String {
     return """
         You match a user's exercise search query against a fixed exercise catalog for a fitness app.
-        The user typed the full name of an exercise they believe exists, but exact text search failed.
+        The user may provide an exercise name or describe its movement, equipment, position, or muscles without knowing its name.
         Exercises often go by multiple names: machine or brand names, colloquial gym slang, abbreviations, regional variants, or misspellings.
         
         Task:
-        - Find every catalog exercise that genuinely matches the query, ranked by confidence.
+        - Find catalog exercise titles that genuinely match the name or description, ranked by confidence.
         - Return at most $EXERCISE_AI_SEARCH_MAX_MATCHES matches. Do not pad the list; a specific query usually has 1-3 real matches.
         - If the exercise is genuinely not in the catalog, return an empty matches array. Never force a match.
         

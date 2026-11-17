@@ -28,6 +28,8 @@ class ExerciseAiSearchServiceTest {
         assertTrue(prompt.contains("return an empty matches array"))
         assertTrue(prompt.contains("at most $EXERCISE_AI_SEARCH_MAX_MATCHES matches"))
         assertTrue(prompt.contains("exact_alias"))
+        assertTrue(prompt.contains("describe its movement"))
+        assertTrue(prompt.contains("name or description"))
     }
 
     @Test

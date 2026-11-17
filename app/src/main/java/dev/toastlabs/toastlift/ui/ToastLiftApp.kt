@@ -6176,7 +6176,7 @@ private fun ExerciseAiSearchPanel(
                         modifier = Modifier.size(18.dp),
                     )
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("AI search: find \"$trimmedQuery\" by another name")
+                    Text("AI search: find exercises for \"$trimmedQuery\"")
                 }
             }
             else -> {
@@ -11754,7 +11754,7 @@ private fun BuilderAddExercisesScreen(
                     tint = MaterialTheme.colorScheme.onBackground,
                 )
             }
-            if (state.librarySearchVisible && showAiSearch) {
+            if (state.librarySearchVisible) {
                 OutlinedTextField(
                     value = state.libraryQuery,
                     onValueChange = onQueryChange,
@@ -11862,7 +11862,7 @@ private fun BuilderAddExercisesScreen(
             modifier = Modifier.fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            if (state.librarySearchVisible) {
+            if (state.librarySearchVisible && showAiSearch) {
                 item(key = "exercise-ai-search") {
                     ExerciseAiSearchPanel(
                         query = state.libraryQuery,
