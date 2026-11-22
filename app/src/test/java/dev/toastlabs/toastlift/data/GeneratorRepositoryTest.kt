@@ -321,6 +321,44 @@ class GeneratorRepositoryTest {
         assertTrue(biasedWindow.count(::isMachineOrCableExercise) >= 41)
     }
 
+    @Test
+    fun limitCandidatesForSelectionWindow_doesNotVaultLessOftenCableAheadOfNeutralFallback() {
+        val neutralPool = (1..245).map { index ->
+            candidate(
+                id = index.toLong(),
+                name = "Neutral Barbell Lower $index",
+                targetMuscle = "Quadriceps",
+                equipment = if (index <= 10) "Machine" else "Barbell",
+                movementPatterns = listOf("Knee Dominant"),
+                preferenceScoreDelta = 0.0,
+            )
+        }
+        val discouragedCable = candidate(
+            id = 1739L,
+            name = "Cable Isometric Split Squat Pallof Press",
+            targetMuscle = "Abdominals",
+            equipment = "Cable",
+            movementPatterns = listOf("Anti-Rotational"),
+            preferenceScoreDelta = -1.0,
+        )
+        val biasPlan = buildGymEquipmentBiasPlan(
+            profile = profile(durationMinutes = 75).copy(
+                activeLocationModeId = GYM_LOCATION_MODE_ID,
+                gymMachineCableBiasEnabled = true,
+            ),
+            availableEquipment = setOf("Machine", "Cable", "Barbell", "Bodyweight"),
+            desiredCount = 7,
+        )!!
+
+        val biasedWindow = limitCandidatesForSelectionWindow(
+            candidates = neutralPool + discouragedCable,
+            biasPlan = biasPlan,
+            maxCount = 240,
+        )
+
+        assertTrue(biasedWindow.none { it.id == discouragedCable.id })
+    }
+
     private fun profile(durationMinutes: Int = 30): UserProfile {
         return UserProfile(
             goal = "General Fitness",

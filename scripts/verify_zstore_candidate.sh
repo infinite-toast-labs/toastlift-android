@@ -51,8 +51,12 @@ printf '%s\n' "$badging" | grep -qx 'application-debuggable' || {
   exit 1
 }
 
+printf '%s\n' "$badging" | grep -Fq "uses-permission: name='android.permission.INTERNET'" || {
+  echo "Zstore Gemini search requires INTERNET permission." >&2
+  exit 1
+}
+
 for permission in \
-  android.permission.INTERNET \
   android.permission.ACCESS_WIFI_STATE \
   android.permission.CHANGE_WIFI_MULTICAST_STATE; do
   if printf '%s\n' "$badging" | grep -Fq "uses-permission: name='$permission'"; then
@@ -71,7 +75,7 @@ build_config="app/build/generated/source/buildConfig/zstore/dev/toastlabs/toastl
 [[ -f "$build_config" ]] || { echo "Generated Zstore BuildConfig not found." >&2; exit 1; }
 grep -Fq 'public static final boolean INTERNAL_TOOLS_ENABLED = false;' "$build_config"
 grep -Fq 'public static final boolean PRODUCTION_FEATURE_CONFIG = true;' "$build_config"
-grep -Fq 'public static final String FEATURE_CONFIG_ASSET = "feature-config.production.json";' "$build_config"
+grep -Fq 'public static final String FEATURE_CONFIG_ASSET = "feature-config.zstore.json";' "$build_config"
 for field in \
   GEMINI_API_KEY GEMINI_PRIMARY_MODEL CUSTOM_EXERCISE_AI_PROVIDER \
   OPENCODE_API_KEY OPENCODE_MODEL OPENCODE_CHAT_COMPLETIONS_URL \

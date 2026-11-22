@@ -4916,7 +4916,7 @@ private fun GenerateScreen(
                 workout = workout,
                 recommendationBiasByExerciseId = state.recommendationBiasByExerciseId,
                 onSwapGenerated = { showSwapSheet = true },
-                onSaveGenerated = { showGeneratedSaveDialog = true },
+                onSaveGenerated = if (features.global.workoutTemplates && features.generate.savedTemplates) ({ showGeneratedSaveDialog = true }) else null,
                 onStartGenerated = onStartGenerated,
                 onShowExerciseDetail = onShowExerciseDetail,
                 onAddExercise = { showGeneratedAddScreen = true },
@@ -4983,11 +4983,13 @@ private fun GenerateScreen(
         CompactSectionCard(
             title = builderCardTitle,
             subtitle = builderCardSubtitle,
-            menuItems = listOf(
-                "Open builder" to { showBuilderSheet = true },
-                "Start manual workout" to onStartManualWorkout,
-                (if (state.editingTemplateId != null) "Update template" else "Save template") to onSaveManualTemplate,
-            ),
+            menuItems = buildList {
+                add("Open builder" to { showBuilderSheet = true })
+                add("Start manual workout" to onStartManualWorkout)
+                if (features.global.workoutTemplates && features.generate.savedTemplates) {
+                    add((if (state.editingTemplateId != null) "Update template" else "Save template") to onSaveManualTemplate)
+                }
+            },
         ) {
             OutlinedTextField(
                 value = state.manualWorkoutName,
@@ -4999,7 +5001,7 @@ private fun GenerateScreen(
             if (state.manualWorkoutItems.isEmpty()) {
                 SuggestionRow(
                     title = "Builder is empty",
-                    subtitle = "Use Library > Add to send exercises here, then launch or save from the sheet.",
+                    subtitle = "Use Library > Add to send exercises here, then start your workout from the sheet.",
                     badge = "Build",
                 )
             } else {
@@ -5029,10 +5031,10 @@ private fun GenerateScreen(
             },
             onOpenExerciseHistory = onOpenExerciseHistory,
             onOpenExerciseVideos = onOpenExerciseVideos,
-            onSaveTemplate = {
+            onSaveTemplate = if (features.global.workoutTemplates && features.generate.savedTemplates) ({
                 showBuilderSheet = false
                 onSaveManualTemplate()
-            },
+            }) else null,
             onStartWorkout = {
                 showBuilderSheet = false
                 onStartManualWorkout()
@@ -6118,11 +6120,55 @@ private fun ExerciseAiSearchPanel(
     matchCard: @Composable (ExerciseAiSearchMatch) -> Unit,
 ) {
     val trimmedQuery = query.trim()
+    val context = LocalContext.current
+    val credentials = remember(context) { dev.toastlabs.toastlift.data.GeminiSearchCredentials(context) }
+    val requiresOwnKey = dev.toastlabs.toastlift.BuildConfig.BUILD_TYPE == "zstore"
+    var showKeyDialog by remember { mutableStateOf(false) }
+    var keyInput by remember { mutableStateOf("") }
+    var keyError by remember { mutableStateOf<String?>(null) }
+    val startSearch = {
+        if (requiresOwnKey && credentials.read().isNullOrBlank()) showKeyDialog = true else onSearch()
+    }
+    if (showKeyDialog) {
+        AlertDialog(
+            onDismissRequest = { showKeyDialog = false; keyInput = ""; keyError = null },
+            title = { Text("Gemini API key") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("AI search sends your search text and the exercise catalog to Google Gemini. Your key is stored encrypted on this device.")
+                    OutlinedTextField(value = keyInput, onValueChange = { keyInput = it },
+                        label = { Text("API key") }, singleLine = true,
+                        visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation())
+                    keyError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    if (runCatching { credentials.save(keyInput) }.isSuccess) {
+                        keyInput = ""; keyError = null; showKeyDialog = false; onSearch()
+                    } else keyError = "Could not save the key. Check the value and try again."
+                }, enabled = keyInput.isNotBlank()) { Text("Save and search") }
+            },
+            dismissButton = {
+                Row {
+                    TextButton(onClick = {
+                        if (runCatching { credentials.clear() }.isSuccess) {
+                            keyInput = ""; keyError = null; showKeyDialog = false; onClear()
+                        } else keyError = "Could not remove the key. Try again."
+                    }) { Text("Remove key") }
+                    TextButton(onClick = { keyInput = ""; showKeyDialog = false }) { Text("Cancel") }
+                }
+            },
+        )
+    }
     if (trimmedQuery.isBlank() && result == null && !isLoading && errorMessage == null) return
     Column(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
+        if (requiresOwnKey && !isLoading) {
+            TextButton(onClick = { keyInput = ""; keyError = null; showKeyDialog = true }) { Text("Set or change Gemini key") }
+        }
         when {
             isLoading -> {
                 Row(
@@ -6156,14 +6202,14 @@ private fun ExerciseAiSearchPanel(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    OutlinedButton(onClick = onSearch) {
+                    OutlinedButton(onClick = startSearch) {
                         Text("Retry")
                     }
                 }
             }
             result == null -> {
                 OutlinedButton(
-                    onClick = onSearch,
+                    onClick = startSearch,
                     modifier = Modifier.fillMaxWidth(),
                     enabled = trimmedQuery.isNotBlank(),
                     shape = RoundedCornerShape(16.dp),
@@ -6174,7 +6220,7 @@ private fun ExerciseAiSearchPanel(
                         modifier = Modifier.size(18.dp),
                     )
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("AI search: find \"$trimmedQuery\" by another name")
+                    Text("AI search: find exercises for \"$trimmedQuery\"")
                 }
             }
             else -> {
@@ -6194,7 +6240,7 @@ private fun ExerciseAiSearchPanel(
                             MiniTag("${result.matches.size} match${if (result.matches.size == 1) "" else "es"}")
                         }
                     }
-                    IconButton(onClick = onSearch) {
+                    IconButton(onClick = startSearch) {
                         Icon(
                             imageVector = Icons.Rounded.AutoAwesome,
                             contentDescription = "Run AI search again",
@@ -10876,7 +10922,7 @@ private fun GeneratedWorkoutCard(
     workout: WorkoutPlan,
     recommendationBiasByExerciseId: Map<Long, RecommendationBias>,
     onSwapGenerated: () -> Unit,
-    onSaveGenerated: () -> Unit,
+    onSaveGenerated: (() -> Unit)?,
     onStartGenerated: () -> Unit,
     onShowExerciseDetail: (Long) -> Unit,
     onAddExercise: () -> Unit,
@@ -10919,8 +10965,10 @@ private fun GeneratedWorkoutCard(
                             Text("Swap")
                         }
                     }
-                    OutlinedButton(onClick = onSaveGenerated) {
-                        Text("Save")
+                    if (onSaveGenerated != null) {
+                        OutlinedButton(onClick = onSaveGenerated) {
+                            Text("Save")
+                        }
                     }
                 }
             }
@@ -11075,7 +11123,7 @@ private fun ManualBuilderSheet(
     onAddExercise: () -> Unit,
     onOpenExerciseHistory: (Long, String) -> Unit,
     onOpenExerciseVideos: (Long, String) -> Unit,
-    onSaveTemplate: () -> Unit,
+    onSaveTemplate: (() -> Unit)?,
     onStartWorkout: () -> Unit,
 ) {
     ToastLiftModalBottomSheet(onDismissRequest = onDismiss) {
@@ -11128,8 +11176,10 @@ private fun ManualBuilderSheet(
                 }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
-                OutlinedButton(onClick = onSaveTemplate, modifier = Modifier.weight(1f)) {
-                    Text(if (isEditingTemplate) "Update" else "Save")
+                if (onSaveTemplate != null) {
+                    OutlinedButton(onClick = onSaveTemplate, modifier = Modifier.weight(1f)) {
+                        Text(if (isEditingTemplate) "Update" else "Save")
+                    }
                 }
                 Button(onClick = onStartWorkout, modifier = Modifier.weight(1f)) {
                     Text("Start")
@@ -11748,7 +11798,7 @@ private fun BuilderAddExercisesScreen(
                     tint = MaterialTheme.colorScheme.onBackground,
                 )
             }
-            if (state.librarySearchVisible && showAiSearch) {
+            if (state.librarySearchVisible) {
                 OutlinedTextField(
                     value = state.libraryQuery,
                     onValueChange = onQueryChange,
@@ -11856,7 +11906,7 @@ private fun BuilderAddExercisesScreen(
             modifier = Modifier.fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            if (state.librarySearchVisible) {
+            if (state.librarySearchVisible && showAiSearch) {
                 item(key = "exercise-ai-search") {
                     ExerciseAiSearchPanel(
                         query = state.libraryQuery,

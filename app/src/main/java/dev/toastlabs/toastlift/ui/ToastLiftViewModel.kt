@@ -2782,8 +2782,10 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     fun deleteAllPersonalData() {
+        exerciseAiSearchJob?.cancel()
         cancelRestTimer()
         viewModelScope.launch(Dispatchers.IO) {
+            container.geminiSearchCredentials.clear()
             container.userRepository.deleteAllPersonalData()
             container.customExerciseRepository.deleteAllCustomExercisesAndSnapshot()
             container.workoutRepository.clearActiveSession()
@@ -2956,7 +2958,7 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
         }
         val query = uiState.libraryQuery.trim()
         if (query.isBlank()) {
-            uiState = uiState.copy(message = "Type the full exercise name first, then run AI search.")
+            uiState = uiState.copy(message = "Enter an exercise name or description first, then run AI search.")
             return
         }
         exerciseAiSearchJob?.cancel()

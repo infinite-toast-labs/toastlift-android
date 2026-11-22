@@ -508,6 +508,107 @@ class WorkoutGenerationFacadeTest {
     }
 
     @Test
+    fun generateLowerBodyDemotesLessOftenFullBodyCablePallofBelowNeutralAndFavoredPeers() {
+        val discouragedPallof = candidate(
+            id = 1739L,
+            name = "Cable Isometric Split Squat Pallof Press",
+            bodyRegion = "Full Body",
+            targetMuscle = "Abdominals",
+            equipment = "Cable",
+            movementPatterns = listOf("Anti-Rotational", "Isometric Hold"),
+            planesOfMotion = listOf("Transverse Plane"),
+            laterality = "Unilateral",
+            classification = "Balance",
+            preferenceScoreDelta = -1.0,
+        )
+        val favoredCore = candidate(
+            id = 1740L,
+            name = "Cable Rotational Lift",
+            bodyRegion = "Core",
+            targetMuscle = "Abdominals",
+            equipment = "Cable",
+            movementPatterns = listOf("Rotational"),
+            planesOfMotion = listOf("Transverse Plane"),
+            laterality = "Unilateral",
+            classification = "Balance",
+            preferenceScoreDelta = 2.0,
+        )
+        val neutralCore = candidate(
+            id = 1741L,
+            name = "Cable Half Kneeling Pallof Press",
+            bodyRegion = "Core",
+            targetMuscle = "Abdominals",
+            equipment = "Cable",
+            movementPatterns = listOf("Anti-Rotational"),
+            planesOfMotion = listOf("Transverse Plane"),
+            laterality = "Unilateral",
+            classification = "Balance",
+            preferenceScoreDelta = 0.0,
+        )
+        val lowerCandidates = listOf(
+            candidate(id = 1701L, name = "Prone Leg Curl", bodyRegion = "Lower Body", targetMuscle = "Hamstrings", equipment = "Machine", movementPatterns = listOf("Knee Dominant")),
+            candidate(id = 1702L, name = "Hack Squat", bodyRegion = "Lower Body", targetMuscle = "Quadriceps", equipment = "Machine", movementPatterns = listOf("Knee Dominant")),
+            candidate(id = 1703L, name = "Cable Fire Hydrant", bodyRegion = "Lower Body", targetMuscle = "Glutes", equipment = "Cable", movementPatterns = listOf("Hip Extension"), laterality = "Unilateral"),
+            candidate(id = 1704L, name = "Hip Abductor Machine", bodyRegion = "Lower Body", targetMuscle = "Abductors", equipment = "Machine", movementPatterns = listOf("Hip Abduction")),
+            candidate(id = 1705L, name = "Thigh Adductor Machine", bodyRegion = "Lower Body", targetMuscle = "Adductors", equipment = "Machine", movementPatterns = listOf("Hip Adduction")),
+            candidate(id = 1706L, name = "Seated Calf Raise", bodyRegion = "Lower Body", targetMuscle = "Calves", equipment = "Machine", movementPatterns = listOf("Plantar Flexion")),
+            discouragedPallof,
+            favoredCore,
+            neutralCore,
+        )
+        val priorHistory = listOf(
+            historySet(
+                exerciseId = discouragedPallof.id,
+                completedAtUtc = now.minusSeconds(60L * 60L * 24L * 45L).toString(),
+                targetMuscle = "Abdominals",
+                movementPatterns = listOf("Anti-Rotational"),
+                actualReps = 10,
+                weight = 17.5,
+            ),
+            historySet(
+                exerciseId = discouragedPallof.id,
+                completedAtUtc = now.minusSeconds(60L * 60L * 24L * 90L).toString(),
+                targetMuscle = "Abdominals",
+                movementPatterns = listOf("Anti-Rotational"),
+                actualReps = 10,
+                weight = 10.5,
+            ),
+        )
+
+        val result = facade.generate(
+            WorkoutGenerationRequest(
+                profile = profile(durationMinutes = 75).copy(
+                    activeLocationModeId = GYM_LOCATION_MODE_ID,
+                    gymMachineCableBiasEnabled = true,
+                ),
+                splitProgramName = "Upper/Lower",
+                focus = "lower_body",
+                locationName = "Gym",
+                availableEquipment = setOf("Machine", "Cable", "Dumbbell", "Bodyweight"),
+                candidates = lowerCandidates,
+                history = priorHistory,
+                restrictions = emptyList(),
+                preferences = mapOf(
+                    discouragedPallof.id to GeneratorPreferenceState(
+                        exerciseId = discouragedPallof.id,
+                        favorite = false,
+                        hidden = false,
+                        banned = false,
+                        scoreDelta = -1.0,
+                        notes = null,
+                    ),
+                ),
+                previousExerciseIds = emptySet(),
+                variationSeed = 2026L,
+                nowUtc = now,
+            ),
+        )
+
+        assertTrue(result.exercises.none { it.exerciseId == discouragedPallof.id })
+        assertTrue(result.exercises.any { it.exerciseId == favoredCore.id || it.exerciseId == neutralCore.id })
+    }
+
+    @Test
     fun generateBiasesTowardMachineAndCableInGymMode() {
         val result = facade.generate(
             WorkoutGenerationRequest(
@@ -891,6 +992,7 @@ class WorkoutGenerationFacadeTest {
         secondaryEquipment: String? = null,
         classification: String = "Compound",
         movementPatterns: List<String> = emptyList(),
+        planesOfMotion: List<String> = listOf("Sagittal Plane"),
         laterality: String = "Bilateral",
         favorite: Boolean = false,
         preferenceScoreDelta: Double = 0.0,
@@ -919,7 +1021,7 @@ class WorkoutGenerationFacadeTest {
             laterality = laterality,
             classification = classification,
             movementPatterns = movementPatterns,
-            planesOfMotion = listOf("Sagittal Plane"),
+            planesOfMotion = planesOfMotion,
             workUnits = workUnits,
         )
     }

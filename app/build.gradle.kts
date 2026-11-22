@@ -200,8 +200,8 @@ android {
         }
         create("zstore") {
             // Zstore receives a debuggable APK so its private client can validate
-            // and install it, but the app itself keeps the exact offline,
-            // production-v1 surface. The trusted Zstore host applies the only
+            // and install it. Gemini search uses a device-provided API key.
+            // The trusted Zstore host applies the only
             // signing identity after this unsigned candidate is verified.
             initWith(getByName("release"))
             applicationIdSuffix = ".zstore"
@@ -209,7 +209,7 @@ android {
             signingConfig = null
             matchingFallbacks += listOf("release")
 
-            buildConfigField("String", "FEATURE_CONFIG_ASSET", "\"feature-config.production.json\"")
+            buildConfigField("String", "FEATURE_CONFIG_ASSET", "\"feature-config.zstore.json\"")
             buildConfigField("boolean", "PRODUCTION_FEATURE_CONFIG", "true")
             buildConfigField("boolean", "INTERNAL_TOOLS_ENABLED", "false")
             buildConfigField("String", "GEMINI_API_KEY", "\"\"")
