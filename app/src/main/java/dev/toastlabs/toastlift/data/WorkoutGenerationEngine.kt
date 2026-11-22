@@ -11,7 +11,7 @@ import kotlin.math.round
 
 private const val FAVORITE_SELECTION_BOOST = 28.0
 private const val RECOMMEND_MORE_OFTEN_BOOST = 18.0
-private const val RECOMMEND_LESS_OFTEN_PENALTY = -18.0
+private const val RECOMMEND_LESS_OFTEN_PENALTY = -160.0
 private const val MAX_RECOMMENDATION_DELTA_FOR_SCORING = 2.5
 internal const val GYM_LOCATION_MODE_ID = 2L
 private const val GYM_MACHINE_CABLE_TARGET_SHARE = 2.0 / 3.0
@@ -64,34 +64,45 @@ internal fun biasProgramCandidatesTowardGymEquipment(
 ): List<GeneratorCatalogExercise> {
     if (biasPlan == null || candidates.isEmpty()) return candidates
 
-    val preferred = ArrayDeque(candidates.filter(::isMachineOrCableExercise))
-    val fallback = ArrayDeque(candidates.filterNot(::isMachineOrCableExercise))
-    if (preferred.isEmpty() || fallback.isEmpty()) return candidates
-
-    val ordered = mutableListOf<GeneratorCatalogExercise>()
-    val headLimit = min(candidates.size, biasPlan.desiredCount)
-    var preferredPicked = 0
-
-    while (ordered.size < headLimit) {
-        val remainingSlots = headLimit - ordered.size
-        val preferredNeeded = (biasPlan.targetPreferredCount - preferredPicked).coerceAtLeast(0)
-        val takePreferred = when {
-            preferred.isEmpty() -> false
-            fallback.isEmpty() -> true
-            preferredNeeded >= remainingSlots -> true
-            preferredNeeded > 0 && ordered.size % 3 != 2 -> true
-            else -> false
-        }
-        if (takePreferred) {
-            ordered += preferred.removeFirst()
-            preferredPicked++
-        } else {
-            ordered += fallback.removeFirst()
-        }
+    val (deprioritized, eligible) = candidates.partition {
+        RecommendationBias.fromScoreDelta(it.preferenceScoreDelta) == RecommendationBias.LessOften
     }
 
-    while (preferred.isNotEmpty()) ordered += preferred.removeFirst()
-    while (fallback.isNotEmpty()) ordered += fallback.removeFirst()
+    val ordered = mutableListOf<GeneratorCatalogExercise>()
+    val preferred = ArrayDeque(eligible.filter(::isMachineOrCableExercise))
+    val fallback = ArrayDeque(eligible.filterNot(::isMachineOrCableExercise))
+    if (preferred.isEmpty() || fallback.isEmpty()) {
+        ordered += eligible
+    } else {
+        val headLimit = min(eligible.size, biasPlan.desiredCount)
+        var preferredPicked = 0
+
+        while (ordered.size < headLimit) {
+            val remainingSlots = headLimit - ordered.size
+            val preferredNeeded = (biasPlan.targetPreferredCount - preferredPicked).coerceAtLeast(0)
+            val takePreferred = when {
+                preferred.isEmpty() -> false
+                fallback.isEmpty() -> true
+                preferredNeeded >= remainingSlots -> true
+                preferredNeeded > 0 && ordered.size % 3 != 2 -> true
+                else -> false
+            }
+            if (takePreferred) {
+                ordered += preferred.removeFirst()
+                preferredPicked++
+            } else {
+                ordered += fallback.removeFirst()
+            }
+        }
+
+        while (preferred.isNotEmpty()) ordered += preferred.removeFirst()
+        while (fallback.isNotEmpty()) ordered += fallback.removeFirst()
+    }
+
+    if (deprioritized.isNotEmpty()) {
+        ordered += deprioritized.filter(::isMachineOrCableExercise)
+        ordered += deprioritized.filterNot(::isMachineOrCableExercise)
+    }
     return ordered
 }
 
@@ -1021,6 +1032,7 @@ class WorkoutGenerationFacade(
                 FORMULA_B_REAR_SIDE_DELTS_DAY_FOCUS_KEY,
             ) && candidate.bodyRegion == "Upper Body" -> 75.0
             request.focus in setOf("legs_day", FORMULA_B_GLUTES_HAMSTRINGS_DAY_FOCUS_KEY) && candidate.bodyRegion == "Lower Body" -> 75.0
+            candidate.bodyRegion == "Full Body" && request.focus != "full_body" && candidate.targetMuscleGroup == "Abdominals" -> 20.0
             candidate.bodyRegion == "Full Body" -> 45.0
             candidate.bodyRegion == "Core" -> 20.0
             else -> 0.0
