@@ -45,6 +45,7 @@ import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -172,16 +173,20 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalFocusManager
@@ -211,6 +216,7 @@ import androidx.compose.ui.window.DialogWindowProvider
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.view.WindowCompat
+import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.roundToInt
 import kotlin.math.sin
@@ -645,9 +651,7 @@ private data class TokenWalletPalette(
     val shellTop: Color,
     val shellBottom: Color,
     val shellStroke: Color,
-    val glow: Color,
     val coin: Color,
-    val coinSoft: Color,
     val positive: Color,
     val negative: Color,
     val graphGrid: Color,
@@ -662,9 +666,7 @@ private fun rememberTokenWalletPalette(): TokenWalletPalette {
             shellTop = Color(0xFF201A0A),
             shellBottom = Color(0xFF0E1418),
             shellStroke = Color(0xFF5D4A17),
-            glow = Color(0x66FFD86B),
             coin = Color(0xFFFFD15C),
-            coinSoft = Color(0xFFF7B733),
             positive = Color(0xFF45E08E),
             negative = Color(0xFFFF6B61),
             graphGrid = Color(0x33FFD15C),
@@ -675,9 +677,7 @@ private fun rememberTokenWalletPalette(): TokenWalletPalette {
             shellTop = Color(0xFFF7F4FA),
             shellBottom = Color(0xFFEFEAF6),
             shellStroke = Color(0xFFB6ADCB),
-            glow = Color(0x38695A91),
             coin = Color(0xFF695A91),
-            coinSoft = Color(0xFF8476A5),
             positive = Color(0xFF4E5C9D),
             negative = Color(0xFFC24B42),
             graphGrid = Color(0x33695A91),
@@ -8068,7 +8068,6 @@ private fun TokenBalanceOverviewCard(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         TokenCoinBadge(
-                            palette = palette,
                             modifier = Modifier.size(72.dp),
                         )
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -8091,7 +8090,6 @@ private fun TokenBalanceOverviewCard(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         TokenCoinBadge(
-                            palette = palette,
                             modifier = Modifier.size(78.dp),
                         )
                         Column(
@@ -8221,7 +8219,6 @@ private fun TokenBalanceDetailScreen(
                             )
                         }
                         TokenCoinBadge(
-                            palette = palette,
                             modifier = Modifier.size(104.dp),
                         )
                     }
@@ -8367,73 +8364,235 @@ private fun TokenBalanceAxisLabels(
 
 @Composable
 private fun TokenCoinBadge(
-    palette: TokenWalletPalette,
     modifier: Modifier = Modifier,
 ) {
-    val infiniteTransition = rememberInfiniteTransition(label = "tokenCoin")
-    val haloScale by infiniteTransition.animateFloat(
-        initialValue = 0.92f,
-        targetValue = 1.08f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 1800, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "tokenHaloScale",
-    )
-    val shineShift by infiniteTransition.animateFloat(
-        initialValue = 0.18f,
-        targetValue = 0.42f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 1300, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "tokenShineShift",
-    )
+    val isDark = LocalToastLiftIsDarkTheme.current
+    val dropShadowColor = if (isDark) Color(0x70000000) else Color(0x3D6E480A)
+    val rimLight = if (isDark) Color(0xFFFFF6CC) else Color(0xFFFFF3BE)
+    val rimBrightGold = Color(0xFFF3C64F)
+    val rimMidGold = Color(0xFFCD9120)
+    val rimDeepBronze = Color(0xFF8F5E0E)
+    val rimBounceGold = Color(0xFFD69F2E)
+    val outerEdgeStroke = Color(0xFF7D510B).copy(alpha = if (isDark) 0.85f else 0.72f)
+    val faceHighlight = if (isDark) Color(0xFFFFF0A8) else Color(0xFFFFEC9E)
+    val faceGold = Color(0xFFF4C144)
+    val faceHoney = Color(0xFFD99A22)
+    val faceDeepGold = Color(0xFFBA7C14)
+    val monogramColor = Color(0xFF4F3005)
+    val monogramEmbossHighlight = Color(0x99FFF5C8)
 
-    Box(modifier = modifier, contentAlignment = Alignment.Center) {
+    BoxWithConstraints(modifier = modifier, contentAlignment = Alignment.Center) {
+        val monogramSize = (maxWidth.value * 0.30f).coerceIn(18f, 34f).sp
+
         Canvas(modifier = Modifier.fillMaxSize()) {
-            val center = androidx.compose.ui.geometry.Offset(size.width / 2f, size.height / 2f)
-            val radius = size.minDimension * 0.3f
-            drawCircle(
-                color = palette.glow,
-                radius = radius * 1.75f * haloScale,
-                center = center,
-            )
+            val center = Offset(size.width / 2f, size.height / 2f)
+            val outerRadius = size.minDimension * 0.45f
+            val innerFaceRadius = outerRadius * 0.79f
+            val engravedRingRadius = outerRadius * 0.70f
+
+            // Grounded coin drop shadow
             drawCircle(
                 brush = Brush.radialGradient(
-                    colors = listOf(
-                        palette.coin.copy(alpha = 0.98f),
-                        palette.coinSoft.copy(alpha = 0.94f),
+                    colorStops = arrayOf(
+                        0.0f to dropShadowColor,
+                        0.72f to dropShadowColor.copy(alpha = dropShadowColor.alpha * 0.55f),
+                        1.0f to Color.Transparent,
                     ),
-                    center = center,
-                    radius = radius,
+                    center = Offset(center.x + outerRadius * 0.04f, center.y + outerRadius * 0.09f),
+                    radius = outerRadius * 1.10f,
                 ),
-                radius = radius,
+                radius = outerRadius * 1.10f,
+                center = Offset(center.x + outerRadius * 0.04f, center.y + outerRadius * 0.09f),
+            )
+
+            // Outer beveled gold rim
+            drawCircle(
+                brush = Brush.linearGradient(
+                    colorStops = arrayOf(
+                        0.00f to rimLight,
+                        0.28f to rimBrightGold,
+                        0.62f to rimMidGold,
+                        0.86f to rimDeepBronze,
+                        1.00f to rimBounceGold,
+                    ),
+                    start = Offset(center.x - outerRadius, center.y - outerRadius),
+                    end = Offset(center.x + outerRadius, center.y + outerRadius),
+                ),
+                radius = outerRadius,
                 center = center,
             )
+
+            // Milled / reeded edge notches around the coin perimeter
+            val notchCount = 36
+            val notchInner = outerRadius * 0.87f
+            val notchOuter = outerRadius * 0.975f
+            val notchStrokeWidth = (outerRadius * 0.032f).coerceAtLeast(1f)
+            for (i in 0 until notchCount) {
+                val angleRad = (i * (2.0 * PI / notchCount)).toFloat()
+                val cosA = cos(angleRad)
+                val sinA = sin(angleRad)
+                val start = Offset(center.x + notchInner * cosA, center.y + notchInner * sinA)
+                val end = Offset(center.x + notchOuter * cosA, center.y + notchOuter * sinA)
+                val isLitSide = (cosA + sinA) < 0f
+                drawLine(
+                    color = if (i % 2 == 0) {
+                        if (isLitSide) Color(0x8AFFF8D6) else Color(0x4DFFF0B3)
+                    } else {
+                        Color(0x52734707)
+                    },
+                    start = start,
+                    end = end,
+                    strokeWidth = notchStrokeWidth,
+                    cap = StrokeCap.Round,
+                )
+            }
+
+            // Crisp outer edge outline
             drawCircle(
-                color = Color.White.copy(alpha = 0.26f),
-                radius = radius * 0.72f,
-                center = center.copy(y = center.y - radius * shineShift),
-                style = Stroke(width = radius * 0.22f),
-            )
-            drawCircle(
-                color = palette.shellStroke.copy(alpha = 0.24f),
-                radius = radius * 0.94f,
+                color = outerEdgeStroke,
+                radius = outerRadius - outerRadius * 0.015f,
                 center = center,
-                style = Stroke(width = radius * 0.1f),
+                style = Stroke(width = (outerRadius * 0.032f).coerceAtLeast(1f)),
+            )
+
+            // Recessed collar bevel separating rim from inner face
+            val bevelRadius = innerFaceRadius + outerRadius * 0.025f
+            val bevelRectTopLeft = Offset(center.x - bevelRadius, center.y - bevelRadius)
+            val bevelRectSize = Size(bevelRadius * 2f, bevelRadius * 2f)
+            val bevelStroke = Stroke(width = (outerRadius * 0.045f).coerceAtLeast(1.2f), cap = StrokeCap.Round)
+            drawArc(
+                color = Color(0x7A734707),
+                startAngle = 140f,
+                sweepAngle = 175f,
+                useCenter = false,
+                topLeft = bevelRectTopLeft,
+                size = bevelRectSize,
+                style = bevelStroke,
+            )
+            drawArc(
+                color = Color(0xB8FFF5C4),
+                startAngle = 320f,
+                sweepAngle = 175f,
+                useCenter = false,
+                topLeft = bevelRectTopLeft,
+                size = bevelRectSize,
+                style = bevelStroke,
+            )
+
+            // Recessed brushed-gold inner face
+            drawCircle(
+                brush = Brush.linearGradient(
+                    colorStops = arrayOf(
+                        0.00f to faceHighlight,
+                        0.38f to faceGold,
+                        0.78f to faceHoney,
+                        1.00f to faceDeepGold,
+                    ),
+                    start = Offset(center.x - innerFaceRadius * 0.85f, center.y - innerFaceRadius * 0.85f),
+                    end = Offset(center.x + innerFaceRadius * 0.90f, center.y + innerFaceRadius * 0.90f),
+                ),
+                radius = innerFaceRadius,
+                center = center,
+            )
+
+            // Subtle static diagonal bullion sheen clipped inside the inner face
+            val innerClipPath = Path().apply {
+                addOval(
+                    Rect(
+                        left = center.x - innerFaceRadius,
+                        top = center.y - innerFaceRadius,
+                        right = center.x + innerFaceRadius,
+                        bottom = center.y + innerFaceRadius,
+                    ),
+                )
+            }
+            clipPath(innerClipPath) {
+                val primarySheen = Path().apply {
+                    moveTo(center.x - innerFaceRadius * 1.05f, center.y + innerFaceRadius * 0.15f)
+                    lineTo(center.x + innerFaceRadius * 0.15f, center.y - innerFaceRadius * 1.05f)
+                    lineTo(center.x + innerFaceRadius * 0.60f, center.y - innerFaceRadius * 1.05f)
+                    lineTo(center.x - innerFaceRadius * 1.05f, center.y + innerFaceRadius * 0.60f)
+                    close()
+                }
+                drawPath(
+                    path = primarySheen,
+                    brush = Brush.linearGradient(
+                        colors = listOf(
+                            Color.White.copy(alpha = 0.04f),
+                            Color.White.copy(alpha = 0.24f),
+                            Color.White.copy(alpha = 0.04f),
+                        ),
+                        start = Offset(center.x - innerFaceRadius * 0.8f, center.y - innerFaceRadius * 0.8f),
+                        end = Offset(center.x + innerFaceRadius * 0.2f, center.y + innerFaceRadius * 0.2f),
+                    ),
+                )
+                val secondarySheen = Path().apply {
+                    moveTo(center.x - innerFaceRadius * 1.05f, center.y + innerFaceRadius * 0.78f)
+                    lineTo(center.x + innerFaceRadius * 0.78f, center.y - innerFaceRadius * 1.05f)
+                    lineTo(center.x + innerFaceRadius * 0.96f, center.y - innerFaceRadius * 1.05f)
+                    lineTo(center.x - innerFaceRadius * 1.05f, center.y + innerFaceRadius * 0.96f)
+                    close()
+                }
+                drawPath(
+                    path = secondarySheen,
+                    color = Color.White.copy(alpha = 0.11f),
+                )
+            }
+
+            // Engraved inner mint ring and top/bottom registration dots
+            drawCircle(
+                color = Color(0x527A4C09),
+                radius = engravedRingRadius,
+                center = center,
+                style = Stroke(width = (outerRadius * 0.028f).coerceAtLeast(1f)),
             )
             drawCircle(
-                color = Color.White.copy(alpha = 0.18f),
-                radius = radius * 0.14f,
-                center = center.copy(x = center.x + radius * 0.54f, y = center.y - radius * 0.48f),
+                color = Color(0x5EFFF7D1),
+                radius = engravedRingRadius - outerRadius * 0.028f,
+                center = center,
+                style = Stroke(width = (outerRadius * 0.020f).coerceAtLeast(0.8f)),
+            )
+            val pipOffsetY = outerRadius * 0.56f
+            val pipRadius = (outerRadius * 0.036f).coerceAtLeast(1.2f)
+            listOf(-pipOffsetY, pipOffsetY).forEach { dy ->
+                drawCircle(
+                    color = Color(0x70FFF5C8),
+                    radius = pipRadius,
+                    center = Offset(center.x, center.y + dy + pipRadius * 0.35f),
+                )
+                drawCircle(
+                    color = Color(0x9E6E4306),
+                    radius = pipRadius,
+                    center = Offset(center.x, center.y + dy),
+                )
+            }
+
+            // Crisp top-left metallic rim glint
+            val glintRadius = outerRadius * 0.94f
+            drawArc(
+                color = Color(0xCCFFF9DC),
+                startAngle = 205f,
+                sweepAngle = 76f,
+                useCenter = false,
+                topLeft = Offset(center.x - glintRadius, center.y - glintRadius),
+                size = Size(glintRadius * 2f, glintRadius * 2f),
+                style = Stroke(width = (outerRadius * 0.038f).coerceAtLeast(1.2f), cap = StrokeCap.Round),
             )
         }
+
         Text(
             text = "TL",
-            style = MaterialTheme.typography.titleLarge,
+            style = MaterialTheme.typography.titleLarge.copy(
+                fontSize = monogramSize,
+                letterSpacing = 0.8.sp,
+                shadow = Shadow(
+                    color = monogramEmbossHighlight,
+                    offset = Offset(0f, 1.5f),
+                    blurRadius = 0.5f,
+                ),
+            ),
             fontWeight = FontWeight.Black,
-            color = if (palette.coin.luminance() < 0.34f) Color.White else LocalUiColors.current.inkOnLightSurface,
+            color = monogramColor,
         )
     }
 }
