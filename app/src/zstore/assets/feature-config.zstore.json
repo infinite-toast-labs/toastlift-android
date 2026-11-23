@@ -9,7 +9,7 @@
   },
   "global": {
     "ai": true,
-    "customExercises": false,
+    "customExercises": true,
     "workoutPrograms": false,
     "workoutTemplates": false,
     "manualWorkoutBuilder": true
@@ -29,7 +29,7 @@
       "workoutEditing": true,
       "manualBuilder": true,
       "savedTemplates": false,
-      "customExercises": false,
+      "customExercises": true,
       "aiSearch": true,
       "aiDiscovery": false
     },
@@ -39,7 +39,7 @@
         "favorites": true,
         "filters": true,
         "exerciseFamily": false,
-        "customExercises": false,
+        "customExercises": true,
         "aiSearch": true,
         "aiDiscovery": false
       },
