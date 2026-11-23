@@ -1758,6 +1758,10 @@ fun ToastLiftApp(
             state.selectedExerciseHistory?.let { detail ->
                 ExerciseHistorySheet(
                     detail = detail,
+                    viewMode = state.exerciseHistoryViewMode,
+                    onSelectViewMode = viewModel::setExerciseHistoryViewMode,
+                    birdsEyeSortOrder = state.exerciseHistoryBirdsEyeSortOrder,
+                    onToggleBirdsEyeSortOrder = viewModel::toggleExerciseHistoryBirdsEyeSortOrder,
                     onTogglePrOnly = viewModel::setExerciseHistoryPrOnly,
                     onDismiss = viewModel::closeExerciseHistory,
                 )
@@ -18602,10 +18606,14 @@ internal fun exerciseHistoryEmptyState(detail: ExerciseHistoryDetail): ExerciseH
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 private fun ExerciseHistorySheet(
     detail: ExerciseHistoryDetail,
+    viewMode: ExerciseHistoryViewMode,
+    onSelectViewMode: (ExerciseHistoryViewMode) -> Unit,
+    birdsEyeSortOrder: BirdsEyeSortOrder,
+    onToggleBirdsEyeSortOrder: () -> Unit,
     onTogglePrOnly: (Boolean) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -18621,7 +18629,7 @@ private fun ExerciseHistorySheet(
             Text(detail.exerciseName, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
             Column(
                 modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text("Results", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Medium)
@@ -18631,20 +18639,26 @@ private fun ExerciseHistorySheet(
                         style = MaterialTheme.typography.bodyMedium,
                     )
                 }
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    Text(
-                        "Filter",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.78f),
-                    )
-                    ExerciseHistoryPrFilter(
-                        selected = detail.isPrOnlyFilterEnabled,
-                        onClick = { onTogglePrOnly(!detail.isPrOnlyFilterEnabled) },
+                    ExerciseHistoryViewModeToggle(
+                        selected = viewMode,
                         enabled = detail.totalEntries > 0,
+                        onSelect = onSelectViewMode,
                     )
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        ExerciseHistoryPrFilter(
+                            selected = detail.isPrOnlyFilterEnabled,
+                            onClick = { onTogglePrOnly(!detail.isPrOnlyFilterEnabled) },
+                            enabled = detail.totalEntries > 0,
+                        )
+                    }
                 }
             }
             Divider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.18f))
@@ -18653,6 +18667,12 @@ private fun ExerciseHistorySheet(
                     title = emptyState.title,
                     subtitle = emptyState.subtitle,
                     badge = if (detail.totalEntries == 0) "New" else "Filter",
+                )
+            } else if (viewMode == ExerciseHistoryViewMode.BirdsEye) {
+                ExerciseHistoryBirdsEyeTable(
+                    entries = detail.entries,
+                    sortOrder = birdsEyeSortOrder,
+                    onToggleSortOrder = onToggleBirdsEyeSortOrder,
                 )
             } else {
                 detail.entries.forEach { entry ->
