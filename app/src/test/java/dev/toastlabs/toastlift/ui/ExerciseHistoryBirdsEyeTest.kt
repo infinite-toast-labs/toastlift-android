@@ -11,9 +11,15 @@ import java.time.ZoneOffset
 
 class ExerciseHistoryBirdsEyeTest {
     @Test
+    fun viewModeOrder_placesBirdsEyeLeftOfDetails() {
+        assertEquals(
+            listOf(ExerciseHistoryViewMode.BirdsEye, ExerciseHistoryViewMode.Details),
+            ExerciseHistoryViewMode.entries,
+        )
+    }
+
+    @Test
     fun buildRows_ordersSetsChronologicallyAndComputesDoubleProgressionDeltas() {
-        // Entries are newest-first (as returned by ExerciseHistoryDetail),
-        // and workingSets are stored last-set-first (as returned by buildExerciseHistoryDetail).
         val entries = listOf(
             entry(
                 completedAtUtc = "2026-04-10T12:00:00Z",
@@ -52,7 +58,6 @@ class ExerciseHistoryBirdsEyeTest {
 
         assertEquals(3, rowsNewestFirst.size)
 
-        // Newest row (#3): weight jump from 75 -> 80 lb, sets in chronological order 10 / 9 / 8
         val newest = rowsNewestFirst[0]
         assertEquals(3, newest.sessionNumber)
         assertEquals("Apr 10", newest.dateLabel)
@@ -64,7 +69,6 @@ class ExerciseHistoryBirdsEyeTest {
         assertTrue(newest.isWeightJump)
         assertTrue(newest.hasPersonalRecord)
 
-        // Middle row (#2): same weight 75 lb, +1 rep (28 -> 29)
         val middle = rowsNewestFirst[1]
         assertEquals(2, middle.sessionNumber)
         assertEquals("75 lb", middle.weightLabel)
@@ -73,7 +77,6 @@ class ExerciseHistoryBirdsEyeTest {
         assertEquals(OverloadDeltaKind.RepsUp, middle.deltaKind)
         assertFalse(middle.isWeightJump)
 
-        // Oldest row (#1): baseline, no delta
         val oldest = rowsNewestFirst[2]
         assertEquals(1, oldest.sessionNumber)
         assertEquals("75 lb", oldest.weightLabel)
@@ -81,14 +84,84 @@ class ExerciseHistoryBirdsEyeTest {
         assertNull(oldest.deltaLabel)
         assertEquals(OverloadDeltaKind.Baseline, oldest.deltaKind)
 
-        // OldestFirst reverses row display order while keeping identical session numbers and deltas
-        val rowsOldestFirst = buildExerciseHistoryBirdsEyeRows(
+        // Default sortOrder is OldestFirst (ascending)
+        val rowsDefault = buildExerciseHistoryBirdsEyeRows(
+            entries = entries,
+            zoneId = ZoneOffset.UTC,
+        )
+        assertEquals(listOf(1, 2, 3), rowsDefault.map { it.sessionNumber })
+        assertEquals(listOf(null, "+1 rep", "+5 lb"), rowsDefault.map { it.deltaLabel })
+    }
+
+    @Test
+    fun paginateRows_sixWorkoutsAsc_putsLastFiveOnDefaultLastPageAndOldestOnFirstPage() {
+        val entries = (6 downTo 1).map { day ->
+            entry(
+                completedAtUtc = "2026-04-0${day}T12:00:00Z",
+                hasPr = false,
+                sets = listOf(set(1, reps = 10, weight = 70.0 + day)),
+            )
+        }
+        val rowsAsc = buildExerciseHistoryBirdsEyeRows(
             entries = entries,
             sortOrder = BirdsEyeSortOrder.OldestFirst,
             zoneId = ZoneOffset.UTC,
         )
-        assertEquals(listOf(1, 2, 3), rowsOldestFirst.map { it.sessionNumber })
-        assertEquals(listOf(null, "+1 rep", "+5 lb"), rowsOldestFirst.map { it.deltaLabel })
+
+        val pagination = paginateBirdsEyeRows(rowsAsc, BirdsEyeSortOrder.OldestFirst)
+
+        assertEquals(2, pagination.pages.size)
+        assertEquals(1, pagination.defaultPageIndex)
+        assertEquals(listOf(1), pagination.pages[0].map { it.sessionNumber })
+        assertEquals(listOf(2, 3, 4, 5, 6), pagination.pages[1].map { it.sessionNumber })
+    }
+
+    @Test
+    fun paginateRows_twelveWorkoutsAsc_chunksFromNewestEndAndOpensOnLastPage() {
+        val entries = (12 downTo 1).map { day ->
+            val dayStr = day.toString().padStart(2, '0')
+            entry(
+                completedAtUtc = "2026-04-${dayStr}T12:00:00Z",
+                hasPr = false,
+                sets = listOf(set(1, reps = 10, weight = 70.0)),
+            )
+        }
+        val rowsAsc = buildExerciseHistoryBirdsEyeRows(
+            entries = entries,
+            sortOrder = BirdsEyeSortOrder.OldestFirst,
+            zoneId = ZoneOffset.UTC,
+        )
+
+        val pagination = paginateBirdsEyeRows(rowsAsc, BirdsEyeSortOrder.OldestFirst)
+
+        assertEquals(3, pagination.pages.size)
+        assertEquals(2, pagination.defaultPageIndex)
+        assertEquals(listOf(1, 2), pagination.pages[0].map { it.sessionNumber })
+        assertEquals(listOf(3, 4, 5, 6, 7), pagination.pages[1].map { it.sessionNumber })
+        assertEquals(listOf(8, 9, 10, 11, 12), pagination.pages[2].map { it.sessionNumber })
+    }
+
+    @Test
+    fun paginateRows_sixWorkoutsDesc_putsMostRecentFiveOnPageZero() {
+        val entries = (6 downTo 1).map { day ->
+            entry(
+                completedAtUtc = "2026-04-0${day}T12:00:00Z",
+                hasPr = false,
+                sets = listOf(set(1, reps = 10, weight = 70.0)),
+            )
+        }
+        val rowsDesc = buildExerciseHistoryBirdsEyeRows(
+            entries = entries,
+            sortOrder = BirdsEyeSortOrder.NewestFirst,
+            zoneId = ZoneOffset.UTC,
+        )
+
+        val pagination = paginateBirdsEyeRows(rowsDesc, BirdsEyeSortOrder.NewestFirst)
+
+        assertEquals(2, pagination.pages.size)
+        assertEquals(0, pagination.defaultPageIndex)
+        assertEquals(listOf(6, 5, 4, 3, 2), pagination.pages[0].map { it.sessionNumber })
+        assertEquals(listOf(1), pagination.pages[1].map { it.sessionNumber })
     }
 
     @Test
