@@ -434,6 +434,7 @@ private fun AppFeatureConfig.mainTabs(): List<MainTab> = buildList {
 @Composable
 private fun GlobalOverflowMenu(
     onOpenProfile: () -> Unit,
+    onOpenLibrary: () -> Unit,
     onSaveProfile: (() -> Unit)?,
     modifier: Modifier = Modifier,
 ) {
@@ -458,10 +459,17 @@ private fun GlobalOverflowMenu(
                 )
             }
             DropdownMenuItem(
-                text = { Text("Open profile") },
+                text = { Text("Settings") },
                 onClick = {
                     expanded = false
                     onOpenProfile()
+                },
+            )
+            DropdownMenuItem(
+                text = { Text("Library") },
+                onClick = {
+                    expanded = false
+                    onOpenLibrary()
                 },
             )
         }
@@ -476,41 +484,6 @@ private data class GlowAccent(
     val start: Color get() = color
     val end: Color get() = color
     val glow: Color get() = color.copy(alpha = 0.12f)
-}
-
-/**
- * Internal sub-sections within the Explore tab (DESIGN.md §2: Explore merges
- * old Library + History). Toggled via [ExploreSectionToggle].
- */
-private enum class ExploreSection(val label: String) {
-    Library("Library"),
-    History("History"),
-}
-
-/**
- * DESIGN.md §2: Explore tab hosts Library + History. A compact FilterChip row
- * toggles between them — keeps the canvas flat (no Material TabRow chrome).
- */
-@Composable
-private fun ExploreSectionToggle(
-    selected: ExploreSection,
-    onSelect: (ExploreSection) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        ExploreSection.entries.forEach { section ->
-            FilterChip(
-                selected = selected == section,
-                onClick = { onSelect(section) },
-                label = { Text(section.label) },
-            )
-        }
-    }
 }
 
 @Composable
@@ -1006,6 +979,11 @@ private fun String.isDebugProfileSurface(): Boolean =
         isDebugDeleteDataSurface() ||
         debugEquipmentSheetModeNameOrNull() != null
 
+private fun String.isDebugLibrarySurface(): Boolean =
+    equals("library", ignoreCase = true) ||
+        equals("explore.library", ignoreCase = true) ||
+        isDebugLibraryFilterSurface()
+
 private fun String?.historyDestinationOrNull(): String? {
     return when (this?.lowercase()) {
         "history", "history.dashboard" -> "dashboard"
@@ -1107,6 +1085,7 @@ fun ToastLiftApp(
     var isGenerateFullscreenFlow by remember { mutableStateOf(false) }
     var isTodayFullscreenFlow by remember { mutableStateOf(false) }
     var isProfileHiddenScreen by remember { mutableStateOf(false) }
+    var isLibraryHiddenScreen by remember { mutableStateOf(false) }
     val historyNavigationState = rememberHistoryNavigationState()
     val createExportDocument = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/json"),
@@ -1200,6 +1179,15 @@ fun ToastLiftApp(
     LaunchedEffect(debugSurfaceOverride) {
         debugSurfaceOverride?.let { surface ->
             isProfileHiddenScreen = surface.isDebugProfileSurface()
+            isLibraryHiddenScreen = surface.isDebugLibrarySurface()
+        }
+    }
+
+    LaunchedEffect(state.libraryNavigationRevision) {
+        if (state.libraryNavigationRevision > 0L) {
+            isProfileHiddenScreen = false
+            isLibraryHiddenScreen = true
+            historyNavigationState.destination = "dashboard"
         }
     }
 
@@ -1326,7 +1314,7 @@ fun ToastLiftApp(
                         contentWindowInsets = WindowInsets(0, 0, 0, 0),
                         snackbarHost = { SnackbarHost(snackbars) },
                         bottomBar = {
-                            if (!isTodayFullscreenFlow && !isGenerateFullscreenFlow && !isProfileHiddenScreen) {
+                            if (!isTodayFullscreenFlow && !isGenerateFullscreenFlow && !isProfileHiddenScreen && !isLibraryHiddenScreen) {
                                 // DESIGN.md §5 custom Bottom Bar (replaces NavigationBar):
                                 // floating pill, 3 icon-only tabs.
                                 ToastLiftBottomBar(
@@ -1371,6 +1359,49 @@ fun ToastLiftApp(
                                         viewModel = viewModel,
                                         features = featureConfig,
                                         onImportPersonalData = { openImportDocument.launch(arrayOf("application/json")) },
+                                        debugSurfaceOverride = debugSurfaceOverride,
+                                    )
+                                } else if (isLibraryHiddenScreen) {
+                                    BackHandler { isLibraryHiddenScreen = false }
+                                    LibraryScreen(
+                                        state = state,
+                                        features = featureConfig,
+                                        onToggleSearch = viewModel::toggleLibrarySearch,
+                                        onQueryChange = viewModel::updateLibraryQuery,
+                                        onToggleFavoritesOnly = viewModel::toggleLibraryFavoritesOnly,
+                                        onToggleEquipmentFilter = viewModel::toggleLibraryEquipmentFilter,
+                                        onToggleEquipmentLocationFilter = viewModel::toggleLibraryEquipmentLocationFilter,
+                                        onToggleTargetMuscleFilter = viewModel::toggleLibraryTargetMuscleFilter,
+                                        onTogglePrimeMoverFilter = viewModel::toggleLibraryPrimeMoverFilter,
+                                        onToggleFreshnessMuscleFilter = viewModel::toggleLibraryFreshnessMuscleFilter,
+                                        onToggleMuscleTargetBucketFilter = viewModel::toggleLibraryMuscleTargetBucketFilter,
+                                        onToggleMuscleTargetSubcategoryFilter = viewModel::toggleLibraryMuscleTargetSubcategoryFilter,
+                                        onToggleRecommendationBiasFilter = viewModel::toggleLibraryRecommendationBiasFilter,
+                                        onToggleLoggedHistoryFilter = viewModel::toggleLibraryLoggedHistoryFilter,
+                                        onClearFreshnessMuscleFilters = viewModel::clearLibraryFreshnessMuscleFilters,
+                                        onClearMuscleTargetFilters = viewModel::clearLibraryMuscleTargetFilters,
+                                        onClearFilters = viewModel::clearLibraryFilters,
+                                        onDiscoverExercises = viewModel::generateExerciseDiscovery,
+                                        onClearExerciseDiscovery = viewModel::clearExerciseDiscovery,
+                                        onRunAiSearch = viewModel::runExerciseAiSearch,
+                                        onClearAiSearch = viewModel::clearExerciseAiSearch,
+                                        onShowDetail = viewModel::showExerciseDetail,
+                                        onAddToBuilder = viewModel::addExerciseToBuilder,
+                                        onAddToMyPlan = viewModel::addExerciseToGeneratedWorkout,
+                                        onExploreFamily = viewModel::openExerciseFamily,
+                                        onToggleFavorite = viewModel::toggleFavorite,
+                                        onOpenExerciseHistory = viewModel::openExerciseHistory,
+                                        onOpenExerciseVideos = viewModel::openExerciseVideos,
+                                        onAddExerciseToExistingTemplate = viewModel::addExerciseToExistingTemplate,
+                                        onCreateTemplateFromExercise = viewModel::createTemplateFromExercise,
+                                        onOpenCustomExercise = viewModel::openCustomExerciseForLibrary,
+                                        onCloseCustomExercise = viewModel::closeCustomExerciseFlow,
+                                        onCustomExerciseDraftChange = viewModel::updateCustomExerciseDraft,
+                                        onCustomExerciseNameChange = viewModel::updateCustomExerciseName,
+                                        onGenerateCustomExercise = viewModel::generateCustomExerciseDetails,
+                                        onUseExistingExercise = viewModel::useExistingExerciseFromCustomFlow,
+                                        onSaveCustomExercise = viewModel::saveCustomExercise,
+                                        onBack = { isLibraryHiddenScreen = false },
                                         debugSurfaceOverride = debugSurfaceOverride,
                                     )
                                 } else when (tab) {
@@ -1558,29 +1589,10 @@ fun ToastLiftApp(
                                         )
                                     }
 
-                                    // DESIGN.md §2: Explore merges old Library + History.
-                                    // An internal sub-tab row toggles between the
-                                    // exercise Library and the History dashboard
-                                    // (stats, calendar, bounty cards, strength score).
+                                    // 3rd nav tab shows History directly; Library lives in GlobalOverflowMenu.
                                     MainTab.Explore -> {
-                                        var exploreSection by remember(debugSurfaceOverride) {
-                                            mutableStateOf(
-                                                if (debugHistoryDestination != null) {
-                                                    ExploreSection.History
-                                                } else {
-                                                    ExploreSection.Library
-                                                },
-                                            )
-                                        }
-                                        LaunchedEffect(state.libraryNavigationRevision) {
-                                            if (state.libraryNavigationRevision > 0L) {
-                                                exploreSection = ExploreSection.Library
-                                                historyNavigationState.destination = "dashboard"
-                                            }
-                                        }
                                         LaunchedEffect(debugHistoryDestination) {
                                             debugHistoryDestination?.let { destination ->
-                                                exploreSection = ExploreSection.History
                                                 historyNavigationState.destination = destination
                                             }
                                         }
@@ -1603,79 +1615,38 @@ fun ToastLiftApp(
                                                 page.weeks.flatten().any { cell -> cell.date == latestWorkoutDate && cell.isInMonth }
                                             }.takeIf { it >= 0 }
                                         }
-                                        Column(modifier = Modifier.fillMaxSize()) {
-                                            ExploreSectionToggle(
-                                                selected = exploreSection,
-                                                onSelect = { exploreSection = it },
-                                            )
-                                            when (exploreSection) {
-                                                ExploreSection.Library -> LibraryScreen(
-                                                    state = state,
-                                                    features = featureConfig,
-                                                    onToggleSearch = viewModel::toggleLibrarySearch,
-                                                    onQueryChange = viewModel::updateLibraryQuery,
-                                                    onToggleFavoritesOnly = viewModel::toggleLibraryFavoritesOnly,
-                                                    onToggleEquipmentFilter = viewModel::toggleLibraryEquipmentFilter,
-                                                    onToggleEquipmentLocationFilter = viewModel::toggleLibraryEquipmentLocationFilter,
-                                                    onToggleTargetMuscleFilter = viewModel::toggleLibraryTargetMuscleFilter,
-                                                    onTogglePrimeMoverFilter = viewModel::toggleLibraryPrimeMoverFilter,
-                                                    onToggleFreshnessMuscleFilter = viewModel::toggleLibraryFreshnessMuscleFilter,
-                                                    onToggleMuscleTargetBucketFilter = viewModel::toggleLibraryMuscleTargetBucketFilter,
-                                                    onToggleMuscleTargetSubcategoryFilter = viewModel::toggleLibraryMuscleTargetSubcategoryFilter,
-                                                    onToggleRecommendationBiasFilter = viewModel::toggleLibraryRecommendationBiasFilter,
-                                                    onToggleLoggedHistoryFilter = viewModel::toggleLibraryLoggedHistoryFilter,
-                                                    onClearFreshnessMuscleFilters = viewModel::clearLibraryFreshnessMuscleFilters,
-                                                    onClearMuscleTargetFilters = viewModel::clearLibraryMuscleTargetFilters,
-                                                    onClearFilters = viewModel::clearLibraryFilters,
-                                                    onDiscoverExercises = viewModel::generateExerciseDiscovery,
-                                                    onClearExerciseDiscovery = viewModel::clearExerciseDiscovery,
-                                                    onRunAiSearch = viewModel::runExerciseAiSearch,
-                                                    onClearAiSearch = viewModel::clearExerciseAiSearch,
-                                                    onShowDetail = viewModel::showExerciseDetail,
-                                                    onAddToBuilder = viewModel::addExerciseToBuilder,
-                                                    onAddToMyPlan = viewModel::addExerciseToGeneratedWorkout,
-                                                    onExploreFamily = viewModel::openExerciseFamily,
-                                                    onToggleFavorite = viewModel::toggleFavorite,
-                                                    onOpenExerciseHistory = viewModel::openExerciseHistory,
-                                                    onOpenExerciseVideos = viewModel::openExerciseVideos,
-                                                    onAddExerciseToExistingTemplate = viewModel::addExerciseToExistingTemplate,
-                                                    onCreateTemplateFromExercise = viewModel::createTemplateFromExercise,
-                                                    onOpenCustomExercise = viewModel::openCustomExerciseForLibrary,
-                                                    onCloseCustomExercise = viewModel::closeCustomExerciseFlow,
-                                                    onCustomExerciseDraftChange = viewModel::updateCustomExerciseDraft,
-                                                    onCustomExerciseNameChange = viewModel::updateCustomExerciseName,
-                                                    onGenerateCustomExercise = viewModel::generateCustomExerciseDetails,
-                                                    onUseExistingExercise = viewModel::useExistingExerciseFromCustomFlow,
-                                                    onSaveCustomExercise = viewModel::saveCustomExercise,
-                                                    debugSurfaceOverride = debugSurfaceOverride,
-                                                )
-                                                ExploreSection.History -> HistoryScreen(
-                                                    navigationState = historyNavigationState,
-                                                    features = featureConfig,
-                                                    profile = state.profile,
-                                                    history = state.history,
-                                                    bountyCards = state.bountyCards,
-                                                    historyWorkoutMetrics = state.historyWorkoutMetrics,
-                                                    tokenBalanceTrend = state.tokenBalanceTrend,
-                                                    weeklyMuscleTargets = state.weeklyMuscleTargets,
-                                                    topExercise = state.historyTopExercise,
-                                                    topEquipment = state.historyTopEquipment,
-                                                    strengthScore = state.historyStrengthScore,
-                                                    historicalMuscleInsights = state.historicalMuscleInsights,
-                                                    historicalMovementInsights = state.historicalMovementInsights,
-                                                    onOpenWorkout = viewModel::openHistoryWorkout,
-                                                    onShareWorkout = viewModel::prepareHistoryWorkoutShare,
-                                                    onDeleteWorkout = viewModel::deleteHistoryWorkout,
-                                                    onOpenLibraryMuscleTarget = viewModel::openLibraryForMuscleTarget,
-                                                )
-                                            }
-                                        }
+                                        HistoryScreen(
+                                            navigationState = historyNavigationState,
+                                            features = featureConfig,
+                                            profile = state.profile,
+                                            history = state.history,
+                                            bountyCards = state.bountyCards,
+                                            historyWorkoutMetrics = state.historyWorkoutMetrics,
+                                            tokenBalanceTrend = state.tokenBalanceTrend,
+                                            weeklyMuscleTargets = state.weeklyMuscleTargets,
+                                            topExercise = state.historyTopExercise,
+                                            topEquipment = state.historyTopEquipment,
+                                            strengthScore = state.historyStrengthScore,
+                                            historicalMuscleInsights = state.historicalMuscleInsights,
+                                            historicalMovementInsights = state.historicalMovementInsights,
+                                            onOpenWorkout = viewModel::openHistoryWorkout,
+                                            onShareWorkout = viewModel::prepareHistoryWorkoutShare,
+                                            onDeleteWorkout = viewModel::deleteHistoryWorkout,
+                                            onOpenLibraryMuscleTarget = viewModel::openLibraryForMuscleTarget,
+                                        )
                                     }
                                 }
                             }
                             if (!isTodayFullscreenFlow && !isGenerateFullscreenFlow) {
                                 GlobalOverflowMenu(
-                                    onOpenProfile = { isProfileHiddenScreen = true },
+                                    onOpenProfile = {
+                                        isLibraryHiddenScreen = false
+                                        isProfileHiddenScreen = true
+                                    },
+                                    onOpenLibrary = {
+                                        isProfileHiddenScreen = false
+                                        isLibraryHiddenScreen = true
+                                    },
                                     onSaveProfile = (viewModel::saveProfile).takeIf { isProfileHiddenScreen },
                                     modifier = Modifier
                                         .align(Alignment.TopEnd)
@@ -5168,6 +5139,7 @@ private fun LibraryScreen(
     onGenerateCustomExercise: () -> Unit,
     onUseExistingExercise: (ExerciseSummary) -> Unit,
     onSaveCustomExercise: () -> Unit,
+    onBack: (() -> Unit)? = null,
     debugSurfaceOverride: String? = null,
 ) {
     if (
@@ -5202,9 +5174,38 @@ private fun LibraryScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(16.dp),
+                .padding(
+                    start = 16.dp,
+                    end = 16.dp,
+                    bottom = 16.dp,
+                    top = if (onBack != null) 4.dp else 16.dp,
+                ),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
+            if (onBack != null) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(end = 52.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    IconButton(onClick = onBack) {
+                        Icon(
+                            imageVector = Icons.Rounded.KeyboardArrowLeft,
+                            contentDescription = "Back",
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                    Text(
+                        "Library",
+                        color = MaterialTheme.colorScheme.onBackground,
+                        fontFamily = DisplayFamily,
+                        fontSize = 28.sp,
+                        letterSpacing = 0.02.em,
+                    )
+                }
+            }
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(4.dp),

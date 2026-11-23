@@ -133,6 +133,8 @@ class MainActivity : ComponentActivity() {
             "history.weekly-muscles",
             "history.token-balance",
             "history.bounty-cards",
+            "library",
+            "explore.library",
             "sheet.library_filters",
             "sheet.exercise_detail",
             "sheet.exercise_description",

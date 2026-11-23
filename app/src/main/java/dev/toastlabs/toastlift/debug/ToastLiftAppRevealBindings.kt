@@ -222,7 +222,7 @@ private class ToastLiftScreenNavigator(
         val screenRoute = when (screenKey) {
             "home.today" -> ScreenRoute(tab = "Home")
             "generate.main" -> ScreenRoute(tab = "Generate")
-            "explore.library" -> ScreenRoute(tab = "Explore")
+            "explore.library" -> ScreenRoute(tab = "Explore", debugSurface = "library")
             "profile.main" -> ScreenRoute(tab = "Home", debugSurface = "profile")
             "sheet.library_filters" -> ScreenRoute(tab = "Explore", debugSurface = "sheet.library_filters")
             "sheet.exercise_detail" -> ScreenRoute(tab = "Explore", debugSurface = "sheet.exercise_detail")
