@@ -29,7 +29,14 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -412,20 +419,41 @@ internal fun ExerciseHistoryBirdsEyeTable(
         }
 
         if (pagination.pages.isNotEmpty()) {
+            val density = LocalDensity.current
+            var maxPageHeightPx by remember(entries, sortOrder) { mutableIntStateOf(0) }
+            val minPagerHeightDp = with(density) { maxPageHeightPx.toDp() }
+            val isolateHorizontalFling = remember {
+                object : NestedScrollConnection {
+                    override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity = available
+                }
+            }
             HorizontalPager(
                 state = pagerState,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = minPagerHeightDp)
+                    .nestedScroll(isolateHorizontalFling),
                 pageSpacing = 12.dp,
                 verticalAlignment = Alignment.Top,
             ) { pageIndex ->
                 val pageRows = pagination.pages.getOrElse(pageIndex) { emptyList() }
-                BirdsEyePageCard(
-                    rows = pageRows,
-                    sortOrder = sortOrder,
-                    onToggleSortOrder = onToggleSortOrder,
-                    uiColors = uiColors,
-                    statusColors = statusColors,
-                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .onSizeChanged { size ->
+                            if (size.height > maxPageHeightPx) {
+                                maxPageHeightPx = size.height
+                            }
+                        },
+                ) {
+                    BirdsEyePageCard(
+                        rows = pageRows,
+                        sortOrder = sortOrder,
+                        onToggleSortOrder = onToggleSortOrder,
+                        uiColors = uiColors,
+                        statusColors = statusColors,
+                    )
+                }
             }
 
             if (pageCount > 1) {
