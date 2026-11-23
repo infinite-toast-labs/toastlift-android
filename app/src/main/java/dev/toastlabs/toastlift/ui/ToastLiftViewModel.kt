@@ -383,6 +383,8 @@ internal data class AppUiState(
     val selectedExerciseDetail: ExerciseDetail? = null,
     val generatingExerciseDescriptionId: Long? = null,
     val selectedExerciseHistory: ExerciseHistoryDetail? = null,
+    val exerciseHistoryViewMode: ExerciseHistoryViewMode = ExerciseHistoryViewMode.Details,
+    val exerciseHistoryBirdsEyeSortOrder: BirdsEyeSortOrder = BirdsEyeSortOrder.NewestFirst,
     val selectedExerciseVideos: ExerciseVideoLinks? = null,
     val generatedWorkout: WorkoutPlan? = null,
     val manualWorkoutName: String = "Custom Workout",
@@ -3495,6 +3497,19 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
             )
             uiState = uiState.copy(selectedExerciseHistory = detail)
         }
+    }
+
+    fun setExerciseHistoryViewMode(mode: ExerciseHistoryViewMode) {
+        if (uiState.exerciseHistoryViewMode == mode) return
+        uiState = uiState.copy(exerciseHistoryViewMode = mode)
+    }
+
+    fun toggleExerciseHistoryBirdsEyeSortOrder() {
+        val next = when (uiState.exerciseHistoryBirdsEyeSortOrder) {
+            BirdsEyeSortOrder.NewestFirst -> BirdsEyeSortOrder.OldestFirst
+            BirdsEyeSortOrder.OldestFirst -> BirdsEyeSortOrder.NewestFirst
+        }
+        uiState = uiState.copy(exerciseHistoryBirdsEyeSortOrder = next)
     }
 
     fun closeExerciseHistory() {
