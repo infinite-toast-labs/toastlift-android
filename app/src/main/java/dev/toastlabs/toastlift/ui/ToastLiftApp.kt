@@ -13836,6 +13836,60 @@ private fun CustomExerciseEditorScreen(
     onSave: () -> Unit,
 ) {
     ProtectWorkInProgressBackGesture()
+    val context = LocalContext.current
+    val credentials = remember(context) { dev.toastlabs.toastlift.data.GeminiSearchCredentials(context) }
+    val requiresOwnKey = dev.toastlabs.toastlift.BuildConfig.BUILD_TYPE == "zstore"
+    var showKeyDialog by remember { mutableStateOf(false) }
+    var keyInput by remember { mutableStateOf("") }
+    var keyError by remember { mutableStateOf<String?>(null) }
+    val startGenerate = {
+        if (requiresOwnKey && credentials.read().isNullOrBlank()) showKeyDialog = true else onGenerate()
+    }
+    if (showKeyDialog) {
+        AlertDialog(
+            onDismissRequest = { showKeyDialog = false; keyInput = ""; keyError = null },
+            title = { Text("Gemini API key") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("AI exercise generation sends the exercise name and exercise taxonomy to Google Gemini. Your key is stored encrypted on this device.")
+                    OutlinedTextField(
+                        value = keyInput,
+                        onValueChange = { keyInput = it },
+                        label = { Text("API key") },
+                        singleLine = true,
+                        visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                    )
+                    keyError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        if (runCatching { credentials.save(keyInput) }.isSuccess) {
+                            keyInput = ""; keyError = null; showKeyDialog = false; onGenerate()
+                        } else {
+                            keyError = "Could not save the key. Check the value and try again."
+                        }
+                    },
+                    enabled = keyInput.isNotBlank(),
+                ) { Text("Save and generate") }
+            },
+            dismissButton = {
+                Row {
+                    TextButton(
+                        onClick = {
+                            if (runCatching { credentials.clear() }.isSuccess) {
+                                keyInput = ""; keyError = null; showKeyDialog = false
+                            } else {
+                                keyError = "Could not remove the key. Try again."
+                            }
+                        },
+                    ) { Text("Remove key") }
+                    TextButton(onClick = { keyInput = ""; showKeyDialog = false }) { Text("Cancel") }
+                }
+            },
+        )
+    }
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
@@ -13862,7 +13916,7 @@ private fun CustomExerciseEditorScreen(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 OutlinedButton(
-                    onClick = onGenerate,
+                    onClick = startGenerate,
                     enabled = draft.name.isNotBlank() && !draft.isGenerating && !draft.isSaving,
                     modifier = Modifier.weight(1f),
                 ) {
@@ -13912,29 +13966,36 @@ private fun CustomExerciseEditorScreen(
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                    if (requiresOwnKey && !draft.isGenerating) {
+                        TextButton(onClick = { keyInput = ""; keyError = null; showKeyDialog = true }) {
+                            Text("Set or change Gemini key")
+                        }
+                    }
                 }
             }
 
-            FeatureCard(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f)) {
-                val selectedModel = customExerciseAiModelOptionForId(draft.aiModelId)
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("Model Selection", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    SettingsDropdownRow(
-                        label = "Model",
-                        selected = selectedModel,
-                        options = customExerciseAiModelOptions,
-                        onSelect = { option ->
-                            onDraftChange(
-                                draft.copy(
-                                    aiModelId = option.id,
-                                    generatedWithAi = false,
-                                    generationReport = null,
-                                    errorMessage = null,
-                                ),
-                            )
-                        },
-                        supportingText = "Defaults to the Profile dev model for this draft. Changes here apply only to this custom exercise.",
-                    )
+            if (!requiresOwnKey) {
+                FeatureCard(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f)) {
+                    val selectedModel = customExerciseAiModelOptionForId(draft.aiModelId)
+                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text("Model Selection", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        SettingsDropdownRow(
+                            label = "Model",
+                            selected = selectedModel,
+                            options = customExerciseAiModelOptions,
+                            onSelect = { option ->
+                                onDraftChange(
+                                    draft.copy(
+                                        aiModelId = option.id,
+                                        generatedWithAi = false,
+                                        generationReport = null,
+                                        errorMessage = null,
+                                    ),
+                                )
+                            },
+                            supportingText = "Defaults to the Profile dev model for this draft. Changes here apply only to this custom exercise.",
+                        )
+                    }
                 }
             }
 

@@ -19,15 +19,25 @@ class AppContainer(
     val catalogRepository = CatalogRepository(toastLiftDatabase)
     internal val exerciseDescriptionService = ExerciseDescriptionService(catalogRepository)
     val userRepository = UserRepository(toastLiftDatabase)
+    internal val geminiSearchCredentials = GeminiSearchCredentials(context.applicationContext)
     val customExerciseRepository = CustomExerciseRepository(
         context = context.applicationContext,
         database = toastLiftDatabase,
         catalogRepository = catalogRepository,
         userRepository = userRepository,
+        metadataGeneratorFactory = if (BuildConfig.BUILD_TYPE == "zstore") {
+            {
+                GeminiExerciseMetadataGenerator(
+                    apiKey = geminiSearchCredentials.read().orEmpty(),
+                    model = "gemini-3.5-flash-lite",
+                )
+            }
+        } else {
+            ::createExerciseMetadataGeneratorForOption
+        },
     )
     val personalDataImporter = PersonalDataImporter(toastLiftDatabase, customExerciseRepository)
     internal val exerciseDiscoveryService = ExerciseDiscoveryService()
-    internal val geminiSearchCredentials = GeminiSearchCredentials(context.applicationContext)
     internal val exerciseAiSearchService = if (BuildConfig.BUILD_TYPE == "zstore") {
         ExerciseAiSearchService(object : ExerciseAiSearchRemoteGenerator {
             override val model = "gemini-3.5-flash-lite"

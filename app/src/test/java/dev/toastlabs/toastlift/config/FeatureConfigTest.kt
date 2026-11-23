@@ -7,15 +7,17 @@ import org.junit.Test
 
 class FeatureConfigTest {
     @Test
-    fun zstoreAsset_enablesOnlyGeminiSearch() {
+    fun zstoreAsset_enablesGeminiSearchAndCustomExercises() {
         val config = FeatureConfigLoader.fromJson(
             File("src/zstore/assets/feature-config.zstore.json").readText(), productionDefaults = true,
         )
         assertTrue(config.aiEnabled)
         assertTrue(config.library.aiSearch)
         assertTrue(config.generate.aiSearch)
+        assertTrue(config.global.customExercises)
+        assertTrue(config.generate.customExercises)
+        assertTrue(config.library.customExercises)
         assertFalse(config.library.aiDiscovery)
-        assertFalse(config.global.customExercises)
         assertFalse(config.global.workoutTemplates)
     }
 

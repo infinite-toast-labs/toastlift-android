@@ -253,9 +253,10 @@ fun createExerciseMetadataGeneratorForOption(
     }
 }
 
-class GeminiExerciseMetadataGenerator : ExerciseMetadataGenerator {
-    private val apiKey: String = BuildConfig.GEMINI_API_KEY
-    private val model: String = BuildConfig.GEMINI_PRIMARY_MODEL
+class GeminiExerciseMetadataGenerator(
+    private val apiKey: String = BuildConfig.GEMINI_API_KEY,
+    private val model: String = BuildConfig.GEMINI_PRIMARY_MODEL,
+) : ExerciseMetadataGenerator {
 
     override val generationModel: String?
         get() = model.takeIf { it.isNotBlank() }
