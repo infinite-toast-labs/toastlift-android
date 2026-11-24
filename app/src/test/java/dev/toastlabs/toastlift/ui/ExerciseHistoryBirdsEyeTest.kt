@@ -2,6 +2,8 @@ package dev.toastlabs.toastlift.ui
 
 import dev.toastlabs.toastlift.data.ExerciseHistoryEntry
 import dev.toastlabs.toastlift.data.ExerciseHistorySet
+import dev.toastlabs.toastlift.data.ExerciseSummary
+import java.time.ZoneId
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -229,6 +231,66 @@ class ExerciseHistoryBirdsEyeTest {
         assertEquals("82.5 lb \u00B7 10/9", summary?.latestLabel)
         assertEquals("82.5 lb", summary?.bestWeightLabel)
         assertEquals("+7.5 lb", summary?.netChangeLabel)
+        assertTrue(summary?.netChangePositive == true)
+    }
+
+    @Test
+    fun `representative debug fixture exercises all birds-eye states and pagination`() {
+        val exercise = ExerciseSummary(
+            id = 42L,
+            name = "Bench Press",
+            difficulty = "Intermediate",
+            bodyRegion = "Upper Body",
+            targetMuscleGroup = "Chest",
+            equipment = "Barbell",
+            secondaryEquipment = null,
+            mechanics = "Compound",
+            favorite = false,
+        )
+        val detail = buildRepresentativeDebugExerciseHistoryDetail(exercise)
+        assertEquals(8, detail.totalEntries)
+        assertEquals(4, detail.prEntryCount)
+
+        val rows = buildExerciseHistoryBirdsEyeRows(
+            entries = detail.entries,
+            sortOrder = BirdsEyeSortOrder.OldestFirst,
+            zoneId = ZoneId.of("UTC"),
+        )
+        assertEquals(8, rows.size)
+
+        // All OverloadDeltaKind states covered
+        val kinds = rows.map { it.deltaKind }.toSet()
+        assertEquals(OverloadDeltaKind.entries.toSet(), kinds)
+
+        // Cross-year dates formatted with year suffix
+        assertTrue(rows.first().dateLabel.contains("'25"))
+        assertTrue(rows.last().dateLabel.contains("'26"))
+
+        // Edge cases: BW-only, mixed BW-weighted, fractional weight, missing rep, 4-set pyramid
+        assertEquals("BW", rows[0].weightLabel)
+        assertEquals("BW\u201325 lb", rows[1].weightLabel)
+        assertEquals("BW / 25 / 25 lb", rows[1].perSetWeightsLabel)
+        assertEquals("137.5 lb", rows[3].weightLabel)
+        assertEquals("+2.5 lb", rows[3].deltaLabel)
+        assertEquals("+3 reps", rows[4].deltaLabel)
+        assertEquals("=", rows[5].deltaLabel)
+        assertEquals("-7.5 lb", rows[6].deltaLabel)
+        assertEquals("10 / 9 / --", rows[6].repsLabel)
+        assertEquals("135\u2013155 lb", rows[7].weightLabel)
+        assertEquals("135 / 145 / 155 / 155 lb", rows[7].perSetWeightsLabel)
+        assertEquals("10 / 9 / 8 / 7", rows[7].repsLabel)
+
+        // Pagination: 2 pages, default page is page 2 (5 newest rows)
+        val pagination = paginateBirdsEyeRows(rows, BirdsEyeSortOrder.OldestFirst)
+        assertEquals(2, pagination.pages.size)
+        assertEquals(1, pagination.defaultPageIndex)
+        assertEquals(3, pagination.pages[0].size)
+        assertEquals(5, pagination.pages[1].size)
+
+        val summary = buildExerciseHistoryBirdsEyeSummary(detail.entries)
+        assertEquals("135\u2013155 lb \u00B7 10/9/8/7", summary?.latestLabel)
+        assertEquals("155 lb", summary?.bestWeightLabel)
+        assertEquals("+155 lb", summary?.netChangeLabel)
         assertTrue(summary?.netChangePositive == true)
     }
 
