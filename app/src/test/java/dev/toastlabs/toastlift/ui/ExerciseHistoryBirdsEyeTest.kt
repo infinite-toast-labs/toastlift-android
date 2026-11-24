@@ -227,11 +227,13 @@ class ExerciseHistoryBirdsEyeTest {
             ),
         )
 
-        val summary = buildExerciseHistoryBirdsEyeSummary(entries)
-        assertEquals("82.5 lb \u00B7 10/9", summary?.latestLabel)
-        assertEquals("82.5 lb", summary?.bestWeightLabel)
-        assertEquals("+7.5 lb", summary?.netChangeLabel)
-        assertTrue(summary?.netChangePositive == true)
+        val summary = buildExerciseHistoryBirdsEyeSummary(entries, zoneId = ZoneId.of("UTC"))
+        assertEquals("Apr 10", summary?.lastWorkoutDateLabel)
+        assertEquals("82.5 lb \u00D7 10", summary?.topSetLabel)
+        assertEquals("2 sets \u00B7 82.5 lb", summary?.setsOverviewLabel)
+        assertEquals("+7.5 lb", summary?.comparisonDeltaLabel)
+        assertEquals("in top weight since Apr 1", summary?.comparisonContextLabel)
+        assertTrue(summary?.comparisonPositive == true)
     }
 
     @Test
@@ -293,11 +295,13 @@ class ExerciseHistoryBirdsEyeTest {
         assertEquals(3, pagination.pages[0].size)
         assertEquals(5, pagination.pages[1].size)
 
-        val summary = buildExerciseHistoryBirdsEyeSummary(detail.entries)
-        assertEquals("135\u2013155 lb \u00B7 10/9/8/7", summary?.latestLabel)
-        assertEquals("155 lb", summary?.bestWeightLabel)
-        assertEquals("+155 lb", summary?.netChangeLabel)
-        assertTrue(summary?.netChangePositive == true)
+        val summary = buildExerciseHistoryBirdsEyeSummary(detail.entries, zoneId = ZoneId.of("UTC"))
+        assertEquals("Nov 22", summary?.lastWorkoutDateLabel)
+        assertEquals("155 lb \u00D7 8", summary?.topSetLabel)
+        assertEquals("4 sets \u00B7 135\u2013155 lb", summary?.setsOverviewLabel)
+        assertEquals("+25 lb", summary?.comparisonDeltaLabel)
+        assertEquals("in top weight since Nov 15", summary?.comparisonContextLabel)
+        assertTrue(summary?.comparisonPositive == true)
     }
 
     private fun entry(

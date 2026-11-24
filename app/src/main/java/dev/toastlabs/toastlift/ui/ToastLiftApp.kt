@@ -18738,11 +18738,12 @@ internal fun exerciseHistorySummary(detail: ExerciseHistoryDetail): String {
 
     val sessionLabel = if (detail.totalEntries == 1) "session" else "sessions"
     val prLabel = if (detail.prEntryCount == 1) "PR session" else "PR sessions"
+    val withPrLabel = if (detail.prEntryCount == 1) "with PR" else "with PRs"
 
     return when {
         detail.isPrOnlyFilterEnabled && detail.prEntryCount == 0 -> "No PR sessions yet"
         detail.isPrOnlyFilterEnabled -> "Showing ${detail.entries.size} $prLabel"
-        detail.prEntryCount > 0 -> "${detail.totalEntries} $sessionLabel • ${detail.prEntryCount} $prLabel"
+        detail.prEntryCount > 0 -> "${detail.totalEntries} $sessionLabel · ${detail.prEntryCount} $withPrLabel"
         else -> "${detail.totalEntries} $sessionLabel"
     }
 }
@@ -18786,42 +18787,37 @@ private fun ExerciseHistorySheet(
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            Text(detail.exerciseName, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
             Column(
                 modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("Results", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Medium)
-                    Text(
-                        exerciseHistorySummary(detail),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                }
-                FlowRow(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    ExerciseHistoryViewModeToggle(
-                        selected = viewMode,
-                        enabled = detail.totalEntries > 0,
-                        onSelect = onSelectViewMode,
-                    )
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        ExerciseHistoryPrFilter(
-                            selected = detail.isPrOnlyFilterEnabled,
-                            onClick = { onTogglePrOnly(!detail.isPrOnlyFilterEnabled) },
-                            enabled = detail.totalEntries > 0,
-                        )
-                    }
-                }
+                Text(
+                    detail.exerciseName,
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                )
+                Text(
+                    exerciseHistorySummary(detail),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
             }
-            Divider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.18f))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                ExerciseHistoryViewModeToggle(
+                    selected = viewMode,
+                    enabled = detail.totalEntries > 0,
+                    onSelect = onSelectViewMode,
+                )
+                ExerciseHistoryPrFilter(
+                    selected = detail.isPrOnlyFilterEnabled,
+                    onClick = { onTogglePrOnly(!detail.isPrOnlyFilterEnabled) },
+                    enabled = detail.totalEntries > 0,
+                )
+            }
             if (emptyState != null) {
                 SuggestionRow(
                     title = emptyState.title,
@@ -18866,35 +18862,54 @@ private fun ExerciseHistoryPrFilter(
     val surface = MaterialTheme.colorScheme.surface
     val accent = MaterialTheme.colorScheme.primary
     val container = if (selected) {
-        accent.copy(alpha = 0.1f).compositeOver(surface)
+        accent.copy(alpha = 0.12f).compositeOver(surface)
     } else {
-        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.36f).compositeOver(surface)
+        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.24f).compositeOver(surface)
     }
     val content = if (selected) {
         accent
     } else {
-        MaterialTheme.colorScheme.onSurfaceVariant
+        MaterialTheme.colorScheme.onSurface
     }.copy(alpha = if (enabled) 1f else 0.48f)
-    val border = if (selected) accent.copy(alpha = 0.28f) else MaterialTheme.colorScheme.outline.copy(alpha = 0.18f)
+    val border = if (selected) accent.copy(alpha = 0.48f) else MaterialTheme.colorScheme.outline.copy(alpha = 0.32f)
+    val checkboxBorder = if (selected) accent else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (enabled) 0.72f else 0.38f)
 
-    Box(
+    Row(
         modifier = Modifier
-            .clip(RoundedCornerShape(50))
+            .clip(RoundedCornerShape(12.dp))
             .background(container)
-            .border(BorderStroke(1.dp, border), RoundedCornerShape(50))
+            .border(BorderStroke(1.dp, border), RoundedCornerShape(12.dp))
             .clickable(enabled = enabled, role = Role.Checkbox, onClick = onClick)
             .semantics {
                 contentDescription = "PRs only"
                 stateDescription = if (selected) "On" else "Off"
             }
-            .heightIn(min = 28.dp)
-            .padding(horizontal = 10.dp, vertical = 4.dp),
-        contentAlignment = Alignment.Center,
+            .heightIn(min = 38.dp)
+            .padding(horizontal = 14.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
+        Box(
+            modifier = Modifier
+                .size(16.dp)
+                .clip(RoundedCornerShape(4.dp))
+                .background(if (selected) accent else Color.Transparent)
+                .border(BorderStroke(1.5.dp, checkboxBorder), RoundedCornerShape(4.dp)),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (selected) {
+                Icon(
+                    imageVector = Icons.Rounded.Check,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onPrimary,
+                    modifier = Modifier.size(12.dp),
+                )
+            }
+        }
         Text(
             text = "PRs only",
-            style = MaterialTheme.typography.bodySmall,
-            fontWeight = FontWeight.Normal,
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.Medium,
             color = content,
             maxLines = 1,
         )
