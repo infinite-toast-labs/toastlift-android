@@ -51,8 +51,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import dev.toastlabs.toastlift.data.ExerciseHistoryDetail
 import dev.toastlabs.toastlift.data.ExerciseHistoryEntry
 import dev.toastlabs.toastlift.data.ExerciseHistorySet
+import dev.toastlabs.toastlift.data.ExerciseSummary
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -807,4 +809,168 @@ private fun BirdsEyeDeltaBadge(
             maxLines = 1,
         )
     }
+}
+
+
+/**
+ * Representative, deterministic debug history fixture for visual validation of
+ * `sheet.exercise_history` (Bird's-eye view). Covers:
+ * - Multi-page pagination (8 workouts -> 2 pages of up to 5; page 2 is shown by default)
+ * - Cross-year dates (2025 and 2026 -> forces year suffix formatting)
+ * - All OverloadDeltaKind states: Baseline, WeightUp (integer + fractional), RepsUp, Maintained, Decreased
+ * - Weight formatting edge cases: BW-only, mixed BW + weighted, uniform, fractional (.5), and 4-set pyramid range
+ * - Rep edge cases: 3-set, 4-set, and missing rep (`null` -> `--`)
+ * - Mixed PR and non-PR entries for PR badge and PR-only filter validation
+ */
+internal fun buildRepresentativeDebugExerciseHistoryDetail(
+    exercise: ExerciseSummary,
+): ExerciseHistoryDetail {
+    val entries = listOf(
+        // #8 (newest, Page 2): 4-set ramped/pyramid PR -> "135–155 lb", per-set sublabel, WeightUp (+25 lb)
+        ExerciseHistoryEntry(
+            completedAtUtc = "2026-11-22T17:30:00Z",
+            workoutTitle = "Upper Strength Progression",
+            targetReps = "8-10",
+            estimatedOneRepMax = 191.0,
+            totalVolume = 5000.0,
+            bestWeight = 155.0,
+            lastSetRepsInReserve = 1,
+            lastSetRpe = 9.0,
+            workingSets = listOf(
+                ExerciseHistorySet(1, reps = 10, weight = 135.0, isRepPr = false, isWeightPr = false, isVolumePr = false),
+                ExerciseHistorySet(2, reps = 9, weight = 145.0, isRepPr = false, isWeightPr = false, isVolumePr = false),
+                ExerciseHistorySet(3, reps = 8, weight = 155.0, isRepPr = false, isWeightPr = true, isVolumePr = false),
+                ExerciseHistorySet(4, reps = 7, weight = 155.0, isRepPr = false, isWeightPr = true, isVolumePr = true),
+            ),
+            hasPersonalRecord = true,
+        ),
+        // #7 (Page 2): Deload + missing rep edge case -> "130 lb", "10 / 9 / --", Decreased (-7.5 lb)
+        ExerciseHistoryEntry(
+            completedAtUtc = "2026-11-15T16:45:00Z",
+            workoutTitle = "Deload Recovery Session",
+            targetReps = "8-10",
+            estimatedOneRepMax = 173.0,
+            totalVolume = 2470.0,
+            bestWeight = 130.0,
+            lastSetRepsInReserve = 3,
+            lastSetRpe = 7.0,
+            workingSets = listOf(
+                ExerciseHistorySet(1, reps = 10, weight = 130.0, isRepPr = false, isWeightPr = false, isVolumePr = false),
+                ExerciseHistorySet(2, reps = 9, weight = 130.0, isRepPr = false, isWeightPr = false, isVolumePr = false),
+                ExerciseHistorySet(3, reps = null, weight = 130.0, isRepPr = false, isWeightPr = false, isVolumePr = false),
+            ),
+            hasPersonalRecord = false,
+        ),
+        // #6 (Page 2): Maintained uniform fractional weight -> "137.5 lb", "10 / 10 / 9", Maintained ("=")
+        ExerciseHistoryEntry(
+            completedAtUtc = "2026-11-09T18:10:00Z",
+            workoutTitle = "Upper Hypertrophy",
+            targetReps = "8-10",
+            estimatedOneRepMax = 183.0,
+            totalVolume = 3987.5,
+            bestWeight = 137.5,
+            lastSetRepsInReserve = 2,
+            lastSetRpe = 8.0,
+            workingSets = listOf(
+                ExerciseHistorySet(1, reps = 10, weight = 137.5, isRepPr = false, isWeightPr = false, isVolumePr = false),
+                ExerciseHistorySet(2, reps = 10, weight = 137.5, isRepPr = false, isWeightPr = false, isVolumePr = false),
+                ExerciseHistorySet(3, reps = 9, weight = 137.5, isRepPr = false, isWeightPr = false, isVolumePr = false),
+            ),
+            hasPersonalRecord = false,
+        ),
+        // #5 (Page 2): Rep progression at same fractional weight -> "137.5 lb", RepsUp (+3 reps)
+        ExerciseHistoryEntry(
+            completedAtUtc = "2026-11-03T17:20:00Z",
+            workoutTitle = "Upper Volume Builder",
+            targetReps = "8-10",
+            estimatedOneRepMax = 183.0,
+            totalVolume = 3987.5,
+            bestWeight = 137.5,
+            lastSetRepsInReserve = 2,
+            lastSetRpe = 8.0,
+            workingSets = listOf(
+                ExerciseHistorySet(1, reps = 10, weight = 137.5, isRepPr = true, isWeightPr = false, isVolumePr = false),
+                ExerciseHistorySet(2, reps = 10, weight = 137.5, isRepPr = false, isWeightPr = false, isVolumePr = false),
+                ExerciseHistorySet(3, reps = 9, weight = 137.5, isRepPr = false, isWeightPr = false, isVolumePr = false),
+            ),
+            hasPersonalRecord = false,
+        ),
+        // #4 (Page 2, top row): Fractional weight jump PR -> "137.5 lb", WeightUp (+2.5 lb), PR
+        ExerciseHistoryEntry(
+            completedAtUtc = "2026-10-28T17:00:00Z",
+            workoutTitle = "Micro-Load Progression",
+            targetReps = "8-10",
+            estimatedOneRepMax = 179.0,
+            totalVolume = 3575.0,
+            bestWeight = 137.5,
+            lastSetRepsInReserve = 2,
+            lastSetRpe = 8.5,
+            workingSets = listOf(
+                ExerciseHistorySet(1, reps = 9, weight = 137.5, isRepPr = false, isWeightPr = true, isVolumePr = false),
+                ExerciseHistorySet(2, reps = 9, weight = 137.5, isRepPr = false, isWeightPr = false, isVolumePr = false),
+                ExerciseHistorySet(3, reps = 8, weight = 137.5, isRepPr = false, isWeightPr = false, isVolumePr = false),
+            ),
+            hasPersonalRecord = true,
+        ),
+        // #3 (Page 1): Uniform weighted -> "135 lb", WeightUp (+110 lb), PR
+        ExerciseHistoryEntry(
+            completedAtUtc = "2026-01-10T16:00:00Z",
+            workoutTitle = "Winter Strength Block",
+            targetReps = "8-10",
+            estimatedOneRepMax = 171.0,
+            totalVolume = 3240.0,
+            bestWeight = 135.0,
+            lastSetRepsInReserve = 2,
+            lastSetRpe = 8.0,
+            workingSets = listOf(
+                ExerciseHistorySet(1, reps = 8, weight = 135.0, isRepPr = false, isWeightPr = true, isVolumePr = false),
+                ExerciseHistorySet(2, reps = 8, weight = 135.0, isRepPr = false, isWeightPr = false, isVolumePr = false),
+                ExerciseHistorySet(3, reps = 8, weight = 135.0, isRepPr = false, isWeightPr = false, isVolumePr = false),
+            ),
+            hasPersonalRecord = true,
+        ),
+        // #2 (Page 1, 2025): Mixed BW + weighted -> "BW–25 lb", per-set "BW / 25 / 25 lb", WeightUp (+25 lb), PR
+        ExerciseHistoryEntry(
+            completedAtUtc = "2025-12-29T15:30:00Z",
+            workoutTitle = "Loaded Warm-In",
+            targetReps = "8-10",
+            estimatedOneRepMax = 33.0,
+            totalVolume = 450.0,
+            bestWeight = 25.0,
+            lastSetRepsInReserve = 3,
+            lastSetRpe = 7.5,
+            workingSets = listOf(
+                ExerciseHistorySet(1, reps = 10, weight = 0.0, isRepPr = false, isWeightPr = false, isVolumePr = false),
+                ExerciseHistorySet(2, reps = 10, weight = 25.0, isRepPr = false, isWeightPr = true, isVolumePr = false),
+                ExerciseHistorySet(3, reps = 8, weight = 25.0, isRepPr = false, isWeightPr = false, isVolumePr = false),
+            ),
+            hasPersonalRecord = true,
+        ),
+        // #1 (Page 1, oldest, 2025): Bodyweight baseline -> "BW", Baseline (null delta)
+        ExerciseHistoryEntry(
+            completedAtUtc = "2025-12-18T15:00:00Z",
+            workoutTitle = "Baseline Technique Session",
+            targetReps = "10-12",
+            estimatedOneRepMax = 0.0,
+            totalVolume = 0.0,
+            bestWeight = 0.0,
+            lastSetRepsInReserve = 3,
+            lastSetRpe = 7.0,
+            workingSets = listOf(
+                ExerciseHistorySet(1, reps = 12, weight = null, isRepPr = false, isWeightPr = false, isVolumePr = false),
+                ExerciseHistorySet(2, reps = 12, weight = null, isRepPr = false, isWeightPr = false, isVolumePr = false),
+                ExerciseHistorySet(3, reps = 10, weight = null, isRepPr = false, isWeightPr = false, isVolumePr = false),
+            ),
+            hasPersonalRecord = false,
+        ),
+    )
+
+    return ExerciseHistoryDetail(
+        exerciseId = exercise.id,
+        exerciseName = exercise.name,
+        entries = entries,
+        isPrOnlyFilterEnabled = false,
+        totalEntries = entries.size,
+        prEntryCount = entries.count { it.hasPersonalRecord },
+    )
 }

@@ -36,7 +36,7 @@ EMULATOR_ADB := android-emulator-adb
 	check-emulator check-device install-debug install-debug-appreveal launch-debug launch-stage install-device-debug \
 	install-device-debug-no-build install-device-stage install-device-stage-no-build sync-device-custom-exercises live-ai-smoke-test \
 	install-stage-appreveal mcp-screens-regular mcp-screens-sheets mcp-screens-all mcp-stage-screens-all mcp-phone-screens-all \
-	mcp-full-scroll-regular mcp-full-scroll-sheets mcp-full-scroll-all mcp-full-scroll-screen \
+	mcp-full-scroll-regular mcp-full-scroll-sheets mcp-full-scroll-all mcp-full-scroll-screen mcp-birds-eye-sheet \
 	mcp-phone-full-scroll-all mcp-phone-full-scroll-screen playstore-build-stage \
 	playstore-screenshots-phone playstore-screenshots-tablet-7 playstore-screenshots-tablet-10 \
 	playstore-screenshots-tablets playstore-screenshots-all
@@ -71,6 +71,7 @@ help:
 	@echo "  make mcp-full-scroll-regular     - Full-scroll capture all non-bottom-sheet AppReveal screens from the configured emulator"
 	@echo "  make mcp-full-scroll-sheets      - Full-scroll capture all AppReveal bottom sheets from the configured emulator"
 	@echo "  make mcp-full-scroll-all         - Full-scroll capture regular screens and bottom sheets from the configured emulator"
+	@echo "  make mcp-birds-eye-sheet          - Capture expanded sheet.exercise_history (bird's-eye fixture) via AppReveal MCP"
 	@echo "  make mcp-full-scroll-screen SCREEN_KEY=<key> - Full-scroll capture one AppReveal screen or bottom sheet from the configured emulator"
 	@echo "  make mcp-phone-screens-all       - Capture regular screens and bottom sheets from \$$DEVICE_SERIAL or the first physical adb device"
 	@echo "  make mcp-phone-full-scroll-all   - Full-scroll capture regular screens and bottom sheets from \$$DEVICE_SERIAL or the first physical adb device"
@@ -357,6 +358,16 @@ mcp-full-scroll-all: install-debug-appreveal
 	scripts/capture_appreveal_mcp_screens.sh \
 		--group all \
 		--capture-mode full \
+		--adb "$(EMULATOR_ADB)" \
+		--serial "$(ADB_SERIAL)" \
+		--app-id "$(APP_ID)" \
+		--activity "$(MAIN_ACTIVITY)"
+
+mcp-birds-eye-sheet: install-debug-appreveal
+	scripts/capture_appreveal_mcp_screens.sh \
+		--group sheets \
+		--capture-mode single \
+		--screen-key sheet.exercise_history \
 		--adb "$(EMULATOR_ADB)" \
 		--serial "$(ADB_SERIAL)" \
 		--app-id "$(APP_ID)" \

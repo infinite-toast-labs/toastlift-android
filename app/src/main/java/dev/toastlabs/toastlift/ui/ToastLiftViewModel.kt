@@ -6249,47 +6249,7 @@ class ToastLiftViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     private fun debugExerciseHistoryDetail(exercise: ExerciseSummary): ExerciseHistoryDetail =
-        ExerciseHistoryDetail(
-            exerciseId = exercise.id,
-            exerciseName = exercise.name,
-            entries = listOf(
-                ExerciseHistoryEntry(
-                    completedAtUtc = "2026-07-03T11:46:00Z",
-                    workoutTitle = "Debug Completed Workout",
-                    targetReps = "8-10",
-                    estimatedOneRepMax = 106.0,
-                    totalVolume = 2480.0,
-                    bestWeight = 80.0,
-                    lastSetRepsInReserve = 2,
-                    lastSetRpe = 8.0,
-                    workingSets = listOf(
-                        ExerciseHistorySet(1, reps = 10, weight = 70.0, isRepPr = false, isWeightPr = false, isVolumePr = false),
-                        ExerciseHistorySet(2, reps = 9, weight = 75.0, isRepPr = false, isWeightPr = true, isVolumePr = false),
-                        ExerciseHistorySet(3, reps = 8, weight = 80.0, isRepPr = false, isWeightPr = true, isVolumePr = true),
-                    ),
-                    hasPersonalRecord = true,
-                ),
-                ExerciseHistoryEntry(
-                    completedAtUtc = "2026-06-30T10:20:00Z",
-                    workoutTitle = "Previous Debug Session",
-                    targetReps = "8-10",
-                    estimatedOneRepMax = 96.0,
-                    totalVolume = 2100.0,
-                    bestWeight = 70.0,
-                    lastSetRepsInReserve = 3,
-                    lastSetRpe = 7.5,
-                    workingSets = listOf(
-                        ExerciseHistorySet(1, reps = 10, weight = 65.0, isRepPr = false, isWeightPr = false, isVolumePr = false),
-                        ExerciseHistorySet(2, reps = 10, weight = 70.0, isRepPr = false, isWeightPr = false, isVolumePr = false),
-                        ExerciseHistorySet(3, reps = 10, weight = 70.0, isRepPr = false, isWeightPr = false, isVolumePr = false),
-                    ),
-                    hasPersonalRecord = false,
-                ),
-            ),
-            isPrOnlyFilterEnabled = false,
-            totalEntries = 2,
-            prEntryCount = 1,
-        )
+        buildRepresentativeDebugExerciseHistoryDetail(exercise)
 
     private fun debugWorkoutPlan(exercises: List<ExerciseSummary>): WorkoutPlan =
         WorkoutPlan(
