@@ -12,6 +12,30 @@ For the private Zstore path, also read
 unsigned, secret-free, production-surface APKs; signing and promotion stay on the
 trusted Zstore host.
 
+## Recommended UI Validation Skill (`toastlift-debug-screen-capture`)
+
+For Android UI validation, visual debugging, and screenshot audits in this repo,
+use the **`toastlift-debug-screen-capture`** skill (located in the sandbox at
+`/home/gem/workspace/itl/ai-skillz/skills/toastlift-debug-screen-capture/SKILL.md`
+and `/home/gem/.codex/skills/toastlift-debug-screen-capture/SKILL.md`).
+
+**What it does:**
+- Drives ToastLift's in-app **AppReveal MCP** server (instead of raw
+  `adb screencap`) through the repo's `Makefile` targets (`make mcp-screens-all`,
+  `make mcp-screens-regular`, `make mcp-screens-sheets`,
+  `make mcp-full-scroll-all`, `make mcp-full-scroll-screen SCREEN_KEY=<key>`,
+  and the `mcp-phone-*` physical-device variants).
+- Builds and installs a fresh debug APK, launches the app, discovers the
+  dynamic per-session AppReveal URL/token from logcat, and runs the MCP flow
+  (`debug_begin` -> `list_screens` -> `open_screen` -> `screenshot` ->
+  `debug_end`).
+- Defaults to the simulated Android emulator (`emulator-5560` via
+  `android-emulator-adb`) and uses a physical phone (`android-adb`) only when
+  explicitly requested.
+- Captures regular screens, bottom sheets, and full-scroll views under
+  `android-e2e/<timestamp>-...`, and validates the run by checking `results.tsv`
+  for failures and `debug_end.json` for `realStateUnchanged=true`.
+
 ## AppReveal MCP Visual Debugging
 
 ToastLift's visual-debug MCP server is dynamic. It is not registered as a static
