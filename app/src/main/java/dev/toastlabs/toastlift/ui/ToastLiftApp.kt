@@ -18839,7 +18839,17 @@ private fun ExerciseHistorySheet(
                     ExerciseHistoryEntryCard(entry = entry)
                 }
             }
-            Button(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) {
+            OutlinedButton(
+                onClick = onDismiss,
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    contentColor = MaterialTheme.colorScheme.onSurface,
+                ),
+                border = BorderStroke(
+                    1.dp,
+                    MaterialTheme.colorScheme.outline.copy(alpha = 0.45f),
+                ),
+            ) {
                 Text("Close")
             }
             Spacer(modifier = Modifier.height(24.dp))

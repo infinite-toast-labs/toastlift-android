@@ -82,6 +82,11 @@ internal enum class OverloadDeltaKind {
     Baseline,
 }
 
+internal enum class BirdsEyeDeltaColumn {
+    Weight,
+    Reps,
+}
+
 internal data class ExerciseHistoryBirdsEyeRow(
     val sessionNumber: Int,
     val dateLabel: String,
@@ -90,6 +95,7 @@ internal data class ExerciseHistoryBirdsEyeRow(
     val perSetWeightsLabel: String?,
     val deltaLabel: String?,
     val deltaKind: OverloadDeltaKind,
+    val deltaColumn: BirdsEyeDeltaColumn?,
     val hasPersonalRecord: Boolean,
     val isWeightJump: Boolean,
 )
@@ -191,27 +197,35 @@ internal fun buildExerciseHistoryBirdsEyeRows(
         val (weightLabel, perSetWeightsLabel) = formatSessionWeightSummary(sets)
         val repsLabel = formatSessionReps(sets)
 
-        val (deltaKind, deltaLabel) = if (previousWeight == null || previousTotalReps == null) {
-            OverloadDeltaKind.Baseline to null
+        val (deltaKind, deltaLabel, deltaColumn) = if (previousWeight == null || previousTotalReps == null) {
+            Triple(OverloadDeltaKind.Baseline, null, null)
         } else {
             val weightDiff = primaryWeight - previousWeight!!
             val repDiff = totalReps - previousTotalReps!!
             when {
                 weightDiff > WEIGHT_EPSILON -> {
-                    OverloadDeltaKind.WeightUp to "+${formatBirdsEyeWeightValue(weightDiff)} lb"
+                    Triple(
+                        OverloadDeltaKind.WeightUp,
+                        "+${formatBirdsEyeWeightValue(weightDiff)} lb",
+                        BirdsEyeDeltaColumn.Weight,
+                    )
                 }
                 weightDiff < -WEIGHT_EPSILON -> {
-                    OverloadDeltaKind.Decreased to "-${formatBirdsEyeWeightValue(abs(weightDiff))} lb"
+                    Triple(
+                        OverloadDeltaKind.Decreased,
+                        "-${formatBirdsEyeWeightValue(abs(weightDiff))} lb",
+                        BirdsEyeDeltaColumn.Weight,
+                    )
                 }
                 repDiff > 0 -> {
                     val unit = if (repDiff == 1) "rep" else "reps"
-                    OverloadDeltaKind.RepsUp to "+$repDiff $unit"
+                    Triple(OverloadDeltaKind.RepsUp, "+$repDiff $unit", BirdsEyeDeltaColumn.Reps)
                 }
                 repDiff < 0 -> {
                     val unit = if (repDiff == -1) "rep" else "reps"
-                    OverloadDeltaKind.Decreased to "$repDiff $unit"
+                    Triple(OverloadDeltaKind.Decreased, "$repDiff $unit", BirdsEyeDeltaColumn.Reps)
                 }
-                else -> OverloadDeltaKind.Maintained to "="
+                else -> Triple(OverloadDeltaKind.Maintained, "=", BirdsEyeDeltaColumn.Reps)
             }
         }
 
@@ -226,6 +240,7 @@ internal fun buildExerciseHistoryBirdsEyeRows(
             perSetWeightsLabel = perSetWeightsLabel,
             deltaLabel = deltaLabel,
             deltaKind = deltaKind,
+            deltaColumn = deltaColumn,
             hasPersonalRecord = entry.hasPersonalRecord,
             isWeightJump = deltaKind == OverloadDeltaKind.WeightUp,
         )
@@ -601,27 +616,41 @@ private fun BirdsEyePageCard(
                             )
                         }
 
-                        // Weight column (shrink font slightly for wide decimal ranges like "92.5–107.5 lb")
+                        // Weight column (+ weight delta; shrink font slightly for wide decimal ranges like "92.5–107.5 lb")
                         val weightFontSize = if (row.weightLabel.length > 9) 12.sp else 14.sp
-                        Text(
-                            text = row.weightLabel,
+                        Column(
                             modifier = Modifier.weight(1.0f),
-                            style = MaterialTheme.typography.bodyMedium.copy(
-                                fontFamily = MonoFamily,
-                                fontSize = weightFontSize,
-                            ),
-                            fontWeight = FontWeight.SemiBold,
-                            color = if (row.isWeightJump) {
-                                statusColors.surge
-                            } else {
-                                MaterialTheme.colorScheme.onSurface
-                            },
-                            textAlign = TextAlign.End,
-                            maxLines = 1,
-                            softWrap = false,
-                        )
+                            horizontalAlignment = Alignment.End,
+                            verticalArrangement = Arrangement.spacedBy(3.dp),
+                        ) {
+                            Text(
+                                text = row.weightLabel,
+                                style = MaterialTheme.typography.bodyMedium.copy(
+                                    fontFamily = MonoFamily,
+                                    fontSize = weightFontSize,
+                                ),
+                                fontWeight = FontWeight.SemiBold,
+                                color = if (row.isWeightJump) {
+                                    statusColors.surge
+                                } else {
+                                    MaterialTheme.colorScheme.onSurface
+                                },
+                                textAlign = TextAlign.End,
+                                maxLines = 1,
+                                softWrap = false,
+                            )
+                            if (row.deltaColumn == BirdsEyeDeltaColumn.Weight) {
+                                row.deltaLabel?.let { delta ->
+                                    BirdsEyeDeltaBadge(
+                                        label = delta,
+                                        kind = row.deltaKind,
+                                        positiveColor = statusColors.surge,
+                                    )
+                                }
+                            }
+                        }
 
-                        // Reps column (+ optional delta & mixed-weight breakdown)
+                        // Reps column (+ rep delta & optional mixed-weight breakdown)
                         Column(
                             modifier = Modifier
                                 .weight(1.3f)
@@ -644,12 +673,14 @@ private fun BirdsEyePageCard(
                                     textAlign = TextAlign.End,
                                 )
                             }
-                            row.deltaLabel?.let { delta ->
-                                BirdsEyeDeltaBadge(
-                                    label = delta,
-                                    kind = row.deltaKind,
-                                    positiveColor = statusColors.surge,
-                                )
+                            if (row.deltaColumn == BirdsEyeDeltaColumn.Reps) {
+                                row.deltaLabel?.let { delta ->
+                                    BirdsEyeDeltaBadge(
+                                        label = delta,
+                                        kind = row.deltaKind,
+                                        positiveColor = statusColors.surge,
+                                    )
+                                }
                             }
                         }
                     }
