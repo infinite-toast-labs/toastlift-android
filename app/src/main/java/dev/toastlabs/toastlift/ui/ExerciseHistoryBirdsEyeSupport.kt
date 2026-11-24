@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -106,10 +107,12 @@ internal data class BirdsEyePagination(
 )
 
 internal data class ExerciseHistoryBirdsEyeSummary(
-    val latestLabel: String,
-    val bestWeightLabel: String,
-    val netChangeLabel: String?,
-    val netChangePositive: Boolean,
+    val lastWorkoutDateLabel: String,
+    val topSetLabel: String,
+    val setsOverviewLabel: String,
+    val comparisonDeltaLabel: String?,
+    val comparisonContextLabel: String?,
+    val comparisonPositive: Boolean,
 )
 
 private const val WEIGHT_EPSILON = 0.05
@@ -287,48 +290,109 @@ internal fun paginateBirdsEyeRows(
     }
 }
 
-internal fun buildExerciseHistoryBirdsEyeSummary(
-    entries: List<ExerciseHistoryEntry>,
-): ExerciseHistoryBirdsEyeSummary? {
-    if (entries.isEmpty()) return null
-    val newestSets = chronologicalWorkingSets(entries.first())
-    val oldestSets = chronologicalWorkingSets(entries.last())
-
-    val newestWeight = sessionPrimaryWeight(newestSets)
-    val oldestWeight = sessionPrimaryWeight(oldestSets)
-    val newestReps = sessionTotalReps(newestSets)
-    val oldestReps = sessionTotalReps(oldestSets)
-
-    val (latestWeightLabel, _) = formatSessionWeightSummary(newestSets)
-    val latestRepsCompact = newestSets.joinToString("/") { it.reps?.toString() ?: "-" }
-    val latestLabel = "$latestWeightLabel \u00B7 $latestRepsCompact"
-
-    val bestWeight = entries.maxOfOrNull { sessionPrimaryWeight(chronologicalWorkingSets(it)) } ?: 0.0
-    val bestWeightLabel = if (bestWeight > WEIGHT_EPSILON) {
-        "${formatBirdsEyeWeightValue(bestWeight)} lb"
+private fun formatTopSetLabel(sets: List<ExerciseHistorySet>): String {
+    if (sets.isEmpty()) return "--"
+    val topSet = sets.maxWithOrNull(
+        compareBy<ExerciseHistorySet>(
+            { it.weight?.takeIf { w -> w > 0.0 } ?: 0.0 },
+            { it.reps ?: -1 },
+            { -it.setNumber },
+        ),
+    ) ?: return "--"
+    val topWeight = topSet.weight?.takeIf { it > WEIGHT_EPSILON }
+    val weightPart = if (topWeight != null) {
+        "${formatBirdsEyeWeightValue(topWeight)} lb"
     } else {
         "BW"
     }
+    return topSet.reps?.let { reps -> "$weightPart × $reps" } ?: weightPart
+}
 
-    val (netChangeLabel, netChangePositive) = if (entries.size < 2) {
-        null to false
-    } else {
-        val weightDiff = newestWeight - oldestWeight
-        val repDiff = newestReps - oldestReps
-        when {
-            weightDiff > WEIGHT_EPSILON -> "+${formatBirdsEyeWeightValue(weightDiff)} lb" to true
-            weightDiff < -WEIGHT_EPSILON -> "-${formatBirdsEyeWeightValue(abs(weightDiff))} lb" to false
-            repDiff > 0 -> "+$repDiff ${if (repDiff == 1) "rep" else "reps"}" to true
-            repDiff < 0 -> "$repDiff ${if (repDiff == -1) "rep" else "reps"}" to false
-            else -> "Steady" to false
-        }
+internal fun buildExerciseHistoryBirdsEyeSummary(
+    entries: List<ExerciseHistoryEntry>,
+    zoneId: ZoneId = ZoneId.systemDefault(),
+): ExerciseHistoryBirdsEyeSummary? {
+    if (entries.isEmpty()) return null
+    val newest = entries.first()
+    val previous = entries.getOrNull(1)
+    val newestSets = chronologicalWorkingSets(newest)
+
+    val newestYear = runCatching { Instant.parse(newest.workoutOccurredAtUtc).atZone(zoneId).year }.getOrNull()
+    val previousYear = previous?.let {
+        runCatching { Instant.parse(it.workoutOccurredAtUtc).atZone(zoneId).year }.getOrNull()
+    }
+    val includeYearOnComparison = newestYear != null && previousYear != null && newestYear != previousYear
+
+    val lastWorkoutDateLabel = formatBirdsEyeDate(
+        occurredAtUtc = newest.workoutOccurredAtUtc,
+        includeYear = false,
+        zoneId = zoneId,
+    )
+    val topSetLabel = formatTopSetLabel(newestSets)
+    val setWord = if (newestSets.size == 1) "set" else "sets"
+    val (weightRangeLabel, _) = formatSessionWeightSummary(newestSets)
+    val setsOverviewLabel = "${newestSets.size} $setWord · $weightRangeLabel"
+
+    if (previous == null) {
+        return ExerciseHistoryBirdsEyeSummary(
+            lastWorkoutDateLabel = lastWorkoutDateLabel,
+            topSetLabel = topSetLabel,
+            setsOverviewLabel = setsOverviewLabel,
+            comparisonDeltaLabel = null,
+            comparisonContextLabel = null,
+            comparisonPositive = false,
+        )
+    }
+
+    val previousSets = chronologicalWorkingSets(previous)
+    val previousDateLabel = formatBirdsEyeDate(
+        occurredAtUtc = previous.workoutOccurredAtUtc,
+        includeYear = includeYearOnComparison,
+        zoneId = zoneId,
+    )
+    val newestWeight = sessionPrimaryWeight(newestSets)
+    val previousWeight = sessionPrimaryWeight(previousSets)
+    val newestReps = sessionTotalReps(newestSets)
+    val previousReps = sessionTotalReps(previousSets)
+
+    val weightDiff = newestWeight - previousWeight
+    val repDiff = newestReps - previousReps
+
+    val (deltaLabel, contextLabel, positive) = when {
+        weightDiff > WEIGHT_EPSILON -> Triple(
+            "+${formatBirdsEyeWeightValue(weightDiff)} lb",
+            "in top weight since $previousDateLabel",
+            true,
+        )
+        weightDiff < -WEIGHT_EPSILON -> Triple(
+            "-${formatBirdsEyeWeightValue(abs(weightDiff))} lb",
+            "in top weight since $previousDateLabel",
+            false,
+        )
+        repDiff > 0 -> Triple(
+            "+$repDiff ${if (repDiff == 1) "rep" else "reps"}",
+            "in total reps since $previousDateLabel",
+            true,
+        )
+        repDiff < 0 -> Triple(
+            "$repDiff ${if (repDiff == -1) "rep" else "reps"}",
+            "in total reps since $previousDateLabel",
+            false,
+        )
+        else -> Triple(
+            "Steady",
+            "since $previousDateLabel",
+            false,
+        )
     }
 
     return ExerciseHistoryBirdsEyeSummary(
-        latestLabel = latestLabel,
-        bestWeightLabel = bestWeightLabel,
-        netChangeLabel = netChangeLabel,
-        netChangePositive = netChangePositive,
+        lastWorkoutDateLabel = lastWorkoutDateLabel,
+        topSetLabel = topSetLabel,
+        setsOverviewLabel = setsOverviewLabel,
+        comparisonDeltaLabel = deltaLabel,
+        comparisonContextLabel = contextLabel,
+        comparisonPositive = positive,
     )
 }
 
@@ -428,14 +492,21 @@ internal fun ExerciseHistoryBirdsEyeTable(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        if (summary != null && entries.size >= 2) {
-            BirdsEyeSummaryStrip(
+        if (summary != null) {
+            BirdsEyeSummaryCard(
                 summary = summary,
                 positiveColor = statusColors.surge,
             )
         }
 
         if (pagination.pages.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "Workout history",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
             val density = LocalDensity.current
             var maxPageHeightPx by remember(entries, sortOrder) { mutableIntStateOf(0) }
             val minPagerHeightDp = with(density) { maxPageHeightPx.toDp() }
@@ -732,80 +803,72 @@ private fun BirdsEyePageIndicatorDots(
 }
 
 @Composable
-private fun BirdsEyeSummaryStrip(
+private fun BirdsEyeSummaryCard(
     summary: ExerciseHistoryBirdsEyeSummary,
     positiveColor: Color,
 ) {
     val uiColors = LocalUiColors.current
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(14.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.34f),
         border = BorderStroke(1.dp, uiColors.chromeBorder),
     ) {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 10.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
+                .padding(16.dp),
         ) {
-            BirdsEyeSummaryMetric(
-                label = "LATEST",
-                value = summary.latestLabel,
-                modifier = Modifier.weight(1.55f),
-                alignment = Alignment.Start,
+            Text(
+                text = "Last workout · ${summary.lastWorkoutDateLabel}",
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.88f),
             )
-            BirdsEyeSummaryMetric(
-                label = "BEST",
-                value = summary.bestWeightLabel,
-                modifier = Modifier.weight(0.75f),
-                alignment = Alignment.CenterHorizontally,
+            Spacer(modifier = Modifier.height(10.dp))
+            Text(
+                text = summary.topSetLabel,
+                style = MaterialTheme.typography.headlineLarge,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
             )
-            summary.netChangeLabel?.let { net ->
-                BirdsEyeSummaryMetric(
-                    label = "PROGRESSION",
-                    value = net,
-                    valueColor = if (summary.netChangePositive) positiveColor else MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.weight(0.95f),
-                    alignment = Alignment.End,
-                )
+            Text(
+                text = "Top set",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(modifier = Modifier.height(10.dp))
+            Text(
+                text = summary.setsOverviewLabel,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.88f),
+            )
+            if (summary.comparisonDeltaLabel != null && summary.comparisonContextLabel != null) {
+                Spacer(modifier = Modifier.height(14.dp))
+                HorizontalDivider(color = uiColors.chromeDivider.copy(alpha = 0.72f))
+                Spacer(modifier = Modifier.height(12.dp))
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = summary.comparisonDeltaLabel,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = if (summary.comparisonPositive) {
+                            positiveColor
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                    )
+                    Text(
+                        text = summary.comparisonContextLabel,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         }
-    }
-}
-
-@Composable
-private fun BirdsEyeSummaryMetric(
-    label: String,
-    value: String,
-    modifier: Modifier = Modifier,
-    alignment: Alignment.Horizontal = Alignment.Start,
-    valueColor: Color = MaterialTheme.colorScheme.onSurface,
-) {
-    Column(
-        modifier = modifier,
-        horizontalAlignment = alignment,
-        verticalArrangement = Arrangement.spacedBy(2.dp),
-    ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            letterSpacing = 0.5.sp,
-            maxLines = 1,
-        )
-        Text(
-            text = value,
-            style = MaterialTheme.typography.bodySmall.copy(
-                fontFamily = MonoFamily,
-                fontSize = if (value.length > 15) 11.sp else 12.sp,
-            ),
-            fontWeight = FontWeight.SemiBold,
-            color = valueColor,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
     }
 }
 
